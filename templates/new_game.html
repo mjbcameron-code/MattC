@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}New Game{% endblock %}
+{% block content %}
+<div class="splash" style="padding:20px; max-width:900px;">
+    <h1 style="font-size:28px;">Choose Your Club</h1>
+</div>
+<form method="post" action="{{ url_for('new_game_route') }}">
+    <div class="panel">
+        <div class="panel-header">Manager Details</div>
+        <div class="panel-body">
+            <div class="form-row">
+                <label>Manager Name</label>
+                <input type="text" name="manager_name" placeholder="Enter your name"
+                       value="{{ game_state.manager_name if game_state else '' }}"
+                       style="width:300px;" required>
+            </div>
+        </div>
+    </div>
+
+    {% for league, clubs in leagues_with_clubs %}
+    <div class="panel">
+        <div class="panel-header">{{ league.name }} — {{ league.country }}</div>
+        <div class="panel-body">
+            <table>
+                <thead>
+                    <tr><th></th><th>Club</th><th class="num">Reputation</th>
+                        <th class="num">Transfer Budget</th></tr>
+                </thead>
+                <tbody>
+                {% for club in clubs %}
+                    <tr class="clickable" onclick="selectClub({{ club.id }})">
+                        <td><input type="radio" name="club_id" value="{{ club.id }}"
+                                   id="club{{ club.id }}" required></td>
+                        <td>
+                            <span class="club-badge" style="width:18px;height:18px;
+                                  vertical-align:middle;background:{{ club.primary_color }};
+                                  border-width:2px;border-color:{{ club.secondary_color }}"></span>
+                            <strong>{{ club.name }}</strong>
+                        </td>
+                        <td class="num">{{ club.reputation }}</td>
+                        <td class="num">{{ club.budget | money }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endfor %}
+
+    <div class="center mb">
+        <button type="submit" class="btn btn-accent" style="font-size:16px;padding:14px 50px;">
+            Begin Career ▶</button>
+    </div>
+</form>
+<script>
+function selectClub(id) {
+    document.getElementById('club' + id).checked = true;
+}
+</script>
+{% endblock %}

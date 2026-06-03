@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Championship Manager{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+{% if game_state %}
+<header class="topbar">
+    <div class="topbar-left">
+        <span class="club-badge" style="background:{{ game_state.managed_club.primary_color }};
+              border-color:{{ game_state.managed_club.secondary_color }}"></span>
+        <div>
+            <div class="club-name">{{ game_state.managed_club.name }}</div>
+            <div class="manager-name">{{ game_state.manager_name }}</div>
+        </div>
+    </div>
+    <div class="topbar-right">
+        <div class="date-pill">{{ game_state.current_date }}</div>
+        <div class="budget-pill">{{ game_state.managed_club.budget | money }}</div>
+    </div>
+</header>
+
+<nav class="mainnav">
+    <a href="{{ url_for('dashboard') }}" class="{% block nav_dashboard %}{% endblock %}">Office</a>
+    <a href="{{ url_for('squad') }}" class="{% block nav_squad %}{% endblock %}">Squad</a>
+    <a href="{{ url_for('tactics') }}" class="{% block nav_tactics %}{% endblock %}">Tactics</a>
+    <a href="{{ url_for('fixtures') }}" class="{% block nav_fixtures %}{% endblock %}">Fixtures</a>
+    <a href="{{ url_for('league_table') }}" class="{% block nav_table %}{% endblock %}">Table</a>
+    <a href="{{ url_for('transfers') }}" class="{% block nav_transfers %}{% endblock %}">Transfers</a>
+    <a href="{{ url_for('stats') }}" class="{% block nav_stats %}{% endblock %}">Stats</a>
+    <a href="{{ url_for('news') }}" class="{% block nav_news %}{% endblock %} news-link">
+        News{% if unread_news %}<span class="badge">{{ unread_news }}</span>{% endif %}</a>
+    <a href="{{ url_for('next_match_preview') }}" class="continue-btn">Continue ▶</a>
+</nav>
+{% endif %}
+
+<main class="content">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="flash flash-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+</main>
+
+<footer class="footer">
+    Championship Manager — a CM 01/02 tribute · season {{ game_state.current_season.name if game_state and game_state.current_season else '2001/02' }}
+</footer>
+{% block scripts %}{% endblock %}
+</body>
+</html>

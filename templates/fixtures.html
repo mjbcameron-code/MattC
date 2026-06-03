@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Fixtures{% endblock %}
+{% block nav_fixtures %}active{% endblock %}
+{% block content %}
+<div class="panel">
+    <div class="panel-header">{{ club.name }} — Fixtures &amp; Results</div>
+    <div class="panel-body" style="padding:0;">
+        <table>
+            <thead><tr><th>Date</th><th>Comp</th><th>H/A</th><th>Opponent</th>
+                <th class="num">Result</th><th></th></tr></thead>
+            <tbody>
+            {% for m in matches %}
+                {% set is_home = m.home_club_id == club.id %}
+                {% set opp = m.away_club if is_home else m.home_club %}
+                <tr class="{% if m.played %}clickable{% endif %}"
+                    {% if m.played %}onclick="location.href='{{ url_for('match_result', match_id=m.id) }}'"{% endif %}>
+                    <td class="small">{{ m.match_date }}</td>
+                    <td class="small muted">{{ m.competition }}</td>
+                    <td>{{ 'H' if is_home else 'A' }}</td>
+                    <td>{{ opp.name }}</td>
+                    <td class="num">
+                        {% if m.played %}
+                            {% set our = m.home_score if is_home else m.away_score %}
+                            {% set their = m.away_score if is_home else m.home_score %}
+                            {% set cls = 'fp-W' if our > their else ('fp-D' if our == their else 'fp-L') %}
+                            <span class="fp {{ cls }}">{{ 'W' if our > their else ('D' if our == their else 'L') }}</span>
+                            <strong>{{ m.home_score }}-{{ m.away_score }}</strong>
+                        {% else %}
+                            <span class="muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td></td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

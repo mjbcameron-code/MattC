@@ -432,45 +432,38 @@ def simulate_match(home_club, away_club, season, match_obj, game_state=None):
     return home_score, away_score, events, commentary_log, stats
 
 
+def _get_or_create_stat(player_id, season_id, club_id):
+    """Fetch a PlayerStat, creating one with explicit zero counters if missing.
+
+    SQLAlchemy column defaults are only applied at INSERT time, so a freshly
+    constructed row has `None` counters in memory; we initialise them here so
+    `+= 1` is always safe before the first commit.
+    """
+    ps = PlayerStat.query.filter_by(
+        player_id=player_id, season_id=season_id, club_id=club_id).first()
+    if not ps:
+        ps = PlayerStat(player_id=player_id, season_id=season_id, club_id=club_id,
+                        appearances=0, goals=0, assists=0,
+                        yellow_cards=0, red_cards=0)
+        db.session.add(ps)
+    return ps
+
+
 def update_player_stats(events, season_id):
     """Update PlayerStat rows based on match events."""
     for ev in events:
-        if ev['type'] == 'goal' and ev.get('player_id'):
-            ps = PlayerStat.query.filter_by(
-                player_id=ev['player_id'], season_id=season_id,
-                club_id=ev['club_id']).first()
-            if not ps:
-                player = Player.query.get(ev['player_id'])
-                ps = PlayerStat(player_id=ev['player_id'], season_id=season_id,
-                                club_id=ev['club_id'])
-                db.session.add(ps)
+        if not ev.get('player_id') or not ev.get('club_id'):
+            continue
+        ps = _get_or_create_stat(ev['player_id'], season_id, ev['club_id'])
+        if ev['type'] == 'goal':
             ps.goals += 1
             ps.appearances += 1
             if ev.get('assist_player_id'):
-                asp = PlayerStat.query.filter_by(
-                    player_id=ev['assist_player_id'], season_id=season_id,
-                    club_id=ev['club_id']).first()
-                if not asp:
-                    asp = PlayerStat(player_id=ev['assist_player_id'],
-                                     season_id=season_id, club_id=ev['club_id'])
-                    db.session.add(asp)
+                asp = _get_or_create_stat(ev['assist_player_id'], season_id,
+                                          ev['club_id'])
                 asp.assists += 1
-        elif ev['type'] == 'yellow_card' and ev.get('player_id'):
-            ps = PlayerStat.query.filter_by(
-                player_id=ev['player_id'], season_id=season_id,
-                club_id=ev['club_id']).first()
-            if not ps:
-                ps = PlayerStat(player_id=ev['player_id'], season_id=season_id,
-                                club_id=ev['club_id'])
-                db.session.add(ps)
+        elif ev['type'] == 'yellow_card':
             ps.yellow_cards += 1
-        elif ev['type'] == 'red_card' and ev.get('player_id'):
-            ps = PlayerStat.query.filter_by(
-                player_id=ev['player_id'], season_id=season_id,
-                club_id=ev['club_id']).first()
-            if not ps:
-                ps = PlayerStat(player_id=ev['player_id'], season_id=season_id,
-                                club_id=ev['club_id'])
-                db.session.add(ps)
+        elif ev['type'] == 'red_card':
             ps.red_cards += 1
     db.session.commit()

@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Office — {{ club.name }}{% endblock %}
+{% block nav_dashboard %}active{% endblock %}
+{% block content %}
+
+<div class="statbox mb">
+    <div class="stat-item"><div class="big">{{ position or '-' }}</div>
+        <div class="lbl">League Position</div></div>
+    <div class="stat-item"><div class="big">{{ squad_size }}</div>
+        <div class="lbl">Squad Size</div></div>
+    <div class="stat-item"><div class="big">{{ club.budget | money }}</div>
+        <div class="lbl">Transfer Budget</div></div>
+    <div class="stat-item"><div class="big">{{ club.reputation }}</div>
+        <div class="lbl">Reputation</div></div>
+    <div class="stat-item"><div class="big">{{ injured }}</div>
+        <div class="lbl">Injured</div></div>
+</div>
+
+<div class="grid-3">
+    <div>
+        {% if next_match %}
+        <div class="panel">
+            <div class="panel-header">Next Match</div>
+            <div class="panel-body">
+                <div class="scoreboard" style="padding:14px;">
+                    <div class="team"><div class="tn">{{ next_match.home_club.short_name }}</div></div>
+                    <div style="text-align:center;">
+                        <div class="vs-min">{{ next_match.match_date }}</div>
+                        <div style="font-size:20px;font-weight:bold;color:#fff;">v</div>
+                        <div class="vs-min">{{ next_match.competition }}</div>
+                    </div>
+                    <div class="team"><div class="tn">{{ next_match.away_club.short_name }}</div></div>
+                </div>
+                <a href="{{ url_for('next_match_preview') }}" class="btn btn-accent btn-block">
+                    Go to Match ▶</a>
+            </div>
+        </div>
+        {% else %}
+        <div class="panel"><div class="panel-header">Season Complete</div>
+            <div class="panel-body">No more fixtures this season.</div></div>
+        {% endif %}
+
+        <div class="panel">
+            <div class="panel-header">Recent Results</div>
+            <div class="panel-body">
+                {% if recent %}
+                <table>
+                {% for m in recent %}
+                    <tr class="clickable" onclick="location.href='{{ url_for('match_result', match_id=m.id) }}'">
+                        <td class="small muted">{{ m.match_date }}</td>
+                        <td class="right">{{ m.home_club.short_name }}</td>
+                        <td class="center" style="font-weight:bold;width:60px;">
+                            {{ m.home_score }} - {{ m.away_score }}</td>
+                        <td>{{ m.away_club.short_name }}</td>
+                    </tr>
+                {% endfor %}
+                </table>
+                {% else %}
+                <p class="muted">No matches played yet.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div>
+        <div class="panel">
+            <div class="panel-header">League Table</div>
+            <div class="panel-body" style="padding:0;">
+                <table>
+                    <thead><tr><th>#</th><th>Club</th><th class="num">P</th>
+                        <th class="num">GD</th><th class="num">Pts</th></tr></thead>
+                    <tbody>
+                    {% for s in table %}
+                        <tr class="{% if s.club_id == club.id %}highlight{% endif %}">
+                            <td>{{ loop.index }}</td>
+                            <td>{{ s.club.short_name }}</td>
+                            <td class="num">{{ s.played }}</td>
+                            <td class="num">{{ s.goal_difference }}</td>
+                            <td class="num"><strong>{{ s.points }}</strong></td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                <div style="padding:8px;"><a href="{{ url_for('league_table') }}"
+                   class="btn btn-sm btn-block">Full Table</a></div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">Inbox</div>
+            <div class="panel-body" style="padding:0;">
+                {% for item in news %}
+                <div style="padding:8px 12px;border-bottom:1px solid var(--cm-border);">
+                    <div style="font-weight:bold;font-size:12px;">{{ item.headline }}</div>
+                    <div class="small muted">{{ item.date }}</div>
+                </div>
+                {% endfor %}
+                <div style="padding:8px;"><a href="{{ url_for('news') }}"
+                   class="btn btn-sm btn-block">All News</a></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

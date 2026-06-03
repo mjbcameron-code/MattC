@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Statistics{% endblock %}
+{% block nav_stats %}active{% endblock %}
+{% block content %}
+<div class="grid-2">
+    <div class="panel">
+        <div class="panel-header">Top Scorers</div>
+        <div class="panel-body" style="padding:0;">
+            <table>
+                <thead><tr><th>#</th><th>Player</th><th>Club</th><th class="num">Goals</th></tr></thead>
+                <tbody>
+                {% for ps in top_scorers if ps.goals > 0 %}
+                <tr class="clickable" onclick="location.href='{{ url_for('player_detail', player_id=ps.player_id) }}'">
+                    <td>{{ loop.index }}</td>
+                    <td>{{ ps.player.name }}</td>
+                    <td class="small muted">{{ ps.club.short_name if ps.club else '' }}</td>
+                    <td class="num"><strong>{{ ps.goals }}</strong></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" class="muted">No goals scored yet.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">Top Assists</div>
+        <div class="panel-body" style="padding:0;">
+            <table>
+                <thead><tr><th>#</th><th>Player</th><th>Club</th><th class="num">Assists</th></tr></thead>
+                <tbody>
+                {% for ps in top_assists if ps.assists > 0 %}
+                <tr class="clickable" onclick="location.href='{{ url_for('player_detail', player_id=ps.player_id) }}'">
+                    <td>{{ loop.index }}</td>
+                    <td>{{ ps.player.name }}</td>
+                    <td class="small muted">{{ ps.club.short_name if ps.club else '' }}</td>
+                    <td class="num"><strong>{{ ps.assists }}</strong></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" class="muted">No assists yet.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Squad — {{ club.name }}{% endblock %}
+{% block nav_squad %}active{% endblock %}
+{% block content %}
+{% macro rating_class(r) %}{% if r >= 16 %}r-elite{% elif r >= 14 %}r-good{% elif r >= 11 %}r-avg{% elif r >= 8 %}r-poor{% else %}r-bad{% endif %}{% endmacro %}
+
+<div class="panel">
+    <div class="panel-header">First Team Squad — {{ players | length }} players</div>
+    <div class="panel-body" style="padding:0;">
+        <table>
+            <thead>
+                <tr>
+                    <th class="num">#</th><th>Name</th><th>Pos</th><th>Nat</th>
+                    <th class="num">Age</th><th class="num">Rating</th>
+                    <th class="num">Apps</th><th class="num">Gls</th>
+                    <th class="num">Value</th><th class="num">Wage</th><th></th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for p in players %}
+                <tr class="clickable {% if p.id in lineup_ids %}highlight{% endif %}"
+                    onclick="location.href='{{ url_for('player_detail', player_id=p.id) }}'">
+                    <td class="num">{{ p.squad_number }}</td>
+                    <td>
+                        {% if p.is_injured %}<span class="injured-icon" title="Injured">✚</span> {% endif %}
+                        <strong>{{ p.name }}</strong>
+                        {% if p.transfer_listed %}<span class="listed small">[listed]</span>{% endif %}
+                    </td>
+                    <td><span class="pos pos-{{ p.position }}">{{ p.position }}</span></td>
+                    <td class="small">{{ p.nationality }}</td>
+                    <td class="num">{{ p.age }}</td>
+                    <td class="num"><span class="rating {{ rating_class(p.overall_rating()) }}">
+                        {{ p.overall_rating() }}</span></td>
+                    <td class="num">{{ stats[p.id].appearances if p.id in stats else 0 }}</td>
+                    <td class="num">{{ stats[p.id].goals if p.id in stats else 0 }}</td>
+                    <td class="num">{{ p.value | money }}</td>
+                    <td class="num">{{ p.wage | money }}</td>
+                    <td onclick="event.stopPropagation();">
+                        {% if not p.transfer_listed %}
+                        <form method="post" action="{{ url_for('transfer_list', player_id=p.id) }}"
+                              style="display:inline;">
+                            <button class="btn btn-sm">List</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+<p class="muted small">Highlighted rows are in your current starting XI. Click a player for full details.</p>
+{% endblock %}

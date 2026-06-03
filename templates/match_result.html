@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Result{% endblock %}
+{% block content %}
+<div class="scoreboard">
+    <div class="team"><div class="tn">{{ match.home_club.name }}</div></div>
+    <div class="score">{{ match.home_score }} - {{ match.away_score }}
+        <div class="vs-min">Full Time</div></div>
+    <div class="team"><div class="tn">{{ match.away_club.name }}</div></div>
+</div>
+
+<div class="grid-2">
+    <div class="panel">
+        <div class="panel-header">Match Events</div>
+        <div class="panel-body" style="padding:0;">
+            <table>
+            {% for e in events %}
+                {% if e.event_type in ['goal','red_card','yellow_card'] %}
+                <tr>
+                    <td class="num muted" style="width:40px;">{{ e.minute }}'</td>
+                    <td style="width:30px;">
+                        {% if e.event_type == 'goal' %}⚽
+                        {% elif e.event_type == 'red_card' %}🟥
+                        {% elif e.event_type == 'yellow_card' %}🟨{% endif %}
+                    </td>
+                    <td>{{ e.player.name if e.player else '' }}
+                        <span class="small muted">({{ e.club.short_name if e.club else '' }})</span></td>
+                </tr>
+                {% endif %}
+            {% endfor %}
+            {% if not events %}<tr><td class="muted">No goals or cards.</td></tr>{% endif %}
+            </table>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">Other Results — {{ match.match_date }}</div>
+        <div class="panel-body" style="padding:0;">
+            <table>
+            {% for m in others %}
+                <tr class="clickable" onclick="location.href='{{ url_for('match_result', match_id=m.id) }}'">
+                    <td class="right">{{ m.home_club.short_name }}</td>
+                    <td class="center" style="font-weight:bold;width:60px;">
+                        {{ m.home_score }} - {{ m.away_score }}</td>
+                    <td>{{ m.away_club.short_name }}</td>
+                </tr>
+            {% endfor %}
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="panel-header">League Table</div>
+    <div class="panel-body" style="padding:0;">
+        <table>
+            <thead><tr><th>#</th><th>Club</th><th class="num">P</th><th class="num">W</th>
+                <th class="num">D</th><th class="num">L</th><th class="num">GF</th>
+                <th class="num">GA</th><th class="num">GD</th><th class="num">Pts</th></tr></thead>
+            <tbody>
+            {% for s in table %}
+                <tr class="{% if s.club_id == managed_club_id %}highlight{% endif %}">
+                    <td>{{ loop.index }}</td><td>{{ s.club.short_name }}</td>
+                    <td class="num">{{ s.played }}</td><td class="num">{{ s.won }}</td>
+                    <td class="num">{{ s.drawn }}</td><td class="num">{{ s.lost }}</td>
+                    <td class="num">{{ s.goals_for }}</td><td class="num">{{ s.goals_against }}</td>
+                    <td class="num">{{ s.goal_difference }}</td>
+                    <td class="num"><strong>{{ s.points }}</strong></td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="center mb">
+    <a href="{{ url_for('dashboard') }}" class="btn">Back to Office</a>
+    <a href="{{ url_for('next_match_preview') }}" class="btn btn-accent">Continue ▶</a>
+</div>
+{% endblock %}

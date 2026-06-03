@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Transfers{% endblock %}
+{% block nav_transfers %}active{% endblock %}
+{% block content %}
+<div class="panel">
+    <div class="panel-header">Transfer Market — Budget: {{ club.budget | money }}</div>
+    <div class="panel-body">
+        <form method="get" action="{{ url_for('transfers') }}" class="flex" style="flex-wrap:wrap;">
+            <div><label>Name</label>
+                <input type="text" name="q" value="{{ query }}" placeholder="Search player..."></div>
+            <div><label>Position</label>
+                <select name="position">
+                    {% for p in ['All','GK','RB','CB','LB','RM','CM','LM','AM','ST'] %}
+                    <option value="{{ p }}" {% if p == position %}selected{% endif %}>{{ p }}</option>
+                    {% endfor %}
+                </select></div>
+            <div><label>Max Value (£)</label>
+                <input type="number" name="max_value" value="{{ max_value }}" step="1000000"
+                       placeholder="Any"></div>
+            <div style="align-self:flex-end;"><button class="btn btn-accent">Search</button></div>
+        </form>
+    </div>
+</div>
+
+{% if results %}
+<div class="panel">
+    <div class="panel-header">{{ results | length }} players found</div>
+    <div class="panel-body" style="padding:0;">
+        <table>
+            <thead><tr><th>Name</th><th>Pos</th><th>Club</th><th>Nat</th>
+                <th class="num">Age</th><th class="num">Rat</th><th class="num">Value</th>
+                <th>Offer</th></tr></thead>
+            <tbody>
+            {% for p, value in results %}
+                <tr>
+                    <td class="clickable" onclick="location.href='{{ url_for('player_detail', player_id=p.id) }}'">
+                        <strong>{{ p.name }}</strong>
+                        {% if p.transfer_listed %}<span class="listed small">[listed]</span>{% endif %}</td>
+                    <td><span class="pos pos-{{ p.position }}">{{ p.position }}</span></td>
+                    <td class="small">{{ p.club.short_name if p.club else 'Free Agent' }}</td>
+                    <td class="small">{{ p.nationality }}</td>
+                    <td class="num">{{ p.age }}</td>
+                    <td class="num">{{ p.overall_rating() }}</td>
+                    <td class="num">{{ value | money }}</td>
+                    <td>
+                        <form method="post" action="{{ url_for('transfer_offer') }}" class="flex">
+                            <input type="hidden" name="player_id" value="{{ p.id }}">
+                            <input type="number" name="offer" value="{{ value }}" step="100000"
+                                   style="width:120px;">
+                            <button class="btn btn-sm btn-accent">Bid</button>
+                        </form>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<p class="muted center mt">Use the search above to find players to sign. Try filtering by
+position, or search a name like "Henry" or "Zidane".</p>
+{% endif %}
+{% endblock %}

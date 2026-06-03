@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+game.db
+*.sqlite
+*.sqlite3
+.venv/
+venv/
+.env
+/tmp/
+*.log
+.DS_Store

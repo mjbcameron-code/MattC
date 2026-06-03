@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Championship Manager — Start{% endblock %}
+{% block content %}
+<div class="splash">
+    <h1>Championship Manager</h1>
+    <p class="tagline">Season 2001/02 · Take charge of your club and chase glory</p>
+    <a href="{{ url_for('new_game_route') }}" class="btn btn-accent">Start New Game</a>
+    <div class="panel mt" style="text-align:left; margin-top:40px;">
+        <div class="panel-header">The Classic Experience</div>
+        <div class="panel-body">
+            <p>A tribute to the legendary Championship Manager 01/02. Manage a real
+            2001/02 squad through a full league season:</p>
+            <ul style="margin:12px 0 0 20px; line-height:1.9;">
+                <li>Real clubs and players with full attribute sets</li>
+                <li>Minute-by-minute match commentary engine</li>
+                <li>Tactics, formations and team selection</li>
+                <li>A living transfer market — buy, sell and bid</li>
+                <li>League tables, fixtures, top scorers and news</li>
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}

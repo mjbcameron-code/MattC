@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Match Preview{% endblock %}
+{% block content %}
+<div class="panel">
+    <div class="panel-header">{{ match.competition }} — {{ match.match_date }}</div>
+    <div class="panel-body">
+        <div class="scoreboard">
+            <div class="team">
+                <span class="club-badge" style="margin:0 auto 8px;background:{{ home.primary_color }};
+                      border-color:{{ home.secondary_color }}"></span>
+                <div class="tn">{{ home.name }}</div>
+                {% if home_table %}<div class="vs-min">{{ home_table.points }} pts · GD {{ home_table.goal_difference }}</div>{% endif %}
+            </div>
+            <div class="score" style="font-size:24px;">VS</div>
+            <div class="team">
+                <span class="club-badge" style="margin:0 auto 8px;background:{{ away.primary_color }};
+                      border-color:{{ away.secondary_color }}"></span>
+                <div class="tn">{{ away.name }}</div>
+                {% if away_table %}<div class="vs-min">{{ away_table.points }} pts · GD {{ away_table.goal_difference }}</div>{% endif %}
+            </div>
+        </div>
+        <div class="center mt">
+            <a href="{{ url_for('tactics') }}" class="btn">Adjust Tactics</a>
+            <a href="{{ url_for('play_match', match_id=match.id) }}" class="btn btn-accent"
+               style="font-size:16px;padding:12px 40px;">Kick Off ▶</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}{{ player.name }}{% endblock %}
+{% block nav_squad %}active{% endblock %}
+{% block content %}
+{% macro av(v) %}{% if v >= 15 %}av-high{% elif v >= 10 %}av-mid{% else %}av-low{% endif %}{% endmacro %}
+
+<div class="grid-2">
+    <div class="panel">
+        <div class="panel-header">{{ player.name }}</div>
+        <div class="panel-body">
+            <table>
+                <tr><td class="muted">Position</td>
+                    <td><span class="pos pos-{{ player.position }}">{{ player.position }}</span>
+                        <span class="small muted">{{ player.positions }}</span></td></tr>
+                <tr><td class="muted">Nationality</td><td>{{ player.nationality }}</td></tr>
+                <tr><td class="muted">Age</td><td>{{ player.age }}</td></tr>
+                <tr><td class="muted">Club</td>
+                    <td>{{ player.club.name if player.club else 'Free Agent' }}</td></tr>
+                <tr><td class="muted">Squad No.</td><td>{{ player.squad_number or '-' }}</td></tr>
+                <tr><td class="muted">Overall Rating</td>
+                    <td><span class="rating r-good">{{ player.overall_rating() }}</span></td></tr>
+                <tr><td class="muted">Value</td><td>{{ value | money }}</td></tr>
+                <tr><td class="muted">Wage</td><td>{{ player.wage | money }} p/w</td></tr>
+                <tr><td class="muted">Contract until</td><td>{{ player.contract_end }}</td></tr>
+                <tr><td class="muted">Morale</td><td>{{ player.morale }}%</td></tr>
+                <tr><td class="muted">Condition</td><td>{{ player.condition }}%</td></tr>
+                <tr><td class="muted">Status</td>
+                    <td>{% if player.is_injured %}<span class="injured-icon">Injured ({{ player.injury_weeks }}w)</span>
+                        {% else %}Fit{% endif %}</td></tr>
+            </table>
+
+            {% if stats %}
+            <div class="statbox mt">
+                <div class="stat-item"><div class="big">{{ stats.appearances }}</div><div class="lbl">Apps</div></div>
+                <div class="stat-item"><div class="big">{{ stats.goals }}</div><div class="lbl">Goals</div></div>
+                <div class="stat-item"><div class="big">{{ stats.assists }}</div><div class="lbl">Assists</div></div>
+            </div>
+            {% endif %}
+
+            <div class="mt flex">
+                {% if managed %}
+                    {% if not player.transfer_listed %}
+                    <form method="post" action="{{ url_for('transfer_list', player_id=player.id) }}">
+                        <button class="btn btn-sm">List for Transfer</button></form>
+                    {% endif %}
+                    <form method="post" action="{{ url_for('transfer_release', player_id=player.id) }}"
+                          onsubmit="return confirm('Release {{ player.name }} on a free?');">
+                        <button class="btn btn-sm btn-danger">Release</button></form>
+                {% else %}
+                    <form method="post" action="{{ url_for('transfer_offer') }}" class="flex">
+                        <input type="hidden" name="player_id" value="{{ player.id }}">
+                        <input type="number" name="offer" value="{{ value }}" step="100000"
+                               style="width:140px;">
+                        <button class="btn btn-accent btn-sm">Make Offer</button>
+                    </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">Attributes</div>
+        <div class="panel-body">
+            {% set a = player %}
+            {% if player.position == 'GK' %}
+            <h4 class="muted small mb">Goalkeeping</h4>
+            <div class="attr-grid mb">
+                <div class="attr-row"><span class="attr-name">Handling</span><span class="attr-val {{ av(a.handling) }}">{{ a.handling }}</span></div>
+                <div class="attr-row"><span class="attr-name">Reflexes</span><span class="attr-val {{ av(a.reflexes) }}">{{ a.reflexes }}</span></div>
+                <div class="attr-row"><span class="attr-name">One-on-ones</span><span class="attr-val {{ av(a.one_on_ones) }}">{{ a.one_on_ones }}</span></div>
+                <div class="attr-row"><span class="attr-name">Aerial</span><span class="attr-val {{ av(a.aerial) }}">{{ a.aerial }}</span></div>
+                <div class="attr-row"><span class="attr-name">Rushing Out</span><span class="attr-val {{ av(a.rushing_out) }}">{{ a.rushing_out }}</span></div>
+            </div>
+            {% endif %}
+
+            <h4 class="muted small mb">Technical</h4>
+            <div class="attr-grid mb">
+                {% for n, v in [('Crossing',a.crossing),('Dribbling',a.dribbling),('Finishing',a.finishing),('First Touch',a.first_touch),('Heading',a.heading),('Long Shots',a.long_shots),('Marking',a.marking),('Passing',a.passing),('Tackling',a.tackling),('Technique',a.technique)] %}
+                <div class="attr-row"><span class="attr-name">{{ n }}</span><span class="attr-val {{ av(v) }}">{{ v }}</span></div>
+                {% endfor %}
+            </div>
+
+            <h4 class="muted small mb">Mental</h4>
+            <div class="attr-grid mb">
+                {% for n, v in [('Aggression',a.aggression),('Anticipation',a.anticipation),('Bravery',a.bravery),('Composure',a.composure),('Concentration',a.concentration),('Creativity',a.creativity),('Decisions',a.decisions),('Determination',a.determination),('Flair',a.flair),('Off the Ball',a.off_the_ball),('Positioning',a.positioning),('Teamwork',a.teamwork),('Work Rate',a.work_rate)] %}
+                <div class="attr-row"><span class="attr-name">{{ n }}</span><span class="attr-val {{ av(v) }}">{{ v }}</span></div>
+                {% endfor %}
+            </div>
+
+            <h4 class="muted small mb">Physical</h4>
+            <div class="attr-grid">
+                {% for n, v in [('Acceleration',a.acceleration),('Pace',a.pace),('Stamina',a.stamina),('Strength',a.strength),('Agility',a.agility),('Jumping',a.jumping)] %}
+                <div class="attr-row"><span class="attr-name">{{ n }}</span><span class="attr-val {{ av(v) }}">{{ v }}</span></div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+<a href="{{ url_for('squad') }}" class="btn btn-sm">← Back to Squad</a>
+{% endblock %}
