@@ -46,6 +46,9 @@ class Player(db.Model):
     is_youth = db.Column(db.Boolean, default=False)
     condition = db.Column(db.Integer, default=100)    # 0-100
     transfer_listed = db.Column(db.Boolean, default=False)
+    agent_name = db.Column(db.String(100), default='')
+    agent_aggression = db.Column(db.Integer, default=5)   # 1-10; drives how hard they bargain
+    release_clause = db.Column(db.Integer, nullable=True)  # auto-accept if bid >= this amount
     # Physical
     acceleration = db.Column(db.Integer, default=10)
     pace = db.Column(db.Integer, default=10)
@@ -236,6 +239,39 @@ class Loan(db.Model):
     player = db.relationship('Player', foreign_keys=[player_id])
     parent_club = db.relationship('Club', foreign_keys=[parent_club_id])
     loan_club = db.relationship('Club', foreign_keys=[loan_club_id])
+
+
+class ContractNegotiation(db.Model):
+    """Tracks DoF ↔ agent contract talks for players at the managed club."""
+    __tablename__ = 'contract_negotiations'
+    id = db.Column(db.Integer, primary_key=True)
+    game_state_id = db.Column(db.Integer, db.ForeignKey('game_states.id'))
+    player_id = db.Column(db.Integer, db.ForeignKey('players.id'))
+    initiated_by = db.Column(db.String(10), default='dof')   # 'dof' | 'agent'
+    status = db.Column(db.String(20), default='active')       # active|accepted|rejected|expired
+    dof_wage_offer = db.Column(db.Integer, nullable=True)
+    dof_years_offer = db.Column(db.Integer, nullable=True)
+    agent_wage_demand = db.Column(db.Integer, nullable=True)
+    agent_years_demand = db.Column(db.Integer, nullable=True)
+    rounds = db.Column(db.Integer, default=0)
+    created_date = db.Column(db.String(20))
+    expires_date = db.Column(db.String(20))
+    player = db.relationship('Player', foreign_keys=[player_id])
+
+
+class TransferBid(db.Model):
+    """Pending transfer bids where the selling club has made a counter-offer."""
+    __tablename__ = 'transfer_bids'
+    id = db.Column(db.Integer, primary_key=True)
+    game_state_id = db.Column(db.Integer, db.ForeignKey('game_states.id'))
+    player_id = db.Column(db.Integer, db.ForeignKey('players.id'))
+    selling_club_id = db.Column(db.Integer, db.ForeignKey('clubs.id'), nullable=True)
+    bid_fee = db.Column(db.Integer, default=0)
+    counter_fee = db.Column(db.Integer, nullable=True)    # selling club's counter
+    status = db.Column(db.String(30), default='club_countered')  # club_countered|rejected
+    created_date = db.Column(db.String(20))
+    player = db.relationship('Player', foreign_keys=[player_id])
+    selling_club = db.relationship('Club', foreign_keys=[selling_club_id])
 
 
 class OwnerDemand(db.Model):

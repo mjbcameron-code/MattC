@@ -1,6 +1,6 @@
 import random
 from datetime import datetime, timedelta
-from .models import db, Player, Club, Transfer, NewsItem, Loan
+from .models import db, Player, Club, Transfer, NewsItem, Loan, TransferBid
 
 
 def is_window_open(date_str):
@@ -85,6 +85,7 @@ def search_players(query='', position='', min_ability=0, max_value=999999999,
 
 def make_offer(game_state, player_id, offer_amount):
     """Make a transfer bid for a player."""
+    import random as _random
     player = Player.query.get(player_id)
     if not player:
         return False, "Player not found."
@@ -96,54 +97,61 @@ def make_offer(game_state, player_id, offer_amount):
     fair_value = get_transfer_value(player)
     selling_club = player.club
 
-    # Check budget
     if offer_amount > managed_club.budget:
         return False, f"Insufficient funds. You have £{managed_club.budget:,} available."
 
-    # AI decision: accept if offer >= 85% of fair value (or always accept if transfer listed)
+    # --- Release clause: auto-accept ---
+    if player.release_clause and offer_amount >= player.release_clause:
+        return _complete_transfer(game_state, player, selling_club, offer_amount)
+
+    # --- Acceptance threshold ---
     threshold = 0.70 if player.transfer_listed else 0.88
     if selling_club and selling_club.reputation > managed_club.reputation + 20:
-        threshold = 0.95  # top clubs want full value
+        threshold = 0.95
 
     accepted = offer_amount >= fair_value * threshold
 
+    if accepted:
+        return _complete_transfer(game_state, player, selling_club, offer_amount)
+
+    # --- Counter-offer zone: 60–87% of fair value ---
+    low_ball = fair_value * 0.60
+    if selling_club and offer_amount >= low_ball:
+        counter = int(fair_value * threshold * _random.uniform(1.00, 1.05))
+        bid = TransferBid(
+            game_state_id=game_state.id,
+            player_id=player.id,
+            selling_club_id=selling_club.id,
+            bid_fee=offer_amount,
+            counter_fee=counter,
+            status='club_countered',
+            created_date=game_state.current_date,
+        )
+        db.session.add(bid)
+        db.session.commit()
+        return False, (
+            f"{selling_club.name} have rejected your bid but made a counter-offer "
+            f"of £{counter:,} for {player.name}. "
+            f"See Pending Bids on the Transfers page to respond."
+        )
+
+    # --- Flat rejection ---
     t = Transfer(
         player_id=player.id,
         from_club_id=selling_club.id if selling_club else None,
         to_club_id=managed_club.id,
         fee=offer_amount,
         transfer_date=game_state.current_date,
-        status='accepted' if accepted else 'rejected',
+        status='rejected',
     )
     db.session.add(t)
-
-    if accepted:
-        old_club = player.club
-        managed_club.budget -= offer_amount
-        if old_club:
-            old_club.budget += offer_amount
-        player.club_id = managed_club.id
-        player.transfer_listed = False
-
-        news = NewsItem(
-            game_state_id=game_state.id,
-            date=game_state.current_date,
-            headline=f"{player.name} joins {managed_club.name}!",
-            body=(f"{player.name} has completed a move to {managed_club.name} "
-                  f"for £{offer_amount:,}. The {player.age}-year-old "
-                  f"{player.nationality} international arrives from "
-                  f"{old_club.name if old_club else 'free agency'}."),
-            category='transfer',
-        )
-        db.session.add(news)
-        db.session.commit()
-        return True, f"{player.name} has signed for £{offer_amount:,}!"
-    else:
-        db.session.commit()
-        shortfall = int(fair_value * threshold) - offer_amount
-        return False, (f"Offer rejected! {selling_club.name if selling_club else 'Club'} want "
-                       f"around £{int(fair_value * threshold):,} for {player.name}. "
-                       f"Your bid was £{shortfall:,} short.")
+    db.session.commit()
+    shortfall = int(fair_value * threshold) - offer_amount
+    return False, (
+        f"Offer rejected! {selling_club.name if selling_club else 'Club'} want "
+        f"around £{int(fair_value * threshold):,} for {player.name}. "
+        f"Your bid was £{shortfall:,} short."
+    )
 
 
 def list_player_for_sale(game_state, player_id):
