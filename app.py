@@ -279,6 +279,17 @@ def renew_manager():
     return redirect(url_for('staff'))
 
 
+@app.route('/staff/suggest', methods=['POST'])
+@require_game
+def suggest_to_manager():
+    gs = get_game_state()
+    topic = request.form.get('topic', '')
+    value = request.form.get('value') or None
+    ok, msg = staff_mod.suggest_to_manager(gs, topic, value)
+    flash(msg, 'success' if ok else 'error')
+    return redirect(url_for('staff'))
+
+
 # ---------------------------------------------------------------------------
 # Routes: match / advance
 # ---------------------------------------------------------------------------

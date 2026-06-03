@@ -198,6 +198,89 @@ def generate_manager_request(game_state):
                  f"the board's targets this season.'", 'staff')
 
 
+def suggest_to_manager(game_state, topic, value=None):
+    """
+    The DoF makes a tactical suggestion to the head coach.
+
+    topic: 'formation' (value = formation string)
+         | 'style'     (value = attacking|defensive|balanced)
+         | 'youth'     (give youth a chance)
+         | 'praise'    (a morale-boosting word — never rejected)
+
+    Whether the manager agrees depends on his determination (stubbornness),
+    his current satisfaction with the DoF, and his own reputation. Pushing
+    suggestions he rejects erodes the relationship.
+    """
+    import random
+    mgr = game_state.managed_club.head_coach
+    if not mgr:
+        return False, "There is no head coach to talk to."
+
+    # Praise is always well received
+    if topic == 'praise':
+        update_manager_satisfaction(game_state, 'praise', 4)
+        db.session.commit()
+        add_news(game_state,
+                 f"You back {mgr.name} publicly",
+                 f"The Director of Football has expressed full confidence in "
+                 f"{mgr.name}. The head coach appreciates the support.", 'staff')
+        return True, f"{mgr.name} appreciates your backing."
+
+    # Already doing what was suggested?
+    if topic == 'formation' and value == mgr.preferred_formation:
+        return False, f"{mgr.name} already sets up in a {value}."
+    if topic == 'style' and value == mgr.preferred_style:
+        return False, f"{mgr.name} already plays a {value} style."
+
+    sat = mgr.satisfaction or 70
+    # Base willingness, modified by stubbornness, mood and ego
+    prob = 0.50
+    prob += 0.30 if sat >= 70 else (-0.20 if sat < 40 else 0.0)
+    prob -= (mgr.determination - 10) * 0.025          # stubborn coaches resist
+    prob -= max(0, (mgr.reputation - 70)) * 0.006      # big egos resist more
+    if topic == 'youth':
+        prob -= 0.10                                   # coaches trust experience
+    prob = max(0.10, min(0.90, prob))
+
+    accepted = random.random() < prob
+
+    if accepted:
+        if topic == 'formation':
+            mgr.preferred_formation = value
+            game_state.formation = value
+            from game.setup import auto_pick_lineup
+            auto_pick_lineup(game_state, value)
+            detail = f"switch to a {value}"
+        elif topic == 'style':
+            mgr.preferred_style = value
+            game_state.tactic = _style_to_tactic(value)
+            detail = f"adopt a more {value} approach"
+        else:  # youth
+            detail = "give the academy prospects more game time"
+        update_manager_satisfaction(game_state, 'suggestion_accepted', 2)
+        db.session.commit()
+        add_news(game_state,
+                 f"{mgr.name} agrees to {detail}",
+                 f"After talks with the Director of Football, {mgr.name} has "
+                 f"agreed to {detail}. The two appear to be working well "
+                 f"together.", 'staff')
+        return True, f"{mgr.name} agrees to {detail}."
+    else:
+        update_manager_satisfaction(game_state, 'suggestion_rejected', -3)
+        db.session.commit()
+        excuse = {
+            'formation': "I pick the system that suits my players.",
+            'style':     "We play the way I believe wins football matches.",
+            'youth':     "The kids aren't ready — results come first.",
+        }.get(topic, "I'll manage the team my way.")
+        add_news(game_state,
+                 f"{mgr.name} rejects your suggestion",
+                 f"{mgr.name} has pushed back on the Director of Football's "
+                 f"advice. '{excuse}' Repeatedly overruling the coach risks "
+                 f"the relationship.", 'staff')
+        return False, f"{mgr.name} declined: '{excuse}'"
+
+
 def _release_manager(manager):
     manager.club_id = None
     manager.satisfaction = 50
