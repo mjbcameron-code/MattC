@@ -12,7 +12,8 @@ from flask import (Flask, render_template, request, redirect, url_for,
 
 from game.models import (db, League, Club, Player, Season, Match, MatchEvent,
                          Standing, PlayerStat, Transfer, NewsItem, GameState,
-                         Lineup, Suspension, Loan, Manager, OwnerDemand)
+                         Lineup, Suspension, Loan, Manager, OwnerDemand,
+                         ContractNegotiation, TransferBid)
 from game.setup import (seed_database, new_game, auto_pick_lineup,
                        database_is_seeded)
 from game import season as season_mod
@@ -23,6 +24,7 @@ from game import injuries as injuries_mod
 from game import europe as europe_mod
 from game import staff as staff_mod
 from game import demands as demands_mod
+from game import contracts as contracts_mod
 from game.morale import apply_match_morale
 from game.board import update_board_after_match
 
@@ -291,6 +293,80 @@ def suggest_to_manager():
 
 
 # ---------------------------------------------------------------------------
+# Routes: contracts
+# ---------------------------------------------------------------------------
+
+@app.route('/contracts')
+@require_game
+def contracts():
+    gs = get_game_state()
+    expiring = contracts_mod.get_expiring_players(gs)
+    negotiations = contracts_mod.get_active_negotiations(gs)
+    season_year = gs.current_season.year if gs.current_season else 2001
+    return render_template('contracts.html', gs=gs,
+                           club=gs.managed_club,
+                           expiring=expiring,
+                           negotiations=negotiations,
+                           season_year=season_year)
+
+
+@app.route('/contracts/offer/<int:player_id>', methods=['POST'])
+@require_game
+def contracts_offer(player_id):
+    gs = get_game_state()
+    try:
+        wage = int(request.form.get('wage', 0))
+        years = int(request.form.get('years', 2))
+    except ValueError:
+        flash('Invalid offer values.', 'error')
+        return redirect(url_for('contracts'))
+    ok, msg = contracts_mod.dof_offer_renewal(gs, player_id, wage, years)
+    flash(msg, 'success' if ok else 'error')
+    return redirect(url_for('contracts'))
+
+
+@app.route('/contracts/accept/<int:neg_id>', methods=['POST'])
+@require_game
+def contracts_accept(neg_id):
+    gs = get_game_state()
+    ok, msg = contracts_mod.dof_accept_agent_terms(gs, neg_id)
+    flash(msg, 'success' if ok else 'error')
+    return redirect(url_for('contracts'))
+
+
+@app.route('/contracts/decline/<int:neg_id>', methods=['POST'])
+@require_game
+def contracts_decline(neg_id):
+    gs = get_game_state()
+    ok, msg = contracts_mod.dof_walk_away(gs, neg_id)
+    flash(msg, 'success' if ok else 'error')
+    return redirect(url_for('contracts'))
+
+
+@app.route('/transfers/accept-counter/<int:bid_id>', methods=['POST'])
+@require_game
+def transfer_accept_counter(bid_id):
+    gs = get_game_state()
+    bid = TransferBid.query.get(bid_id)
+    player = Player.query.get(bid.player_id) if bid else None
+    ok, msg = transfers_mod.accept_counter_bid(gs, bid_id)
+    flash(msg, 'success' if ok else 'error')
+    if ok and player:
+        demands_mod.on_player_signed(gs, player.position)
+        auto_pick_lineup(gs)
+    return redirect(url_for('transfers'))
+
+
+@app.route('/transfers/decline-counter/<int:bid_id>', methods=['POST'])
+@require_game
+def transfer_decline_counter(bid_id):
+    gs = get_game_state()
+    ok, msg = transfers_mod.decline_counter_bid(gs, bid_id)
+    flash(msg, 'success' if ok else 'error')
+    return redirect(url_for('transfers'))
+
+
+# ---------------------------------------------------------------------------
 # Routes: match / advance
 # ---------------------------------------------------------------------------
 
@@ -450,6 +526,10 @@ def play_match(match_id):
     demands_mod.check_active_demands(gs)
     demands_mod.maybe_generate_demand(gs)
 
+    # Contract negotiations: agent approaches and expiry checks
+    contracts_mod.maybe_agent_approach(gs)
+    contracts_mod.expire_old_negotiations(gs)
+
     # Check if manager wants to resign after this result
     manager_resigned = staff_mod.check_manager_status(gs)
 
@@ -574,12 +654,13 @@ def transfers():
 
     window_open, window_msg, _ = transfers_mod.is_window_open(gs.current_date)
     wage_bill = transfers_mod.get_wage_bill(club)
+    pending_bids = transfers_mod.get_pending_bids(gs)
 
     return render_template('transfers.html', club=club, results=results,
                            query=query, position=position, max_value=max_value,
                            tab=tab, active_loans=active_loans,
                            window_open=window_open, window_msg=window_msg,
-                           wage_bill=wage_bill)
+                           wage_bill=wage_bill, pending_bids=pending_bids)
 
 
 @app.route('/transfers/offer', methods=['POST'])
@@ -831,9 +912,31 @@ def init_db_command():
     print('Database initialised and seeded.')
 
 
+def _migrate_db():
+    """Add any missing columns to existing tables (safe to run repeatedly)."""
+    try:
+        conn = db.engine.raw_connection()
+        cursor = conn.cursor()
+        cursor.execute('PRAGMA table_info(players)')
+        cols = [row[1] for row in cursor.fetchall()]
+        migrations = [
+            ('agent_name', "ALTER TABLE players ADD COLUMN agent_name VARCHAR(100) DEFAULT ''"),
+            ('agent_aggression', 'ALTER TABLE players ADD COLUMN agent_aggression INTEGER DEFAULT 5'),
+            ('release_clause', 'ALTER TABLE players ADD COLUMN release_clause INTEGER'),
+        ]
+        for col, sql in migrations:
+            if col not in cols:
+                cursor.execute(sql)
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
 def bootstrap():
     with app.app_context():
         db.create_all()
+        _migrate_db()
         if not database_is_seeded():
             try:
                 seed_database()

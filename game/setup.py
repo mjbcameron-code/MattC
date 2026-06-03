@@ -18,12 +18,32 @@ def database_is_seeded():
     return Club.query.first() is not None
 
 
+def backfill_player_agents():
+    """Assign agent names and aggression to any players that don't have one yet."""
+    import random
+    from game.contracts import gen_agent_name, gen_agent_aggression
+    players = Player.query.filter(
+        (Player.agent_name == None) | (Player.agent_name == '')
+    ).all()
+    for p in players:
+        p.agent_name = gen_agent_name(p.id * 31 + 7)
+        p.agent_aggression = gen_agent_aggression(p.current_ability)
+        # 20% chance of release clause at 150-200% of estimated value
+        if random.random() < 0.20:
+            base_value = p.current_ability * 100000
+            p.release_clause = int(base_value * random.uniform(1.5, 2.0))
+    db.session.commit()
+
+
 def seed_database():
     """Populate leagues, clubs, players and managers. Runs once on empty DB."""
     if database_is_seeded():
         # Backfill managers if this is an existing DB that pre-dates the Manager model
         if Manager.query.count() == 0:
             seed_managers()
+        # Backfill agent data for existing saves
+        if Player.query.filter((Player.agent_name == None) | (Player.agent_name == '')).first():
+            backfill_player_agents()
         return
 
     from data.squads import CLUBS as PL_CLUBS
@@ -96,6 +116,7 @@ def seed_database():
 
     db.session.commit()
     seed_managers()
+    backfill_player_agents()
 
 
 def seed_managers():
@@ -142,6 +163,7 @@ def new_game(manager_name, club_id):
     GameState.query.delete()
     Season.query.delete()
     from .models import Match, Standing, PlayerStat, Lineup, NewsItem, MatchEvent, Loan, OwnerDemand
+    from .models import ContractNegotiation, TransferBid
     MatchEvent.query.delete()
     Match.query.delete()
     Standing.query.delete()
@@ -150,6 +172,8 @@ def new_game(manager_name, club_id):
     NewsItem.query.delete()
     Loan.query.delete()
     OwnerDemand.query.delete()
+    ContractNegotiation.query.delete()
+    TransferBid.query.delete()
     db.session.commit()
 
     # Reset manager pool for a clean career start

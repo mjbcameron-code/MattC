@@ -154,6 +154,88 @@ def make_offer(game_state, player_id, offer_amount):
     )
 
 
+def accept_counter_bid(game_state, bid_id):
+    """Accept a selling club's counter-offer."""
+    bid = TransferBid.query.get(bid_id)
+    if not bid or bid.game_state_id != game_state.id or bid.status != 'club_countered':
+        return False, "Bid not found or no longer active."
+    player = Player.query.get(bid.player_id)
+    if not player:
+        return False, "Player not found."
+    if bid.counter_fee > game_state.managed_club.budget:
+        return False, f"Insufficient funds. You need £{bid.counter_fee:,}."
+    bid.status = 'rejected'   # close the pending bid
+    db.session.flush()
+    selling_club = bid.selling_club
+    return _complete_transfer(game_state, player, selling_club, bid.counter_fee)
+
+
+def decline_counter_bid(game_state, bid_id):
+    """Walk away from a counter-offer."""
+    bid = TransferBid.query.get(bid_id)
+    if not bid or bid.game_state_id != game_state.id:
+        return False, "Bid not found."
+    player = Player.query.get(bid.player_id)
+    bid.status = 'rejected'
+    db.session.commit()
+    name = player.name if player else 'Player'
+    return True, f"You have walked away from talks over {name}."
+
+
+def get_pending_bids(game_state):
+    """Counter-offers from selling clubs awaiting a DoF response."""
+    return TransferBid.query.filter_by(
+        game_state_id=game_state.id, status='club_countered').all()
+
+
+def _complete_transfer(game_state, player, selling_club, fee):
+    """Finalise a transfer deal including agent fee."""
+    managed_club = game_state.managed_club
+    # Agent fee: 5% of fee, max £500K; free agent = no fee
+    agent_fee = min(500000, int(fee * 0.05)) if selling_club else 0
+    total_cost = fee + agent_fee
+    if total_cost > managed_club.budget:
+        agent_fee = max(0, managed_club.budget - fee)
+        total_cost = fee + agent_fee
+
+    managed_club.budget -= total_cost
+    if selling_club:
+        selling_club.budget += fee
+
+    old_club = player.club
+    player.club_id = managed_club.id
+    player.transfer_listed = False
+    player.release_clause = None   # cleared on move
+
+    t = Transfer(
+        player_id=player.id,
+        from_club_id=selling_club.id if selling_club else None,
+        to_club_id=managed_club.id,
+        fee=fee,
+        transfer_date=game_state.current_date,
+        status='accepted',
+    )
+    db.session.add(t)
+
+    agent_note = (f" Agent fee of £{agent_fee:,} included."
+                  if agent_fee else " No agent fee — free transfer.")
+    news = NewsItem(
+        game_state_id=game_state.id,
+        date=game_state.current_date,
+        headline=f"{player.name} joins {managed_club.name}!",
+        body=(f"{player.name} has completed a move to {managed_club.name} "
+              f"for £{fee:,}. The {player.age}-year-old "
+              f"{player.nationality} international arrives from "
+              f"{old_club.name if old_club else 'free agency'}."
+              + agent_note),
+        category='transfer',
+    )
+    db.session.add(news)
+    db.session.commit()
+    return True, f"{player.name} has signed for £{fee:,}!" + (
+        f" (Agent fee: £{agent_fee:,})" if agent_fee else "")
+
+
 def list_player_for_sale(game_state, player_id):
     """List one of your players for transfer."""
     player = Player.query.get(player_id)

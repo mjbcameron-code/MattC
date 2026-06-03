@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block title %}Contracts — {{ club.name }}{% endblock %}
+{% block nav_contracts %}active{% endblock %}
+{% block content %}
+
+{% macro fmt_money(v) %}
+    {%- if v >= 1000000 %}£{{ "%.1f"|format(v/1000000) }}M
+    {%- elif v >= 1000 %}£{{ (v//1000)|int }}K
+    {%- else %}£{{ v }}{% endif -%}
+{% endmacro %}
+
+{# Active negotiations #}
+{% if negotiations %}
+<div class="panel">
+    <div class="panel-header" style="background:#1a2e4a;color:#7ab3e0;">
+        Active Negotiations ({{ negotiations|length }})
+    </div>
+    <div class="panel-body" style="padding:0;">
+        {% for neg in negotiations %}
+        {% set p = neg.player %}
+        <div style="padding:14px;border-bottom:1px solid var(--cm-border);">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
+                <div>
+                    <strong style="font-size:1.05em;">{{ p.name }}</strong>
+                    <span class="pos pos-{{ p.position }}" style="margin-left:6px;">{{ p.position }}</span>
+                    <span class="small muted" style="margin-left:6px;">Age {{ p.age }} · Contract ends {{ p.contract_end }}</span>
+                    <div class="small muted" style="margin-top:2px;">
+                        Agent: <em>{{ p.agent_name or 'Unknown' }}</em>
+                        · Aggression: {{ p.agent_aggression or 5 }}/10
+                        {% if p.release_clause %} · Release clause: {{ fmt_money(p.release_clause) }}{% endif %}
+                    </div>
+                </div>
+                <div class="small muted" style="text-align:right;">
+                    Round {{ neg.rounds }}/3 · Expires {{ neg.expires_date }}<br>
+                    Initiated by: {{ neg.initiated_by }}
+                </div>
+            </div>
+
+            <div class="grid-2" style="margin-top:10px;gap:12px;">
+                <div style="background:var(--cm-panel-dark,#0d1520);padding:10px;border-radius:4px;">
+                    <div class="small muted" style="margin-bottom:4px;">AGENT'S DEMAND</div>
+                    {% if neg.agent_wage_demand %}
+                    <div><strong>{{ fmt_money(neg.agent_wage_demand) }}</strong>/wk · {{ neg.agent_years_demand }} years</div>
+                    {% else %}
+                    <div class="muted">Waiting for your offer</div>
+                    {% endif %}
+                </div>
+                <div style="background:var(--cm-panel-dark,#0d1520);padding:10px;border-radius:4px;">
+                    <div class="small muted" style="margin-bottom:4px;">YOUR LATEST OFFER</div>
+                    {% if neg.dof_wage_offer %}
+                    <div><strong>{{ fmt_money(neg.dof_wage_offer) }}</strong>/wk · {{ neg.dof_years_offer }} years</div>
+                    {% else %}
+                    <div class="muted">No offer made yet</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="flex mt" style="gap:8px;flex-wrap:wrap;align-items:flex-end;">
+                {# New / improved offer form #}
+                <form method="post" action="{{ url_for('contracts_offer', player_id=p.id) }}" class="flex" style="gap:6px;align-items:flex-end;">
+                    <div>
+                        <label class="small muted">Wage (£/wk)</label>
+                        <input type="number" name="wage" step="500"
+                               value="{{ neg.dof_wage_offer or (p.wage | int) }}"
+                               style="width:100px;">
+                    </div>
+                    <div>
+                        <label class="small muted">Years</label>
+                        <select name="years" style="width:70px;">
+                            {% for y in [1,2,3,4,5] %}
+                            <option value="{{ y }}" {% if y == (neg.dof_years_offer or 2) %}selected{% endif %}>{{ y }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <button class="btn btn-sm btn-accent">
+                        {% if neg.dof_wage_offer %}Improve Offer{% else %}Make Offer{% endif %}
+                    </button>
+                </form>
+
+                {% if neg.agent_wage_demand %}
+                <form method="post" action="{{ url_for('contracts_accept', neg_id=neg.id) }}">
+                    <button class="btn btn-sm" style="background:var(--cm-green-dark,#2a6a2a);">
+                        Accept Agent Terms ({{ fmt_money(neg.agent_wage_demand) }}/wk)
+                    </button>
+                </form>
+                {% endif %}
+
+                <form method="post" action="{{ url_for('contracts_decline', neg_id=neg.id) }}"
+                      onsubmit="return confirm('Walk away from talks with {{ p.name }}\'s agent?');">
+                    <button class="btn btn-sm btn-danger">Walk Away</button>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{# Expiring contracts #}
+<div class="panel">
+    <div class="panel-header">Contracts Expiring (≤ 2 years)</div>
+    {% if expiring %}
+    <div class="panel-body" style="padding:0;">
+        <table>
+            <thead><tr>
+                <th>Player</th><th>Pos</th><th class="num">Age</th>
+                <th class="num">Rating</th><th class="num">Wage/wk</th>
+                <th class="num">Ends</th><th>Agent</th>
+                <th>Offer Renewal</th>
+            </tr></thead>
+            <tbody>
+            {% for p in expiring %}
+            {% set has_active = negotiations | selectattr('player_id', 'eq', p.id) | list | length > 0 %}
+            <tr class="{% if has_active %}highlight{% endif %}">
+                <td class="clickable" onclick="location.href='{{ url_for('player_detail', player_id=p.id) }}'">
+                    <strong>{{ p.name }}</strong>
+                    {% if has_active %}<span class="small" style="color:var(--cm-accent);"> [in talks]</span>{% endif %}
+                    {% if p.release_clause %}<span class="small muted"> [RC: {{ fmt_money(p.release_clause) }}]</span>{% endif %}
+                </td>
+                <td><span class="pos pos-{{ p.position }}">{{ p.position }}</span></td>
+                <td class="num">{{ p.age }}</td>
+                <td class="num">{{ p.overall_rating() }}</td>
+                <td class="num">{{ fmt_money(p.wage) }}</td>
+                <td class="num" style="color:{% if p.contract_end == season_year %}var(--cm-red){% elif p.contract_end <= season_year + 1 %}var(--cm-yellow){% else %}var(--cm-text){% endif %};">
+                    {{ p.contract_end }}</td>
+                <td class="small muted">{{ p.agent_name or '—' }}</td>
+                <td>
+                    {% if not has_active %}
+                    <form method="post" action="{{ url_for('contracts_offer', player_id=p.id) }}" class="flex" style="gap:4px;align-items:flex-end;">
+                        <input type="number" name="wage" step="500"
+                               value="{{ (p.wage * 1.1) | int }}"
+                               style="width:90px;" title="Wage £/wk">
+                        <select name="years" style="width:60px;">
+                            {% for y in [2,3,4] %}
+                            <option value="{{ y }}" {% if y == 3 %}selected{% endif %}>{{ y }}yr</option>
+                            {% endfor %}
+                        </select>
+                        <button class="btn btn-sm btn-accent">Offer</button>
+                    </form>
+                    {% else %}
+                    <span class="small muted">Negotiating</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="panel-body muted center">
+        No contracts expiring in the next two years. Good squad security.
+    </div>
+    {% endif %}
+</div>
+
+<p class="small muted">
+    Agents negotiate on behalf of their players. Aggressive agents drive harder bargains.
+    Players in the final year of their contract can negotiate with other clubs for free.
+    Release clauses allow rival clubs to trigger an automatic transfer — protect your best players.
+</p>
+{% endblock %}
