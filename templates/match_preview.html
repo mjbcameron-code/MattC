@@ -48,10 +48,21 @@
         </div>
         {% endif %}
 
+        {% set hc = game_state.managed_club.head_coach %}
+        {% if hc %}
+        <div style="text-align:center;padding:8px 0 2px;font-size:13px;color:var(--cm-text-dim);">
+            {{ hc.name }} sets up in <strong style="color:var(--cm-text);">{{ hc.preferred_formation }}</strong>
+            with a <strong style="color:var(--cm-text);text-transform:capitalize;">{{ hc.preferred_style }}</strong> approach
+        </div>
+        {% else %}
+        <div style="text-align:center;padding:8px 0 2px;font-size:13px;color:var(--cm-red);">
+            No head coach — results will be impacted
+        </div>
+        {% endif %}
         <div class="center mt">
-            <a href="{{ url_for('tactics') }}" class="btn">Adjust Tactics</a>
             <a href="{{ url_for('play_match', match_id=match.id) }}" class="btn btn-accent"
                style="font-size:16px;padding:12px 40px;">Kick Off ▶</a>
+            <a href="{{ url_for('tactics') }}" class="btn" style="margin-left:8px;">View Lineup</a>
         </div>
     </div>
 </div>

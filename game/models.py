@@ -238,6 +238,27 @@ class Loan(db.Model):
     loan_club = db.relationship('Club', foreign_keys=[loan_club_id])
 
 
+class Manager(db.Model):
+    """NPC head coach hired and managed by the Director of Football."""
+    __tablename__ = 'managers'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    nationality = db.Column(db.String(50), default='English')
+    age = db.Column(db.Integer, default=45)
+    reputation = db.Column(db.Integer, default=50)        # 0-100
+    tactical_ability = db.Column(db.Integer, default=10)  # 1-20
+    man_management = db.Column(db.Integer, default=10)    # 1-20
+    determination = db.Column(db.Integer, default=10)      # 1-20
+    preferred_formation = db.Column(db.String(20), default='4-4-2')
+    preferred_style = db.Column(db.String(20), default='balanced')
+    wage = db.Column(db.Integer, default=5000)
+    contract_end = db.Column(db.Integer, default=2004)
+    club_id = db.Column(db.Integer, db.ForeignKey('clubs.id'), nullable=True)
+    satisfaction = db.Column(db.Integer, default=70)      # 0-100 relationship with DoF
+    club = db.relationship('Club', foreign_keys=[club_id],
+                           backref=db.backref('head_coach', uselist=False))
+
+
 class GameState(db.Model):
     __tablename__ = 'game_states'
     id = db.Column(db.Integer, primary_key=True)

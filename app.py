@@ -12,7 +12,7 @@ from flask import (Flask, render_template, request, redirect, url_for,
 
 from game.models import (db, League, Club, Player, Season, Match, MatchEvent,
                          Standing, PlayerStat, Transfer, NewsItem, GameState,
-                         Lineup, Suspension, Loan)
+                         Lineup, Suspension, Loan, Manager)
 from game.setup import (seed_database, new_game, auto_pick_lineup,
                        database_is_seeded)
 from game import season as season_mod
@@ -21,6 +21,7 @@ from game import transfers as transfers_mod
 from game import cups as cups_mod
 from game import injuries as injuries_mod
 from game import europe as europe_mod
+from game import staff as staff_mod
 from game.morale import apply_match_morale
 from game.board import update_board_after_match
 
@@ -220,57 +221,60 @@ def player_detail(player_id):
 # Routes: tactics / lineup
 # ---------------------------------------------------------------------------
 
-@app.route('/tactics', methods=['GET', 'POST'])
+@app.route('/tactics')
 @require_game
 def tactics():
+    """Read-only view of the head coach's planned lineup."""
     gs = get_game_state()
     club = gs.managed_club
-
-    if request.method == 'POST':
-        formation = request.form.get('formation', gs.formation)
-        tactic = request.form.get('tactic', gs.tactic)
-        gs.formation = formation
-        gs.tactic = tactic
-        db.session.commit()
-        if request.form.get('auto') == '1':
-            auto_pick_lineup(gs, formation)
-        flash('Tactics updated.', 'success')
-        return redirect(url_for('tactics'))
-
-    lineups = Lineup.query.filter_by(game_state_id=gs.id).order_by(
-        Lineup.slot).all()
+    lineups = Lineup.query.filter_by(game_state_id=gs.id).order_by(Lineup.slot).all()
     starters = [l for l in lineups if l.slot <= 11]
     subs = [l for l in lineups if l.slot > 11]
-    all_players = Player.query.filter_by(club_id=club.id).all()
+    manager = club.head_coach
+    formation = (manager.preferred_formation if manager else gs.formation)
     return render_template('tactics.html', club=club, starters=starters,
-                           subs=subs, all_players=all_players,
-                           formation=gs.formation, tactic=gs.tactic)
+                           subs=subs, manager=manager, formation=formation)
 
 
-@app.route('/tactics/set-player', methods=['POST'])
+# ---------------------------------------------------------------------------
+# Routes: staff management
+# ---------------------------------------------------------------------------
+
+@app.route('/staff')
 @require_game
-def set_lineup_player():
-    """Swap a player into a lineup slot (AJAX)."""
+def staff():
     gs = get_game_state()
-    slot = int(request.form.get('slot'))
-    player_id = int(request.form.get('player_id'))
+    return render_template('staff.html',
+                           head_coach=gs.managed_club.head_coach,
+                           available=staff_mod.get_available_managers(),
+                           club=gs.managed_club, gs=gs)
 
-    # If player already in another slot, swap
-    existing = Lineup.query.filter_by(
-        game_state_id=gs.id, player_id=player_id).first()
-    target = Lineup.query.filter_by(game_state_id=gs.id, slot=slot).first()
 
-    if existing and target and existing.id != target.id:
-        existing.player_id, target.player_id = target.player_id, player_id
-    elif target:
-        target.player_id = player_id
-    else:
-        player = Player.query.get(player_id)
-        lu = Lineup(game_state_id=gs.id, player_id=player_id, slot=slot,
-                    position_played=player.position)
-        db.session.add(lu)
-    db.session.commit()
-    return jsonify({'ok': True})
+@app.route('/staff/hire/<int:manager_id>', methods=['POST'])
+@require_game
+def hire_manager(manager_id):
+    gs = get_game_state()
+    ok, msg = staff_mod.hire_manager(gs, manager_id)
+    flash(msg, 'success' if ok else 'error')
+    return redirect(url_for('staff'))
+
+
+@app.route('/staff/fire', methods=['POST'])
+@require_game
+def fire_manager():
+    gs = get_game_state()
+    ok, msg = staff_mod.fire_manager(gs)
+    flash(msg, 'success' if ok else 'error')
+    return redirect(url_for('staff'))
+
+
+@app.route('/staff/renew', methods=['POST'])
+@require_game
+def renew_manager():
+    gs = get_game_state()
+    ok, msg = staff_mod.renew_manager_contract(gs)
+    flash(msg, 'success' if ok else 'error')
+    return redirect(url_for('staff'))
 
 
 # ---------------------------------------------------------------------------
@@ -382,6 +386,17 @@ def play_match(match_id):
     apply_match_morale(gs, our_score, their_score,
                        starter_ids, sub_ids, scorer_ids, assister_ids)
 
+    # ----- Manager satisfaction -----
+    if our_score > their_score:
+        staff_mod.update_manager_satisfaction(gs, 'win')
+    elif our_score == their_score:
+        staff_mod.update_manager_satisfaction(gs, 'draw')
+    else:
+        staff_mod.update_manager_satisfaction(gs, 'loss')
+
+    # Refresh lineup for next match using manager's preferred formation
+    auto_pick_lineup(gs)
+
     # ----- Board confidence (league matches only) -----
     sacked = False
     if is_league:
@@ -418,12 +433,18 @@ def play_match(match_id):
 
     transfers_mod.ai_transfers(gs, gs.current_date)
 
+    # Check if manager wants to resign after this result
+    manager_resigned = staff_mod.check_manager_status(gs)
+
     if sacked:
         gs.is_sacked = True
     db.session.commit()
 
     if sacked:
         return redirect(url_for('sacked'))
+
+    if manager_resigned:
+        flash(f'The head coach has resigned. Appoint a new manager from the Staff page.', 'error')
 
     return redirect(url_for('match_view', match_id=match.id))
 

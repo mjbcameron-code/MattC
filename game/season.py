@@ -274,6 +274,32 @@ def process_new_season(game_state):
         else:
             p.contract_end = new_year + _rnd.randint(2, 4)  # auto-renewed
 
+    # ---- Manager aging and contract management ----
+    from .models import Manager
+    for mgr in Manager.query.all():
+        mgr.age += 1
+
+    club_mgr = game_state.managed_club.head_coach
+    if club_mgr:
+        if club_mgr.contract_end <= new_year:
+            if random.random() < 0.4:
+                add_news(game_state, f"{club_mgr.name} leaves on contract expiry",
+                         f"{club_mgr.name}'s contract has expired and he has elected "
+                         f"not to renew. The club must find a new head coach.", 'staff')
+                from game.staff import _release_manager
+                _release_manager(club_mgr)
+                club_mgr = None
+            else:
+                club_mgr.contract_end = new_year + 2
+                club_mgr.wage = int(club_mgr.wage * 1.05)
+
+        if club_mgr:
+            current_conf = game_state.board_confidence or 50
+            if current_conf < 30:
+                club_mgr.satisfaction = max(0, (club_mgr.satisfaction or 70) - 8)
+            drift = 65 - (club_mgr.satisfaction or 70)
+            club_mgr.satisfaction = max(0, min(100, (club_mgr.satisfaction or 70) + drift // 4))
+
     # ---- Clear old suspensions ----
     Suspension.query.delete()
 
@@ -365,4 +391,9 @@ def process_new_season(game_state):
 
     from game.setup import auto_pick_lineup
     auto_pick_lineup(game_state)
+
+    from game.staff import check_manager_status, generate_manager_request
+    check_manager_status(game_state)
+    generate_manager_request(game_state)
+
     return position, relegated

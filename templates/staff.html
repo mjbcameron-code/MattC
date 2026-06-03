@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block title %}Staff — {{ club.name }}{% endblock %}
+{% block nav_staff %}active{% endblock %}
+{% block content %}
+
+{% macro av(v, top=20) %}{% if v >= top * 0.75 %}av-high{% elif v >= top * 0.5 %}av-mid{% else %}av-low{% endif %}{% endmacro %}
+
+<div class="grid-2">
+
+    {# Current head coach #}
+    <div class="panel">
+        <div class="panel-header">Head Coach</div>
+        <div class="panel-body">
+        {% if head_coach %}
+            <table>
+                <tr><td class="muted">Name</td>
+                    <td><strong style="font-size:1.1em;">{{ head_coach.name }}</strong></td></tr>
+                <tr><td class="muted">Nationality</td><td>{{ head_coach.nationality }}</td></tr>
+                <tr><td class="muted">Age</td><td>{{ head_coach.age }}</td></tr>
+                <tr><td class="muted">Reputation</td>
+                    <td><span class="attr-val {{ av(head_coach.reputation, 100) }}">
+                        {{ head_coach.reputation }}/100</span></td></tr>
+                <tr><td class="muted">Contract Until</td>
+                    <td>{{ head_coach.contract_end }}</td></tr>
+                <tr><td class="muted">Wage</td>
+                    <td>{{ head_coach.wage | money }} p/w</td></tr>
+            </table>
+
+            <h4 class="muted small mb mt">Coaching Attributes</h4>
+            <div class="attr-grid mb">
+                <div class="attr-row"><span class="attr-name">Tactical Ability</span>
+                    <span class="attr-val {{ av(head_coach.tactical_ability) }}">
+                        {{ head_coach.tactical_ability }}</span></div>
+                <div class="attr-row"><span class="attr-name">Man Management</span>
+                    <span class="attr-val {{ av(head_coach.man_management) }}">
+                        {{ head_coach.man_management }}</span></div>
+                <div class="attr-row"><span class="attr-name">Determination</span>
+                    <span class="attr-val {{ av(head_coach.determination) }}">
+                        {{ head_coach.determination }}</span></div>
+            </div>
+
+            <h4 class="muted small mb">Preferred System</h4>
+            <table class="mb">
+                <tr><td class="muted">Formation</td>
+                    <td><strong>{{ head_coach.preferred_formation }}</strong></td></tr>
+                <tr><td class="muted">Playing Style</td>
+                    <td style="text-transform:capitalize;">{{ head_coach.preferred_style }}</td></tr>
+            </table>
+
+            <p class="small muted">Satisfaction with Director of Football</p>
+            {% set sat = head_coach.satisfaction or 70 %}
+            {% set sc = '#2e8b50' if sat >= 60 else ('#e8b13a' if sat >= 35 else '#d54a4a') %}
+            <div class="conf-bar-bg" style="margin:4px 0 4px;">
+                <div class="conf-bar-fill" style="width:{{ sat }}%;background:{{ sc }};"></div>
+            </div>
+            <p style="font-weight:bold;color:{{ sc }};">{{ sat }}%
+                <span class="small muted" style="font-weight:normal;">
+                    — {% if sat >= 70 %}Happy{% elif sat >= 50 %}Content{% elif sat >= 30 %}Unsettled{% else %}Wants out{% endif %}
+                </span>
+            </p>
+
+            <div class="mt flex" style="gap:8px;flex-wrap:wrap;">
+                <form method="post" action="{{ url_for('renew_manager') }}">
+                    <button class="btn btn-sm btn-accent">Extend Contract (+2 yrs, +10% wage)</button>
+                </form>
+                <form method="post" action="{{ url_for('fire_manager') }}"
+                      onsubmit="return confirm('Sack {{ head_coach.name }}? Compensation will be deducted from the budget.');">
+                    <button class="btn btn-sm btn-danger">Sack Manager</button>
+                </form>
+            </div>
+
+        {% else %}
+            <div style="padding:24px;text-align:center;">
+                <p style="color:var(--cm-red);font-size:1.1em;font-weight:bold;margin-bottom:10px;">
+                    No Head Coach Appointed</p>
+                <p class="small muted">The club has no manager. Results will be significantly worse
+                and the board are watching closely. Appoint a head coach from the list below.</p>
+            </div>
+        {% endif %}
+        </div>
+    </div>
+
+    {# DoF profile and board status #}
+    <div class="panel">
+        <div class="panel-header">Director of Football — {{ gs.manager_name }}</div>
+        <div class="panel-body">
+            <table>
+                <tr><td class="muted">Club</td><td>{{ club.name }}</td></tr>
+                <tr><td class="muted">Season Target</td>
+                    <td style="color:var(--cm-accent);font-weight:bold;">{{ gs.board_target }}</td></tr>
+            </table>
+
+            <p class="small muted mt">Board Confidence in DoF</p>
+            {% set conf = gs.board_confidence or 50 %}
+            {% set cc = '#2e8b50' if conf >= 50 else ('#e8b13a' if conf >= 30 else '#d54a4a') %}
+            <div class="conf-bar-bg" style="margin:4px 0 6px;">
+                <div class="conf-bar-fill" style="width:{{ conf }}%;background:{{ cc }};"></div>
+            </div>
+            <p style="font-size:1.2em;font-weight:bold;color:{{ cc }};">{{ conf }}%</p>
+
+            <div style="margin-top:1.2em;padding-top:1em;border-top:1px solid var(--cm-border);">
+                <p class="small muted" style="margin-bottom:6px;">Key DoF responsibilities:</p>
+                <ul class="small muted" style="padding-left:1.2em;line-height:1.8;">
+                    <li>Hire and support the head coach</li>
+                    <li>Recruit players within budget</li>
+                    <li>Negotiate contracts and sell surplus players</li>
+                    <li>Manage the wage structure</li>
+                    <li>Hit the board's season targets</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Available managers #}
+{% if available %}
+<div class="panel">
+    <div class="panel-header">Available Managers ({{ available | length }})</div>
+    <div class="panel-body" style="padding:0;">
+        <table>
+            <thead><tr>
+                <th>Name</th><th>Nat</th>
+                <th class="num">Age</th><th class="num">Rep</th>
+                <th class="num">Tactical</th><th class="num">Man Mgmt</th>
+                <th>System</th><th>Style</th>
+                <th class="num">Wage pw</th><th></th>
+            </tr></thead>
+            <tbody>
+            {% for m in available %}
+            <tr>
+                <td><strong>{{ m.name }}</strong></td>
+                <td class="small">{{ m.nationality }}</td>
+                <td class="num">{{ m.age }}</td>
+                <td class="num">{{ m.reputation }}</td>
+                <td class="num"><span class="attr-val {{ av(m.tactical_ability) }}">{{ m.tactical_ability }}</span></td>
+                <td class="num"><span class="attr-val {{ av(m.man_management) }}">{{ m.man_management }}</span></td>
+                <td class="small">{{ m.preferred_formation }}</td>
+                <td class="small" style="text-transform:capitalize;">{{ m.preferred_style }}</td>
+                <td class="num">{{ m.wage | money }}</td>
+                <td>
+                    <form method="post" action="{{ url_for('hire_manager', manager_id=m.id) }}"
+                          onsubmit="return confirm('Appoint {{ m.name }} on {{ m.wage | money }} per week?');">
+                        <button class="btn btn-sm btn-accent">Appoint</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="panel">
+    <div class="panel-header">Available Managers</div>
+    <div class="panel-body muted center">
+        No managers currently available. Other clubs may release their manager,
+        or check back after the season ends.
+    </div>
+</div>
+{% endif %}
+{% endblock %}

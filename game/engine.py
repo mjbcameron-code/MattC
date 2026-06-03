@@ -235,6 +235,31 @@ def simulate_match(home_club, away_club, season, match_obj, game_state=None):
             a_att *= mult
             a_def *= mult
 
+        # Manager tactical ability modifier (or penalty when no manager)
+        mgr = getattr(game_state.managed_club, 'head_coach', None)
+        if mgr:
+            ta = mgr.tactical_ability
+            ta_mult = 0.88 if ta <= 6 else (1.08 if ta >= 14 else (1.15 if ta >= 18 else 1.00))
+            style = mgr.preferred_style or 'balanced'
+        else:
+            ta_mult = 0.82  # no manager — leaderless penalty
+            style = 'balanced'
+
+        if home_club.id == mc_id:
+            h_att *= ta_mult
+            h_def *= ta_mult
+            if style == 'attacking':
+                h_att *= 1.06; h_def *= 0.96
+            elif style == 'defensive':
+                h_att *= 0.96; h_def *= 1.06
+        elif away_club.id == mc_id:
+            a_att *= ta_mult
+            a_def *= ta_mult
+            if style == 'attacking':
+                a_att *= 1.06; a_def *= 0.96
+            elif style == 'defensive':
+                a_att *= 0.96; a_def *= 1.06
+
     HOME_ADVANTAGE = 8  # raw boost to home attack
 
     h_att_eff = h_att + HOME_ADVANTAGE

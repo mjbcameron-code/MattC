@@ -104,6 +104,34 @@
     </div>
 
     <div>
+        {% set hc = game_state.managed_club.head_coach %}
+        <div class="panel">
+            <div class="panel-header">Head Coach</div>
+            <div class="panel-body">
+            {% if hc %}
+                <p style="font-weight:bold;font-size:1.05em;">{{ hc.name }}</p>
+                <p class="small muted">{{ hc.preferred_formation }} ·
+                    <span style="text-transform:capitalize;">{{ hc.preferred_style }}</span></p>
+                {% set sat = hc.satisfaction or 70 %}
+                {% set sc = '#2e8b50' if sat >= 60 else ('#e8b13a' if sat >= 35 else '#d54a4a') %}
+                <p class="small muted" style="margin-top:6px;">Satisfaction</p>
+                <div class="conf-bar-bg" style="margin:4px 0 4px;">
+                    <div class="conf-bar-fill" style="width:{{ sat }}%;background:{{ sc }};"></div>
+                </div>
+                <p style="font-weight:bold;color:{{ sc }};">{{ sat }}%
+                    <span class="muted" style="font-size:0.8em;font-weight:normal;">
+                        {% if sat >= 70 %}Happy{% elif sat >= 50 %}Content{% elif sat >= 30 %}Unsettled{% else %}Unhappy{% endif %}
+                    </span>
+                </p>
+            {% else %}
+                <p style="color:var(--cm-red);font-weight:bold;">No Head Coach</p>
+                <p class="small muted">Appoint a manager urgently.</p>
+            {% endif %}
+                <a href="{{ url_for('staff') }}" class="btn btn-sm btn-block" style="margin-top:6px;">
+                    Staff Room</a>
+            </div>
+        </div>
+
         <div class="panel">
             <div class="panel-header">Board Room</div>
             <div class="panel-body">

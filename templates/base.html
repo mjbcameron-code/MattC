@@ -14,12 +14,29 @@
               border-color:{{ game_state.managed_club.secondary_color }}"></span>
         <div>
             <div class="club-name">{{ game_state.managed_club.name }}</div>
-            <div class="manager-name">{{ game_state.manager_name }}</div>
+            <div class="manager-name">DoF: {{ game_state.manager_name }}</div>
+            {% set hc = game_state.managed_club.head_coach %}
+            {% if hc %}
+            <div class="manager-name" style="font-size:11px;color:var(--cm-text-dim);">
+                Coach: {{ hc.name }}</div>
+            {% else %}
+            <div class="manager-name" style="font-size:11px;color:var(--cm-red);">
+                No Head Coach</div>
+            {% endif %}
         </div>
     </div>
     <div class="topbar-right">
         <div class="date-pill">{{ game_state.current_date }}</div>
         <div class="budget-pill">{{ game_state.managed_club.budget | money }}</div>
+        {% set hc = game_state.managed_club.head_coach %}
+        {% if hc %}
+        {% set sat = hc.satisfaction or 70 %}
+        {% set sc = 'var(--cm-green-light)' if sat >= 60 else ('var(--cm-yellow)' if sat >= 35 else 'var(--cm-red)') %}
+        <div class="conf-pill" title="Manager satisfaction: {{ sat }}%"
+             style="color:{{ sc }};">Mgr: {{ sat }}%</div>
+        {% else %}
+        <div class="conf-pill" style="color:var(--cm-red);">No Coach</div>
+        {% endif %}
         <div class="conf-pill" title="Board confidence: {{ game_state.board_confidence }}%">
             Board: {{ game_state.board_confidence or 50 }}%
         </div>
@@ -29,10 +46,11 @@
 <nav class="mainnav">
     <a href="{{ url_for('dashboard') }}" class="{% block nav_dashboard %}{% endblock %}">Office</a>
     <a href="{{ url_for('squad') }}" class="{% block nav_squad %}{% endblock %}">Squad</a>
-    <a href="{{ url_for('tactics') }}" class="{% block nav_tactics %}{% endblock %}">Tactics</a>
+    <a href="{{ url_for('staff') }}" class="{% block nav_staff %}{% endblock %}">Staff</a>
+    <a href="{{ url_for('transfers') }}" class="{% block nav_transfers %}{% endblock %}">Transfers</a>
+    <a href="{{ url_for('tactics') }}" class="{% block nav_tactics %}{% endblock %}">Lineup</a>
     <a href="{{ url_for('fixtures') }}" class="{% block nav_fixtures %}{% endblock %}">Fixtures</a>
     <a href="{{ url_for('league_table') }}" class="{% block nav_table %}{% endblock %}">Table</a>
-    <a href="{{ url_for('transfers') }}" class="{% block nav_transfers %}{% endblock %}">Transfers</a>
     <a href="{{ url_for('cup_fixtures') }}" class="{% block nav_cups %}{% endblock %}">Cups</a>
     <a href="{{ url_for('europe') }}" class="{% block nav_europe %}{% endblock %}">Europe</a>
     <a href="{{ url_for('board') }}" class="{% block nav_board %}{% endblock %}">Board</a>
