@@ -4,8 +4,22 @@
 {% block content %}
 <div class="panel">
     <div class="panel-header">Transfer Market — Budget: {{ club.budget | money }}</div>
-    <div class="panel-body">
+    <div class="panel-body" style="padding:0;">
+        <div style="display:flex;border-bottom:1px solid var(--cm-border);">
+            <a href="{{ url_for('transfers', tab='buy') }}"
+               style="padding:10px 20px;font-weight:600;text-decoration:none;
+                      {% if tab == 'buy' %}color:#fff;border-bottom:3px solid var(--cm-accent);{% else %}color:var(--cm-text-dim);{% endif %}">
+                Buy</a>
+            <a href="{{ url_for('transfers', tab='loan') }}"
+               style="padding:10px 20px;font-weight:600;text-decoration:none;
+                      {% if tab == 'loan' %}color:#fff;border-bottom:3px solid var(--cm-accent);{% else %}color:var(--cm-text-dim);{% endif %}">
+                Loan In</a>
+        </div>
+
+        {% if tab == 'buy' %}
+        <div style="padding:12px;">
         <form method="get" action="{{ url_for('transfers') }}" class="flex" style="flex-wrap:wrap;">
+            <input type="hidden" name="tab" value="buy">
             <div><label>Name</label>
                 <input type="text" name="q" value="{{ query }}" placeholder="Search player..."></div>
             <div><label>Position</label>
@@ -19,6 +33,24 @@
                        placeholder="Any"></div>
             <div style="align-self:flex-end;"><button class="btn btn-accent">Search</button></div>
         </form>
+        </div>
+
+        {% elif tab == 'loan' %}
+        <div style="padding:12px;">
+        <form method="get" action="{{ url_for('transfers') }}" class="flex" style="flex-wrap:wrap;">
+            <input type="hidden" name="tab" value="loan">
+            <div><label>Name</label>
+                <input type="text" name="q" value="{{ query }}" placeholder="Search player..."></div>
+            <div><label>Position</label>
+                <select name="position">
+                    {% for p in ['All','GK','RB','CB','LB','RM','CM','LM','AM','ST'] %}
+                    <option value="{{ p }}" {% if p == position %}selected{% endif %}>{{ p }}</option>
+                    {% endfor %}
+                </select></div>
+            <div style="align-self:flex-end;"><button class="btn btn-accent">Search</button></div>
+        </form>
+        </div>
+        {% endif %}
     </div>
 </div>
 
@@ -29,7 +61,7 @@
         <table>
             <thead><tr><th>Name</th><th>Pos</th><th>Club</th><th>Nat</th>
                 <th class="num">Age</th><th class="num">Rat</th><th class="num">Value</th>
-                <th>Offer</th></tr></thead>
+                <th>Action</th></tr></thead>
             <tbody>
             {% for p, value in results %}
                 <tr>
@@ -43,12 +75,18 @@
                     <td class="num">{{ p.overall_rating() }}</td>
                     <td class="num">{{ value | money }}</td>
                     <td>
+                        {% if tab == 'loan' %}
+                        <form method="post" action="{{ url_for('transfer_loan', player_id=p.id) }}">
+                            <button class="btn btn-sm" style="background:var(--cm-blue);">Request Loan</button>
+                        </form>
+                        {% else %}
                         <form method="post" action="{{ url_for('transfer_offer') }}" class="flex">
                             <input type="hidden" name="player_id" value="{{ p.id }}">
                             <input type="number" name="offer" value="{{ value }}" step="100000"
                                    style="width:120px;">
                             <button class="btn btn-sm btn-accent">Bid</button>
                         </form>
+                        {% endif %}
                     </td>
                 </tr>
             {% endfor %}
@@ -57,7 +95,40 @@
     </div>
 </div>
 {% else %}
-<p class="muted center mt">Use the search above to find players to sign. Try filtering by
-position, or search a name like "Henry" or "Zidane".</p>
+<p class="muted center mt">
+    {% if tab == 'loan' %}
+    Search for players to bring in on a season-long loan. Younger players at big clubs are
+    often available. Loan requests are not guaranteed to be accepted.
+    {% else %}
+    Use the search above to find players to sign. Try filtering by position or search a
+    player name.
+    {% endif %}
+</p>
+{% endif %}
+
+{% if active_loans %}
+<div class="panel">
+    <div class="panel-header">Current Loan Players ({{ active_loans | length }})</div>
+    <div class="panel-body" style="padding:0;">
+        <table>
+            <thead><tr><th>Player</th><th>Pos</th><th>Parent Club</th>
+                <th class="num">Age</th><th class="num">Rating</th>
+                <th class="small">Joined</th></tr></thead>
+            <tbody>
+            {% for ln in active_loans %}
+                <tr class="clickable" onclick="location.href='{{ url_for('player_detail', player_id=ln.player_id) }}'">
+                    <td>{{ ln.player.name }}</td>
+                    <td><span class="pos pos-{{ ln.player.position }}">{{ ln.player.position }}</span></td>
+                    <td class="small">{{ ln.parent_club.name if ln.parent_club else 'Free Agent' }}</td>
+                    <td class="num">{{ ln.player.age }}</td>
+                    <td class="num">{{ ln.player.overall_rating() }}</td>
+                    <td class="small muted">{{ ln.start_date }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        <div class="panel-body muted small">Loan players return to their parent clubs at season end.</div>
+    </div>
+</div>
 {% endif %}
 {% endblock %}

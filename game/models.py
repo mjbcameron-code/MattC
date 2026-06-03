@@ -223,6 +223,21 @@ class Suspension(db.Model):
     player = db.relationship('Player', foreign_keys=[player_id])
 
 
+class Loan(db.Model):
+    """Tracks season-long loan deals (in both directions)."""
+    __tablename__ = 'loans'
+    id = db.Column(db.Integer, primary_key=True)
+    player_id = db.Column(db.Integer, db.ForeignKey('players.id'))
+    parent_club_id = db.Column(db.Integer, db.ForeignKey('clubs.id'), nullable=True)
+    loan_club_id = db.Column(db.Integer, db.ForeignKey('clubs.id'))
+    season_id = db.Column(db.Integer, db.ForeignKey('seasons.id'))
+    start_date = db.Column(db.String(20))
+    active = db.Column(db.Boolean, default=True)
+    player = db.relationship('Player', foreign_keys=[player_id])
+    parent_club = db.relationship('Club', foreign_keys=[parent_club_id])
+    loan_club = db.relationship('Club', foreign_keys=[loan_club_id])
+
+
 class GameState(db.Model):
     __tablename__ = 'game_states'
     id = db.Column(db.Integer, primary_key=True)

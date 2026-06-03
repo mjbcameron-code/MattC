@@ -12,7 +12,7 @@ from flask import (Flask, render_template, request, redirect, url_for,
 
 from game.models import (db, League, Club, Player, Season, Match, MatchEvent,
                          Standing, PlayerStat, Transfer, NewsItem, GameState,
-                         Lineup, Suspension)
+                         Lineup, Suspension, Loan)
 from game.setup import (seed_database, new_game, auto_pick_lineup,
                        database_is_seeded)
 from game import season as season_mod
@@ -138,10 +138,9 @@ def abandon():
 def dashboard():
     gs = get_game_state()
     club = gs.managed_club
-    next_match = season_mod.get_next_match(gs)
+    next_match = get_next_any_match(gs)
     recent = season_mod.get_recent_results(gs)
     table = season_mod.get_league_table(gs.current_season_id, club.league_id)
-    # find our position
     position = next((i + 1 for i, s in enumerate(table)
                      if s.club_id == club.id), None)
     news = NewsItem.query.filter_by(game_state_id=gs.id).order_by(
@@ -149,11 +148,24 @@ def dashboard():
     squad_size = Player.query.filter_by(club_id=club.id).count()
     injured = Player.query.filter_by(club_id=club.id, is_injured=True).count()
 
+    # Squad morale summary
+    squad = Player.query.filter_by(club_id=club.id).all()
+    avg_morale = round(sum(p.morale or 70 for p in squad) / max(1, len(squad)))
+
+    # Next European fixture
+    next_euro = None
+    all_euro = europe_mod.get_euro_matches_for_club(club.id, gs.current_season_id)
+    for m in sorted(all_euro, key=lambda x: x.match_date):
+        if not m.played:
+            next_euro = m
+            break
+
     return render_template('dashboard.html',
                            club=club, next_match=next_match, recent=recent,
                            table=table[:8], position=position, news=news,
                            squad_size=squad_size, injured=injured,
-                           total_teams=len(table))
+                           total_teams=len(table), avg_morale=avg_morale,
+                           next_euro=next_euro)
 
 
 # ---------------------------------------------------------------------------
@@ -166,7 +178,6 @@ def squad():
     gs = get_game_state()
     club = gs.managed_club
     players = Player.query.filter_by(club_id=club.id).all()
-    # order by position then ability
     pos_order = {'GK': 0, 'RB': 1, 'CB': 2, 'LB': 3, 'RM': 4, 'CM': 5,
                  'LM': 6, 'AM': 7, 'ST': 8}
     players.sort(key=lambda p: (pos_order.get(p.position, 9),
@@ -181,9 +192,13 @@ def squad():
     suspensions = {s.player_id: s.matches_remaining
                    for s in Suspension.query.filter(
                        Suspension.matches_remaining > 0).all()}
+    # Loan badges: players currently on loan to us
+    loan_ids = {ln.player_id for ln in Loan.query.filter_by(
+        loan_club_id=club.id, season_id=gs.current_season_id,
+        active=True).all()}
     return render_template('squad.html', club=club, players=players,
                            lineup_ids=lineup_ids, stats=stats,
-                           suspensions=suspensions)
+                           suspensions=suspensions, loan_ids=loan_ids)
 
 
 @app.route('/player/<int:player_id>')
@@ -194,8 +209,11 @@ def player_detail(player_id):
     stats = PlayerStat.query.filter_by(
         player_id=player.id, season_id=gs.current_season_id).first()
     value = transfers_mod.get_transfer_value(player)
+    on_loan = transfers_mod.is_on_loan_to(
+        player.id, gs.managed_club_id, gs.current_season_id)
     return render_template('player.html', player=player, stats=stats,
-                           value=value, managed=player.club_id == gs.managed_club_id)
+                           value=value, managed=player.club_id == gs.managed_club_id,
+                           on_loan=on_loan)
 
 
 # ---------------------------------------------------------------------------
@@ -277,9 +295,12 @@ def next_match_preview():
         gs.current_season_id, home.league_id) if s.club_id == home.id), None)
     away_table = next((s for s in season_mod.get_league_table(
         gs.current_season_id, away.league_id) if s.club_id == away.id), None)
+    home_form = season_mod.get_club_form(home.id, gs.current_season_id, 5)
+    away_form = season_mod.get_club_form(away.id, gs.current_season_id, 5)
     return render_template('match_preview.html', match=match, home=home,
                            away=away, home_table=home_table,
-                           away_table=away_table)
+                           away_table=away_table,
+                           home_form=home_form, away_form=away_form)
 
 
 @app.route('/match/play/<int:match_id>')
@@ -488,6 +509,7 @@ def fixtures():
 def transfers():
     gs = get_game_state()
     club = gs.managed_club
+    tab = request.args.get('tab', 'buy')
     query = request.args.get('q', '')
     position = request.args.get('position', 'All')
     max_value = request.args.get('max_value', '')
@@ -500,8 +522,14 @@ def transfers():
             exclude_club_id=club.id)
         results = [(p, transfers_mod.get_transfer_value(p)) for p in results]
 
+    # Active loans at this club
+    active_loans = Loan.query.filter_by(
+        loan_club_id=club.id, season_id=gs.current_season_id,
+        active=True).all()
+
     return render_template('transfers.html', club=club, results=results,
-                           query=query, position=position, max_value=max_value)
+                           query=query, position=position, max_value=max_value,
+                           tab=tab, active_loans=active_loans)
 
 
 @app.route('/transfers/offer', methods=['POST'])
@@ -534,6 +562,26 @@ def transfer_release(player_id):
     flash(msg, 'success' if ok else 'error')
     auto_pick_lineup(gs)
     return redirect(url_for('squad'))
+
+
+@app.route('/transfers/loan/<int:player_id>', methods=['POST'])
+@require_game
+def transfer_loan(player_id):
+    gs = get_game_state()
+    ok, msg = transfers_mod.loan_player(gs, player_id)
+    flash(msg, 'success' if ok else 'error')
+    if ok:
+        auto_pick_lineup(gs)
+    return redirect(request.referrer or url_for('transfers'))
+
+
+@app.route('/contract/offer/<int:player_id>', methods=['POST'])
+@require_game
+def contract_offer(player_id):
+    gs = get_game_state()
+    ok, msg = transfers_mod.offer_contract(gs, player_id)
+    flash(msg, 'success' if ok else 'error')
+    return redirect(url_for('player_detail', player_id=player_id))
 
 
 # ---------------------------------------------------------------------------

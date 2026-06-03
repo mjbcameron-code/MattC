@@ -4,14 +4,16 @@
 {% block content %}
 
 <div class="statbox mb">
-    <div class="stat-item"><div class="big">{{ position or '-' }}</div>
+    <div class="stat-item"><div class="big">{{ position or '-' }}<span class="small muted">/{{ total_teams }}</span></div>
         <div class="lbl">League Position</div></div>
     <div class="stat-item"><div class="big">{{ squad_size }}</div>
         <div class="lbl">Squad Size</div></div>
     <div class="stat-item"><div class="big">{{ club.budget | money }}</div>
         <div class="lbl">Transfer Budget</div></div>
-    <div class="stat-item"><div class="big">{{ club.reputation }}</div>
-        <div class="lbl">Reputation</div></div>
+    <div class="stat-item">
+        <div class="big" style="color:{% if avg_morale >= 75 %}var(--cm-green-light){% elif avg_morale >= 50 %}var(--cm-text){% else %}var(--cm-red){% endif %}">
+            {{ avg_morale }}</div>
+        <div class="lbl">Avg Morale</div></div>
     <div class="stat-item"><div class="big">{{ injured }}</div>
         <div class="lbl">Injured</div></div>
 </div>
@@ -97,6 +99,69 @@
                 {% endfor %}
                 <div style="padding:8px;"><a href="{{ url_for('news') }}"
                    class="btn btn-sm btn-block">All News</a></div>
+            </div>
+        </div>
+    </div>
+
+    <div>
+        <div class="panel">
+            <div class="panel-header">Board Room</div>
+            <div class="panel-body">
+                {% set conf = game_state.board_confidence or 50 %}
+                {% set conf_color = '#2e8b50' if conf >= 50 else ('#e8b13a' if conf >= 30 else '#d54a4a') %}
+                <p class="small muted">Season target</p>
+                <p style="font-weight:bold;color:var(--cm-accent);margin-bottom:0.8em;">
+                    {{ game_state.board_target or 'Finish Mid-Table' }}</p>
+                <p class="small muted">Board confidence</p>
+                <div class="conf-bar-bg" style="margin:4px 0 6px;">
+                    <div class="conf-bar-fill" style="width:{{ conf }}%;background:{{ conf_color }};"></div>
+                </div>
+                <p style="font-size:1.4em;font-weight:bold;color:{{ conf_color }};">{{ conf }}%</p>
+                <a href="{{ url_for('board') }}" class="btn btn-sm btn-block" style="margin-top:0.6em;">
+                    Board Room</a>
+            </div>
+        </div>
+
+        {% if next_euro %}
+        <div class="panel">
+            <div class="panel-header" style="background:#1a3a6e;">European Football</div>
+            <div class="panel-body">
+                <p class="small muted">{{ next_euro.competition }}</p>
+                <div class="scoreboard" style="padding:10px;margin:6px 0;">
+                    <div class="team"><div class="tn" style="font-size:12px;">{{ next_euro.home_club.short_name }}</div></div>
+                    <div style="text-align:center;">
+                        <div class="vs-min">{{ next_euro.match_date }}</div>
+                        <div style="font-weight:bold;color:#fff;">v</div>
+                    </div>
+                    <div class="team"><div class="tn" style="font-size:12px;">{{ next_euro.away_club.short_name }}</div></div>
+                </div>
+                <a href="{{ url_for('europe') }}" class="btn btn-sm btn-block">View Campaign</a>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="panel">
+            <div class="panel-header">Contracts Expiring</div>
+            <div class="panel-body" style="padding:0;">
+                {% set expiring = [] %}
+                {% for p in game_state.managed_club.players %}
+                    {% if p.contract_end <= game_state.current_season.year + 2 %}
+                        {% if expiring.append(p) %}{% endif %}
+                    {% endif %}
+                {% endfor %}
+                {% if expiring %}
+                <table>
+                {% for p in expiring[:5] %}
+                    <tr class="clickable" onclick="location.href='{{ url_for('player_detail', player_id=p.id) }}'">
+                        <td><span class="pos pos-{{ p.position }}">{{ p.position }}</span></td>
+                        <td>{{ p.name }}</td>
+                        <td class="num muted">{{ p.contract_end }}</td>
+                    </tr>
+                {% endfor %}
+                </table>
+                {% else %}
+                <div class="panel-body muted small">No contracts expiring soon.</div>
+                {% endif %}
             </div>
         </div>
     </div>

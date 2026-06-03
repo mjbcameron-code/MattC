@@ -107,13 +107,14 @@ def new_game(manager_name, club_id):
     # Wipe any existing game state / season-specific data for a clean start
     GameState.query.delete()
     Season.query.delete()
-    from .models import Match, Standing, PlayerStat, Lineup, NewsItem, MatchEvent
+    from .models import Match, Standing, PlayerStat, Lineup, NewsItem, MatchEvent, Loan
     MatchEvent.query.delete()
     Match.query.delete()
     Standing.query.delete()
     PlayerStat.query.delete()
     Lineup.query.delete()
     NewsItem.query.delete()
+    Loan.query.delete()
     db.session.commit()
 
     season = Season(year=2001, name='2001/02')

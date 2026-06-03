@@ -181,6 +181,15 @@ def get_league_table(season_id, league_id):
         -s.points, -(s.goals_for - s.goals_against), -s.goals_for))
 
 
+def get_club_form(club_id, season_id, limit=5):
+    """Last N results for any club across all competitions."""
+    return Match.query.filter(
+        Match.season_id == season_id,
+        Match.played == True,
+        (Match.home_club_id == club_id) | (Match.away_club_id == club_id)
+    ).order_by(Match.match_date.desc()).limit(limit).all()
+
+
 def get_recent_results(game_state, limit=5):
     """Get recent results for managed club."""
     return Match.query.filter(
@@ -230,6 +239,10 @@ def process_new_season(game_state):
     position = next((i + 1 for i, s in enumerate(table)
                      if s.club_id == mc.id), len(table))
     relegated = [s.club_id for s in table[-3:]] if len(table) >= 20 else []
+
+    # Return any loan players before resetting the squad
+    from game.transfers import return_loans
+    return_loans(game_state)
 
     # Capture league tables for European qualification before overwriting
     from .models import League as LeagueModel

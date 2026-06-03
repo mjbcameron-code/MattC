@@ -32,6 +32,7 @@
                         <strong>{{ p.name }}</strong>
                         {% if p.transfer_listed %}<span class="listed small">[listed]</span>{% endif %}
                         {% if p.is_youth %}<span class="small" style="color:var(--cm-green-light);" title="Academy graduate">[Y]</span>{% endif %}
+                        {% if p.id in loan_ids %}<span class="small" style="color:var(--cm-blue);" title="On loan">[L]</span>{% endif %}
                     </td>
                     <td><span class="pos pos-{{ p.position }}">{{ p.position }}</span></td>
                     <td class="small">{{ p.nationality }}</td>
@@ -61,5 +62,5 @@
         </table>
     </div>
 </div>
-<p class="muted small">Highlighted = starting XI. ✚ = injured (weeks remaining). 🟨 = suspended (matches remaining). [Y] = youth academy graduate.</p>
+<p class="muted small">Highlighted = starting XI. ✚ = injured. 🟨 = suspended. [Y] = youth academy. [L] = on loan.</p>
 {% endblock %}

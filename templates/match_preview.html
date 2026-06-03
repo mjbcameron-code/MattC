@@ -9,16 +9,45 @@
                 <span class="club-badge" style="margin:0 auto 8px;background:{{ home.primary_color }};
                       border-color:{{ home.secondary_color }}"></span>
                 <div class="tn">{{ home.name }}</div>
-                {% if home_table %}<div class="vs-min">{{ home_table.points }} pts · GD {{ home_table.goal_difference }}</div>{% endif %}
+                {% if home_table %}
+                <div class="vs-min">{{ home_table.points }}pts · {{ home_table.played }}P · GD {{ home_table.goal_difference }}</div>
+                {% endif %}
             </div>
             <div class="score" style="font-size:24px;">VS</div>
             <div class="team">
                 <span class="club-badge" style="margin:0 auto 8px;background:{{ away.primary_color }};
                       border-color:{{ away.secondary_color }}"></span>
                 <div class="tn">{{ away.name }}</div>
-                {% if away_table %}<div class="vs-min">{{ away_table.points }} pts · GD {{ away_table.goal_difference }}</div>{% endif %}
+                {% if away_table %}
+                <div class="vs-min">{{ away_table.points }}pts · {{ away_table.played }}P · GD {{ away_table.goal_difference }}</div>
+                {% endif %}
             </div>
         </div>
+
+        {# Form guide #}
+        {% if home_form or away_form %}
+        <div class="grid-2" style="margin-top:1em;">
+            {% macro form_pills(club_id, results) %}
+            <div style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap;">
+                {% for m in results|reverse %}
+                    {% set our = m.home_score if m.home_club_id == club_id else m.away_score %}
+                    {% set opp = m.away_score if m.home_club_id == club_id else m.home_score %}
+                    {% set letter = 'W' if our > opp else ('D' if our == opp else 'L') %}
+                    <span class="fp fp-{{ letter }}" title="{{ m.competition }}: {{ m.home_score }}-{{ m.away_score }}">{{ letter }}</span>
+                {% endfor %}
+            </div>
+            {% endmacro %}
+            <div style="text-align:center;">
+                <p class="small muted" style="margin-bottom:4px;">{{ home.short_name }} recent form</p>
+                {{ form_pills(home.id, home_form) }}
+            </div>
+            <div style="text-align:center;">
+                <p class="small muted" style="margin-bottom:4px;">{{ away.short_name }} recent form</p>
+                {{ form_pills(away.id, away_form) }}
+            </div>
+        </div>
+        {% endif %}
+
         <div class="center mt">
             <a href="{{ url_for('tactics') }}" class="btn">Adjust Tactics</a>
             <a href="{{ url_for('play_match', match_id=match.id) }}" class="btn btn-accent"

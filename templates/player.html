@@ -26,7 +26,9 @@
                 <tr><td class="muted">Condition</td><td>{{ player.condition }}%</td></tr>
                 <tr><td class="muted">Status</td>
                     <td>{% if player.is_injured %}<span class="injured-icon">Injured ({{ player.injury_weeks }}w)</span>
-                        {% else %}Fit{% endif %}</td></tr>
+                        {% else %}Fit{% endif %}
+                        {% if player.is_youth %} · <span style="color:var(--cm-green-light);">Academy</span>{% endif %}
+                        {% if on_loan %} · <span style="color:var(--cm-blue);">On Loan</span>{% endif %}</td></tr>
             </table>
 
             {% if stats %}
@@ -37,21 +39,28 @@
             </div>
             {% endif %}
 
-            <div class="mt flex">
+            <div class="mt flex" style="flex-wrap:wrap;gap:6px;">
                 {% if managed %}
-                    {% if not player.transfer_listed %}
+                    <form method="post" action="{{ url_for('contract_offer', player_id=player.id) }}">
+                        <button class="btn btn-sm btn-accent">Offer Contract</button></form>
+                    {% if not player.transfer_listed and not on_loan %}
                     <form method="post" action="{{ url_for('transfer_list', player_id=player.id) }}">
                         <button class="btn btn-sm">List for Transfer</button></form>
                     {% endif %}
+                    {% if not on_loan %}
                     <form method="post" action="{{ url_for('transfer_release', player_id=player.id) }}"
                           onsubmit="return confirm('Release {{ player.name }} on a free?');">
                         <button class="btn btn-sm btn-danger">Release</button></form>
+                    {% endif %}
                 {% else %}
                     <form method="post" action="{{ url_for('transfer_offer') }}" class="flex">
                         <input type="hidden" name="player_id" value="{{ player.id }}">
                         <input type="number" name="offer" value="{{ value }}" step="100000"
                                style="width:140px;">
                         <button class="btn btn-accent btn-sm">Make Offer</button>
+                    </form>
+                    <form method="post" action="{{ url_for('transfer_loan', player_id=player.id) }}">
+                        <button class="btn btn-sm" style="background:var(--cm-blue);">Request Loan</button>
                     </form>
                 {% endif %}
             </div>
