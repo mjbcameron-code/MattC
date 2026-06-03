@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Season {{ season.name }} — Final Standings{% endblock %}
+{% block content %}
+<div class="panel" style="border:2px solid var(--cm-accent);">
+    <div class="panel-header" style="font-size:16px;padding:14px;">
+        🏆 Season {{ season.name }} — Final Standings
+    </div>
+    <div class="panel-body">
+        <div class="statbox mb">
+            <div class="stat-item">
+                <div class="big">{{ position }}</div>
+                <div class="lbl">Final Position</div>
+            </div>
+            <div class="stat-item">
+                <div class="big">{{ mc.name }}</div>
+                <div class="lbl">Your Club</div>
+            </div>
+        </div>
+        {% if position == 1 %}
+        <div class="flash flash-success" style="font-size:16px;text-align:center;">
+            🎉 CHAMPIONS! {{ mc.name }} win the Premier League!</div>
+        {% elif position <= 4 %}
+        <div class="flash flash-success">Top 4 finish — European qualification secured!</div>
+        {% elif mc.id in relegated | map(attribute='id') | list %}
+        <div class="flash flash-error" style="font-size:15px;">
+            ⬇ RELEGATED — {{ mc.name }} go down.</div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="grid-2">
+    <div class="panel">
+        <div class="panel-header">Final Table</div>
+        <div class="panel-body" style="padding:0;">
+            <table>
+                <thead><tr><th>#</th><th>Club</th><th class="num">P</th><th class="num">W</th>
+                    <th class="num">D</th><th class="num">L</th><th class="num">GD</th>
+                    <th class="num">Pts</th></tr></thead>
+                <tbody>
+                {% for s in table %}
+                    <tr class="{% if s.club_id == mc.id %}highlight{% endif %}
+                                {% if s.club in relegated %}flash-error{% endif %}">
+                        <td>{{ loop.index }}</td>
+                        <td>{{ s.club.short_name }}</td>
+                        <td class="num">{{ s.played }}</td><td class="num">{{ s.won }}</td>
+                        <td class="num">{{ s.drawn }}</td><td class="num">{{ s.lost }}</td>
+                        <td class="num">{{ s.goal_difference }}</td>
+                        <td class="num"><strong>{{ s.points }}</strong></td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% if relegated %}
+            <p class="small muted" style="padding:8px;">
+                ↓ Relegated: {{ relegated | map(attribute='name') | join(', ') }}</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">Top Scorers — {{ season.name }}</div>
+        <div class="panel-body" style="padding:0;">
+            <table>
+                <thead><tr><th>#</th><th>Player</th><th>Club</th><th class="num">Goals</th></tr></thead>
+                <tbody>
+                {% for ps in top_scorers if ps.goals > 0 %}
+                <tr><td>{{ loop.index }}</td><td>{{ ps.player.name }}</td>
+                    <td class="small muted">{{ ps.club.short_name if ps.club else '' }}</td>
+                    <td class="num"><strong>{{ ps.goals }}</strong></td></tr>
+                {% else %}
+                <tr><td colspan="4" class="muted">No goals yet.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="center mb" style="margin-top:24px;">
+    <form method="post" action="{{ url_for('advance_season') }}" style="display:inline;">
+        <button class="btn btn-accent" style="font-size:16px;padding:14px 50px;">
+            Begin Next Season ▶</button>
+    </form>
+    <a href="{{ url_for('dashboard') }}" class="btn" style="margin-left:10px;">
+        Stay &amp; Review</a>
+</div>
+{% endblock %}

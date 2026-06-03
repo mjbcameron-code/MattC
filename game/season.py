@@ -201,3 +201,105 @@ def add_news(game_state, headline, body, category='general'):
     )
     db.session.add(news)
     db.session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Season lifecycle
+# ---------------------------------------------------------------------------
+
+def is_league_season_over(game_state):
+    """True once every league match in the *managed club's league* is played."""
+    league_id = game_state.managed_club.league_id
+    total = Match.query.filter_by(season_id=game_state.current_season_id,
+                                  competition='League', league_id=league_id).count()
+    played = Match.query.filter_by(season_id=game_state.current_season_id,
+                                   competition='League', league_id=league_id,
+                                   played=True).count()
+    return total > 0 and total == played
+
+
+def process_new_season(game_state):
+    """Age players, handle contracts, generate a fresh season with cups."""
+    import random as _rnd
+    from .models import Player, Suspension
+
+    season = game_state.current_season
+    league = game_state.managed_club.league
+    table = get_league_table(season.id, league.id)
+    mc = game_state.managed_club
+    position = next((i + 1 for i, s in enumerate(table)
+                     if s.club_id == mc.id), len(table))
+    relegated = [s.club_id for s in table[-3:]] if len(table) >= 20 else []
+
+    # ---- Age and develop players ----
+    for p in Player.query.all():
+        p.age += 1
+        if p.age <= 24 and p.current_ability < p.potential_ability:
+            gain = _rnd.randint(0, min(10, p.potential_ability - p.current_ability))
+            p.current_ability += gain
+        elif p.age >= 33:
+            p.current_ability = max(50, p.current_ability - _rnd.randint(0, 5))
+        # Refresh value
+        from game.transfers import get_transfer_value
+        p.value = get_transfer_value(p)
+
+    # ---- Contract expiry ----
+    new_year = season.year + 1
+    for p in Player.query.filter(Player.contract_end <= new_year).all():
+        if _rnd.random() < 0.35:
+            p.club_id = None           # leaves on free
+            p.contract_end = new_year + _rnd.randint(2, 4)
+        else:
+            p.contract_end = new_year + _rnd.randint(2, 4)  # auto-renewed
+
+    # ---- Clear old suspensions ----
+    Suspension.query.delete()
+
+    # ---- New season ----
+    short = str(new_year + 1)[-2:]
+    new_season = Season(year=new_year, name=f"{new_year}/{short}")
+    db.session.add(new_season)
+    db.session.flush()
+
+    generate_fixtures(new_season, league)
+    init_standings(new_season, league)
+
+    # For other leagues too
+    for lg in League.query.filter(League.id != league.id).all():
+        generate_fixtures(new_season, lg)
+        init_standings(new_season, lg)
+
+    from game.cups import generate_fa_cup, generate_league_cup
+    generate_fa_cup(new_season)
+    generate_league_cup(new_season)
+
+    # Slight budget boost (summer window)
+    for club in Club.query.all():
+        club.budget = int(club.budget * 1.08)
+
+    game_state.current_season_id = new_season.id
+    game_state.current_date = f"{new_year}-08-18"
+    db.session.commit()
+
+    # ---- News ----
+    if mc.id in relegated:
+        add_news(game_state, f"{mc.name} RELEGATED",
+                 f"A disastrous season ends in relegation from the Premier League. "
+                 f"The club finished {position}th. The board are furious.", 'general')
+    elif position == 1:
+        add_news(game_state, f"CHAMPIONS! {mc.name} win the Premier League!",
+                 f"What a season! {mc.name} are Premier League champions. "
+                 f"The fans are celebrating in the streets.", 'general')
+    elif position <= 4:
+        add_news(game_state, f"{mc.name} qualify for Europe",
+                 f"A top-four finish means European football next season. "
+                 f"The board are delighted with a {position}th-place finish.", 'general')
+
+    add_news(game_state, f"Season {new_season.name} begins — welcome back",
+             f"The new {new_season.name} season is underway. "
+             f"Fixtures have been generated and the transfer window is open. "
+             f"Budget: £{mc.budget:,}. Good luck!", 'general')
+
+    from game.setup import auto_pick_lineup
+    auto_pick_lineup(game_state)
+    return position, relegated

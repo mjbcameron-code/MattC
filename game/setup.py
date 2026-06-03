@@ -24,14 +24,27 @@ def seed_database():
     if database_is_seeded():
         return
 
-    from data.squads import CLUBS
+    from data.squads import CLUBS as PL_CLUBS
+    try:
+        from data.european_squads import CLUBS as EU_CLUBS
+    except ImportError:
+        EU_CLUBS = []
+    CLUBS = PL_CLUBS + EU_CLUBS
 
     # Create leagues (collect unique league names)
     league_objs = {}
+    LEAGUE_COUNTRIES = {
+        'Premier League': 'England',
+        'La Liga': 'Spain',
+        'Serie A': 'Italy',
+        'Bundesliga': 'Germany',
+        'Ligue 1': 'France',
+    }
     for club_def in CLUBS:
         lname = club_def['league']
         if lname not in league_objs:
-            lg = League(name=lname, country='England', level=1)
+            country = LEAGUE_COUNTRIES.get(lname, 'Unknown')
+            lg = League(name=lname, country=country, level=1)
             db.session.add(lg)
             league_objs[lname] = lg
     db.session.flush()
@@ -89,6 +102,7 @@ def new_game(manager_name, club_id):
     """Create a fresh GameState managing the given club, plus a season with
     fixtures and standings."""
     from .season import generate_fixtures, init_standings, add_news
+    from game.cups import generate_fa_cup, generate_league_cup
 
     # Wipe any existing game state / season-specific data for a clean start
     GameState.query.delete()
@@ -110,6 +124,9 @@ def new_game(manager_name, club_id):
     for league in leagues:
         generate_fixtures(season, league)
         init_standings(season, league)
+
+    generate_fa_cup(season)
+    generate_league_cup(season)
 
     gs = GameState(
         managed_club_id=club_id,
@@ -152,8 +169,10 @@ def auto_pick_lineup(game_state, formation=None):
     }
     needed = FORMATIONS.get(formation, FORMATIONS['4-4-2'])
 
-    players = Player.query.filter_by(
+    from .injuries import is_suspended
+    players = [p for p in Player.query.filter_by(
         club_id=game_state.managed_club_id, is_injured=False).all()
+               if not is_suspended(p.id)]
     used = set()
     slot = 1
 

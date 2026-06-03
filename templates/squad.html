@@ -18,11 +18,16 @@
             </thead>
             <tbody>
             {% for p in players %}
+                {% set suspended = suspensions.get(p.id, 0) > 0 %}
                 <tr class="clickable {% if p.id in lineup_ids %}highlight{% endif %}"
                     onclick="location.href='{{ url_for('player_detail', player_id=p.id) }}'">
                     <td class="num">{{ p.squad_number }}</td>
                     <td>
-                        {% if p.is_injured %}<span class="injured-icon" title="Injured">✚</span> {% endif %}
+                        {% if p.is_injured %}
+                            <span class="injured-icon" title="Injured — {{ p.injury_weeks }}w remaining">✚</span>
+                        {% elif suspended %}
+                            <span style="color:var(--cm-accent);" title="Suspended — {{ suspensions[p.id] }} match(es)">🟨</span>
+                        {% endif %}
                         <strong>{{ p.name }}</strong>
                         {% if p.transfer_listed %}<span class="listed small">[listed]</span>{% endif %}
                     </td>
@@ -49,5 +54,5 @@
         </table>
     </div>
 </div>
-<p class="muted small">Highlighted rows are in your current starting XI. Click a player for full details.</p>
+<p class="muted small">Highlighted = starting XI. ✚ = injured (weeks remaining). 🟨 = suspended (matches remaining).</p>
 {% endblock %}

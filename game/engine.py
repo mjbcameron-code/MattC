@@ -98,20 +98,23 @@ def pick(key, **kwargs):
 
 
 def get_squad_for_match(club, game_state=None):
-    """Return ordered list of players for a club, using lineup if managed club."""
+    """Return (starters, subs) for a club, respecting injuries and suspensions."""
     from .models import Lineup
+    from .injuries import is_suspended
+
+    def available(p):
+        return not p.is_injured and not is_suspended(p.id)
+
     if game_state and club.id == game_state.managed_club_id:
         lineups = Lineup.query.filter_by(game_state_id=game_state.id).order_by(Lineup.slot).all()
         if lineups:
-            starters = [l.player for l in lineups if l.slot <= 11]
-            subs = [l.player for l in lineups if l.slot > 11]
-            if len(starters) >= 11:
+            starters = [l.player for l in lineups if l.slot <= 11 and available(l.player)]
+            subs = [l.player for l in lineups if l.slot > 11 and available(l.player)]
+            if len(starters) >= 7:
                 return starters, subs
-    players = Player.query.filter_by(club_id=club.id, is_injured=False).order_by(
-        Player.current_ability.desc()).all()
-    starters = players[:11]
-    subs = players[11:16]
-    return starters, subs
+    players = [p for p in Player.query.filter_by(club_id=club.id).order_by(
+        Player.current_ability.desc()).all() if available(p)]
+    return players[:11], players[11:16]
 
 
 def team_attack_rating(players):

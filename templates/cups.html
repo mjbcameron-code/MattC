@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Cup Competitions{% endblock %}
+{% block nav_cups %}active{% endblock %}
+{% block content %}
+
+{% macro cup_table(matches, title) %}
+<div class="panel">
+    <div class="panel-header">{{ title }}</div>
+    <div class="panel-body" style="padding:0;">
+        {% if matches %}
+        <table>
+            <thead><tr><th>Round</th><th>Date</th><th>H/A</th><th>Opponent</th>
+                <th class="num">Result</th><th></th></tr></thead>
+            <tbody>
+            {% for m in matches %}
+                {% set is_home = m.home_club_id == managed_club_id %}
+                {% set opp = m.away_club if is_home else m.home_club %}
+                <tr class="{% if m.played %}clickable{% endif %}"
+                    {% if m.played %}onclick="location.href='{{ url_for('match_result', match_id=m.id) }}'"{% endif %}>
+                    <td class="small">{{ m.competition }}</td>
+                    <td class="small">{{ m.match_date }}</td>
+                    <td>{{ 'H' if is_home else 'A' }}</td>
+                    <td>{{ opp.name }}</td>
+                    <td class="num">
+                        {% if m.played %}
+                            {% set our = m.home_score if is_home else m.away_score %}
+                            {% set their = m.away_score if is_home else m.home_score %}
+                            {% set cls = 'fp-W' if our > their else ('fp-D' if our == their else 'fp-L') %}
+                            <span class="fp {{ cls }}">{{ 'W' if our > their else ('D' if our == their else 'L') }}</span>
+                            <strong>{{ m.home_score }}-{{ m.away_score }}</strong>
+                        {% else %}
+                            <span class="muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if not m.played and is_home or not m.played %}
+                            {% if not m.played %}
+                            <a href="{{ url_for('next_match_preview') }}" class="btn btn-sm btn-accent">Play</a>
+                            {% endif %}
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="panel-body muted">No fixtures yet (draw hasn't been made).</div>
+        {% endif %}
+    </div>
+</div>
+{% endmacro %}
+
+{{ cup_table(fa_matches, 'FA Cup') }}
+{{ cup_table(lc_matches, 'League Cup (Worthington Cup)') }}
+
+<p class="small muted">Cup draws are made automatically after each round completes.
+The FA Cup R3 draw takes place in January; the League Cup begins in September.</p>
+{% endblock %}

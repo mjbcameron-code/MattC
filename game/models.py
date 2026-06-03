@@ -212,6 +212,16 @@ class NewsItem(db.Model):
     read = db.Column(db.Boolean, default=False)
 
 
+class Suspension(db.Model):
+    __tablename__ = 'suspensions'
+    id = db.Column(db.Integer, primary_key=True)
+    player_id = db.Column(db.Integer, db.ForeignKey('players.id'))
+    season_id = db.Column(db.Integer, db.ForeignKey('seasons.id'), nullable=True)
+    matches_remaining = db.Column(db.Integer, default=1)
+    reason = db.Column(db.String(50))  # 'yellow_accumulation', 'red_card'
+    player = db.relationship('Player', foreign_keys=[player_id])
+
+
 class GameState(db.Model):
     __tablename__ = 'game_states'
     id = db.Column(db.Integer, primary_key=True)

@@ -30,6 +30,7 @@
     <a href="{{ url_for('fixtures') }}" class="{% block nav_fixtures %}{% endblock %}">Fixtures</a>
     <a href="{{ url_for('league_table') }}" class="{% block nav_table %}{% endblock %}">Table</a>
     <a href="{{ url_for('transfers') }}" class="{% block nav_transfers %}{% endblock %}">Transfers</a>
+    <a href="{{ url_for('cup_fixtures') }}" class="{% block nav_cups %}{% endblock %}">Cups</a>
     <a href="{{ url_for('stats') }}" class="{% block nav_stats %}{% endblock %}">Stats</a>
     <a href="{{ url_for('news') }}" class="{% block nav_news %}{% endblock %} news-link">
         News{% if unread_news %}<span class="badge">{{ unread_news }}</span>{% endif %}</a>
