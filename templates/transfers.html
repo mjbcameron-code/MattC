@@ -2,8 +2,29 @@
 {% block title %}Transfers{% endblock %}
 {% block nav_transfers %}active{% endblock %}
 {% block content %}
+
+{% if not window_open %}
+<div style="background:#4a1a1a;border:1px solid #8b2222;border-radius:4px;padding:10px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;">
+    <span style="font-weight:bold;color:#ff8080;">⚠ Transfer Window Closed</span>
+    <span class="small" style="color:var(--cm-text-dim);">{{ window_msg }} &mdash; free agents can still be signed</span>
+</div>
+{% else %}
+<div style="background:#1a3a1a;border:1px solid #2e6b2e;border-radius:4px;padding:10px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;">
+    <span style="font-weight:bold;color:var(--cm-green-light);">✓ Transfer Window Open</span>
+    <span class="small" style="color:var(--cm-text-dim);">{{ window_msg }}</span>
+</div>
+{% endif %}
+
 <div class="panel">
-    <div class="panel-header">Transfer Market — Budget: {{ club.budget | money }}</div>
+    <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <span>Transfer Market — Budget: {{ club.budget | money }}</span>
+        {% set wb_pct = ((wage_bill / club.wage_budget) * 100) | int if club.wage_budget else 0 %}
+        {% set wb_color = '#d54a4a' if wb_pct >= 90 else ('#e8b13a' if wb_pct >= 75 else 'var(--cm-text-dim)') %}
+        <span class="small" style="color:{{ wb_color }};">
+            Wage Bill: {{ wage_bill | money }}/wk of {{ club.wage_budget | money }} budget
+            ({{ wb_pct }}%)
+        </span>
+    </div>
     <div class="panel-body" style="padding:0;">
         <div style="display:flex;border-bottom:1px solid var(--cm-border);">
             <a href="{{ url_for('transfers', tab='buy') }}"

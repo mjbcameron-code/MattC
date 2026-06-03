@@ -16,6 +16,13 @@
         <div class="lbl">Avg Morale</div></div>
     <div class="stat-item"><div class="big">{{ injured }}</div>
         <div class="lbl">Injured</div></div>
+    {% set wb = wage_bill or 0 %}
+    {% set wb_pct = ((wb / club.wage_budget) * 100) | int if club.wage_budget else 0 %}
+    <div class="stat-item">
+        <div class="big" style="color:{% if wb_pct >= 90 %}var(--cm-red){% elif wb_pct >= 75 %}var(--cm-yellow){% else %}var(--cm-text){% endif %}">
+            {{ wb | money }}/wk</div>
+        <div class="lbl">Wage Bill ({{ wb_pct }}%)</div>
+    </div>
 </div>
 
 <div class="grid-3">

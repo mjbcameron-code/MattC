@@ -1,5 +1,46 @@
 import random
+from datetime import datetime, timedelta
 from .models import db, Player, Club, Transfer, NewsItem, Loan
+
+
+def is_window_open(date_str):
+    """Return (open: bool, message: str, days: int|None).
+
+    Windows: Summer (Jul 1 – Sep 7), January (Jan 1 – Feb 1).
+    Free agents (club_id=None) can always be signed.
+    """
+    try:
+        current = datetime.strptime(date_str, '%Y-%m-%d')
+    except (ValueError, TypeError):
+        return True, 'Open', None
+
+    year = current.year
+    windows = [
+        (datetime(year - 1, 7, 1),  datetime(year - 1, 9, 7),  'Summer'),
+        (datetime(year, 1, 1),       datetime(year, 2, 1),       'January'),
+        (datetime(year, 7, 1),       datetime(year, 9, 7),       'Summer'),
+        (datetime(year + 1, 1, 1),   datetime(year + 1, 2, 1),   'January'),
+    ]
+    for start, end, name in windows:
+        if start <= current <= end:
+            days_left = (end - current).days
+            return True, f'{name} window — {days_left} days remaining', days_left
+
+    future = [(s, e, n) for s, e, n in windows if s > current]
+    if future:
+        nxt_start, _, nxt_name = future[0]
+        days_until = (nxt_start - current).days
+        return False, f'Window closed — {nxt_name} window opens in {days_until} days', days_until
+    return True, 'Open', None
+
+
+def get_wage_bill(club):
+    """Total weekly wage commitment: all players + head coach."""
+    total = sum(p.wage for p in club.players)
+    hc = getattr(club, 'head_coach', None)
+    if hc:
+        total += hc.wage
+    return total
 
 
 def get_transfer_value(player):

@@ -12,7 +12,7 @@ from flask import (Flask, render_template, request, redirect, url_for,
 
 from game.models import (db, League, Club, Player, Season, Match, MatchEvent,
                          Standing, PlayerStat, Transfer, NewsItem, GameState,
-                         Lineup, Suspension, Loan, Manager)
+                         Lineup, Suspension, Loan, Manager, OwnerDemand)
 from game.setup import (seed_database, new_game, auto_pick_lineup,
                        database_is_seeded)
 from game import season as season_mod
@@ -22,6 +22,7 @@ from game import cups as cups_mod
 from game import injuries as injuries_mod
 from game import europe as europe_mod
 from game import staff as staff_mod
+from game import demands as demands_mod
 from game.morale import apply_match_morale
 from game.board import update_board_after_match
 
@@ -161,12 +162,13 @@ def dashboard():
             next_euro = m
             break
 
+    wage_bill = transfers_mod.get_wage_bill(club)
     return render_template('dashboard.html',
                            club=club, next_match=next_match, recent=recent,
                            table=table[:8], position=position, news=news,
                            squad_size=squad_size, injured=injured,
                            total_teams=len(table), avg_morale=avg_morale,
-                           next_euro=next_euro)
+                           next_euro=next_euro, wage_bill=wage_bill)
 
 
 # ---------------------------------------------------------------------------
@@ -433,6 +435,10 @@ def play_match(match_id):
 
     transfers_mod.ai_transfers(gs, gs.current_date)
 
+    # Chairman demands: check expiry then maybe issue a new one
+    demands_mod.check_active_demands(gs)
+    demands_mod.maybe_generate_demand(gs)
+
     # Check if manager wants to resign after this result
     manager_resigned = staff_mod.check_manager_status(gs)
 
@@ -551,14 +557,18 @@ def transfers():
             exclude_club_id=club.id)
         results = [(p, transfers_mod.get_transfer_value(p)) for p in results]
 
-    # Active loans at this club
     active_loans = Loan.query.filter_by(
         loan_club_id=club.id, season_id=gs.current_season_id,
         active=True).all()
 
+    window_open, window_msg, _ = transfers_mod.is_window_open(gs.current_date)
+    wage_bill = transfers_mod.get_wage_bill(club)
+
     return render_template('transfers.html', club=club, results=results,
                            query=query, position=position, max_value=max_value,
-                           tab=tab, active_loans=active_loans)
+                           tab=tab, active_loans=active_loans,
+                           window_open=window_open, window_msg=window_msg,
+                           wage_bill=wage_bill)
 
 
 @app.route('/transfers/offer', methods=['POST'])
@@ -567,10 +577,18 @@ def transfer_offer():
     gs = get_game_state()
     player_id = int(request.form.get('player_id'))
     offer = int(request.form.get('offer', 0))
+    player = Player.query.get(player_id)
+    # Enforce transfer window — free agents (no club) are always signable
+    if player and player.club_id is not None:
+        window_open, window_msg, _ = transfers_mod.is_window_open(gs.current_date)
+        if not window_open:
+            flash(f'Transfer window is closed. {window_msg}', 'error')
+            return redirect(request.referrer or url_for('transfers'))
     ok, msg = transfers_mod.make_offer(gs, player_id, offer)
     flash(msg, 'success' if ok else 'error')
-    if ok:
-        auto_pick_lineup(gs)  # refresh lineup with new signing if needed
+    if ok and player:
+        demands_mod.on_player_signed(gs, player.position)
+        auto_pick_lineup(gs)
     return redirect(request.referrer or url_for('transfers'))
 
 
@@ -587,9 +605,14 @@ def transfer_list(player_id):
 @require_game
 def transfer_release(player_id):
     gs = get_game_state()
+    player = Player.query.get(player_id)
+    was_listed = player.transfer_listed if player else False
     ok, msg = transfers_mod.release_player(gs, player_id)
     flash(msg, 'success' if ok else 'error')
-    auto_pick_lineup(gs)
+    if ok:
+        if was_listed:
+            demands_mod.on_player_sold(gs)
+        auto_pick_lineup(gs)
     return redirect(url_for('squad'))
 
 
@@ -597,6 +620,10 @@ def transfer_release(player_id):
 @require_game
 def transfer_loan(player_id):
     gs = get_game_state()
+    window_open, window_msg, _ = transfers_mod.is_window_open(gs.current_date)
+    if not window_open:
+        flash(f'Transfer window is closed. {window_msg}', 'error')
+        return redirect(request.referrer or url_for('transfers'))
     ok, msg = transfers_mod.loan_player(gs, player_id)
     flash(msg, 'success' if ok else 'error')
     if ok:
@@ -766,9 +793,10 @@ def board():
     board_news = NewsItem.query.filter_by(
         game_state_id=gs.id, category='board').order_by(
         NewsItem.id.desc()).limit(5).all()
+    active_demands = demands_mod.get_active_demands(gs)
     return render_template('board.html', gs=gs, position=position,
-                           board_news=board_news,
-                           total_teams=len(table))
+                           board_news=board_news, total_teams=len(table),
+                           active_demands=active_demands)
 
 
 # ---------------------------------------------------------------------------

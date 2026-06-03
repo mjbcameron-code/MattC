@@ -238,6 +238,19 @@ class Loan(db.Model):
     loan_club = db.relationship('Club', foreign_keys=[loan_club_id])
 
 
+class OwnerDemand(db.Model):
+    """A chairman directive that the DoF must fulfil within a deadline."""
+    __tablename__ = 'owner_demands'
+    id = db.Column(db.Integer, primary_key=True)
+    game_state_id = db.Column(db.Integer, db.ForeignKey('game_states.id'))
+    demand_type = db.Column(db.String(30))    # sign_position | sell_listed | keep_wage_bill
+    target = db.Column(db.String(100))        # position / 'any' / wage threshold str
+    description = db.Column(db.Text)
+    deadline = db.Column(db.String(20))
+    fulfilled = db.Column(db.Boolean, default=False)
+    active = db.Column(db.Boolean, default=True)
+
+
 class Manager(db.Model):
     """NPC head coach hired and managed by the Director of Football."""
     __tablename__ = 'managers'

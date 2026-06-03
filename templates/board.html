@@ -47,6 +47,30 @@
     </div>
 </div>
 
+{% if active_demands %}
+<div class="panel">
+    <div class="panel-header" style="background:#4a2a00;color:#f0c060;">
+        Chairman Directives ({{ active_demands | length }} active)
+    </div>
+    <div class="panel-body" style="padding:0;">
+        {% for d in active_demands %}
+        <div style="padding:12px;border-bottom:1px solid var(--cm-border);">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                <div style="font-weight:bold;color:{% if d.fulfilled %}var(--cm-green-light){% else %}#f0c060{% endif %};">
+                    {% if d.demand_type == 'sign_position' %}Sign a {{ d.target }}
+                    {% elif d.demand_type == 'sell_listed' %}Sell listed players
+                    {% else %}Control wage bill{% endif %}
+                    {% if d.fulfilled %} ✓{% endif %}
+                </div>
+                <span class="small muted">Deadline: {{ d.deadline }}</span>
+            </div>
+            <p class="small" style="margin:6px 0 0;">{{ d.description }}</p>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
 {% if board_news %}
 <div class="panel">
     <div class="panel-header">Board Communications</div>

@@ -141,7 +141,7 @@ def new_game(manager_name, club_id):
     # Wipe season-specific data
     GameState.query.delete()
     Season.query.delete()
-    from .models import Match, Standing, PlayerStat, Lineup, NewsItem, MatchEvent, Loan
+    from .models import Match, Standing, PlayerStat, Lineup, NewsItem, MatchEvent, Loan, OwnerDemand
     MatchEvent.query.delete()
     Match.query.delete()
     Standing.query.delete()
@@ -149,6 +149,7 @@ def new_game(manager_name, club_id):
     Lineup.query.delete()
     NewsItem.query.delete()
     Loan.query.delete()
+    OwnerDemand.query.delete()
     db.session.commit()
 
     # Reset manager pool for a clean career start
