@@ -243,7 +243,34 @@ def is_on_loan_to(player_id, club_id, season_id):
 
 
 def ai_transfers(game_state, current_date):
-    """Simulate AI clubs occasionally signing players (simplified)."""
+    """Simulate AI clubs occasionally signing players; also bid on the manager's listed players."""
+    from game.season import add_news
+
+    # Occasionally bid on a player listed for transfer by the managed club
+    if random.random() < 0.12:
+        listed = Player.query.filter_by(
+            club_id=game_state.managed_club_id, transfer_listed=True).all()
+        if listed:
+            target = random.choice(listed)
+            value = get_transfer_value(target)
+            bidder = random.choice(
+                Club.query.filter(Club.id != game_state.managed_club_id).all() or [None])
+            if bidder and bidder.budget >= value * 0.6:
+                # Accept if bid is at least 80% of value
+                offer = int(value * random.uniform(0.8, 1.2))
+                if offer >= value * 0.8:
+                    bidder.budget -= offer
+                    game_state.managed_club.budget += offer
+                    target.club_id = bidder.id
+                    target.transfer_listed = False
+                    add_news(game_state,
+                             f"{target.name} sold to {bidder.name}",
+                             f"{bidder.name} have signed {target.name} for "
+                             f"£{offer:,}. The fee has been added to your transfer budget.",
+                             'transfers')
+                    db.session.commit()
+                    return
+
     if random.random() > 0.05:
         return
     free_agents = Player.query.filter_by(club_id=None).order_by(

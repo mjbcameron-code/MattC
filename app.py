@@ -456,7 +456,15 @@ def match_result(match_id):
             Match.id != match.id).all()
     else:
         table  = []
-        others = []
+        # For European/cup matches show other matches from the same round
+        if match.competition:
+            others = Match.query.filter_by(
+                season_id=gs.current_season_id,
+                competition=match.competition,
+                match_date=match.match_date,
+                played=True).filter(Match.id != match.id).all()
+        else:
+            others = []
 
     group_standings = None
     if match.competition and 'CL Group' in match.competition:
@@ -615,8 +623,22 @@ def stats():
     top_assists = db.session.query(PlayerStat).filter_by(
         season_id=gs.current_season_id).order_by(
         PlayerStat.assists.desc()).limit(20).all()
-    return render_template('stats.html', top_scorers=top_scorers,
-                           top_assists=top_assists)
+    top_appearances = db.session.query(PlayerStat).filter_by(
+        season_id=gs.current_season_id).order_by(
+        PlayerStat.appearances.desc()).limit(20).all()
+    top_cards = db.session.query(PlayerStat).filter_by(
+        season_id=gs.current_season_id).filter(
+        (PlayerStat.yellow_cards > 0) | (PlayerStat.red_cards > 0)).order_by(
+        (PlayerStat.yellow_cards + PlayerStat.red_cards * 3).desc()).limit(15).all()
+    # My squad stats
+    my_stats = db.session.query(PlayerStat).filter_by(
+        season_id=gs.current_season_id,
+        club_id=gs.managed_club_id).order_by(
+        PlayerStat.appearances.desc()).all()
+    return render_template('stats.html',
+                           top_scorers=top_scorers, top_assists=top_assists,
+                           top_appearances=top_appearances, top_cards=top_cards,
+                           my_stats=my_stats, club=gs.managed_club)
 
 
 # ---------------------------------------------------------------------------
@@ -635,8 +657,26 @@ def season_end():
     relegated = [s.club for s in table[-3:]] if len(table) >= 20 else []
     top_scorers = (PlayerStat.query.filter_by(season_id=season.id)
                    .order_by(PlayerStat.goals.desc()).limit(10).all())
+    board_met = (position <= (gs.board_max_pos or 17)) if position else False
+
+    # European final winners this season
+    cl_winner = None
+    cl_final = Match.query.filter_by(season_id=season.id,
+                                     competition='CL Final', played=True).first()
+    if cl_final:
+        cl_winner = (cl_final.home_club if (cl_final.home_score or 0) >= (cl_final.away_score or 0)
+                     else cl_final.away_club)
+    uefa_winner = None
+    uefa_final = Match.query.filter_by(season_id=season.id,
+                                       competition='UEFA Final', played=True).first()
+    if uefa_final:
+        uefa_winner = (uefa_final.home_club if (uefa_final.home_score or 0) >= (uefa_final.away_score or 0)
+                       else uefa_final.away_club)
+
     return render_template('season_end.html', table=table, mc=mc, position=position,
-                           relegated=relegated, season=season, top_scorers=top_scorers)
+                           relegated=relegated, season=season, top_scorers=top_scorers,
+                           board_met=board_met, cl_winner=cl_winner, uefa_winner=uefa_winner,
+                           gs=gs)
 
 
 @app.route('/season-end/advance', methods=['POST'])

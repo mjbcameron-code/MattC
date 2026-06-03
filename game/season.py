@@ -299,6 +299,24 @@ def process_new_season(game_state):
     generate_champions_league(new_season, prev_standings)
     generate_uefa_cup(new_season, prev_standings)
 
+    # ---- Club reputation progression ----
+    for lg in League.query.all():
+        lg_table = get_league_table(season.id, lg.id)
+        total = len(lg_table)
+        for i, s in enumerate(lg_table):
+            pos = i + 1
+            if pos == 1:
+                delta = 4
+            elif pos <= 4:
+                delta = 2
+            elif pos <= total // 2:
+                delta = 1
+            elif pos >= total - 2:
+                delta = -5
+            else:
+                delta = -1
+            s.club.reputation = max(1, min(100, s.club.reputation + delta))
+
     # Slight budget boost (summer window)
     for club in Club.query.all():
         club.budget = int(club.budget * 1.08)

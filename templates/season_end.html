@@ -3,7 +3,7 @@
 {% block content %}
 <div class="panel" style="border:2px solid var(--cm-accent);">
     <div class="panel-header" style="font-size:16px;padding:14px;">
-        🏆 Season {{ season.name }} — Final Standings
+        Season {{ season.name }} — Final Standings
     </div>
     <div class="panel-body">
         <div class="statbox mb">
@@ -15,18 +15,59 @@
                 <div class="big">{{ mc.name }}</div>
                 <div class="lbl">Your Club</div>
             </div>
+            {% if gs %}
+            <div class="stat-item">
+                {% set conf = gs.board_confidence or 50 %}
+                {% set conf_color = '#2e8b50' if conf >= 50 else ('#e8b13a' if conf >= 30 else '#d54a4a') %}
+                <div class="big" style="color:{{ conf_color }};">{{ conf }}%</div>
+                <div class="lbl">Board Confidence</div>
+            </div>
+            {% endif %}
         </div>
+
         {% if position == 1 %}
         <div class="flash flash-success" style="font-size:16px;text-align:center;">
-            🎉 CHAMPIONS! {{ mc.name }} win the Premier League!</div>
+            CHAMPIONS! {{ mc.name }} win the league!</div>
         {% elif position <= 4 %}
         <div class="flash flash-success">Top 4 finish — European qualification secured!</div>
         {% elif mc.id in relegated | map(attribute='id') | list %}
         <div class="flash flash-error" style="font-size:15px;">
-            ⬇ RELEGATED — {{ mc.name }} go down.</div>
+            RELEGATED — {{ mc.name }} go down.</div>
+        {% endif %}
+
+        {% if board_met is defined %}
+        <div class="flash {% if board_met %}flash-success{% else %}flash-error{% endif %}" style="margin-top:8px;">
+            {% if board_met %}
+            Board target achieved: <strong>{{ gs.board_target }}</strong>
+            {% else %}
+            Board target missed: <strong>{{ gs.board_target }}</strong> — the board are disappointed.
+            {% endif %}
+        </div>
         {% endif %}
     </div>
 </div>
+
+{% if cl_winner or uefa_winner %}
+<div class="panel" style="border-color:#1a3a6e;">
+    <div class="panel-header" style="background:#1a3a6e;">European Honours</div>
+    <div class="panel-body">
+        <div class="statbox">
+            {% if cl_winner %}
+            <div class="stat-item">
+                <div class="big" style="font-size:14px;color:var(--cm-accent);">{{ cl_winner.short_name }}</div>
+                <div class="lbl">Champions League</div>
+            </div>
+            {% endif %}
+            {% if uefa_winner %}
+            <div class="stat-item">
+                <div class="big" style="font-size:14px;color:var(--cm-accent);">{{ uefa_winner.short_name }}</div>
+                <div class="lbl">UEFA Cup</div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <div class="grid-2">
     <div class="panel">
@@ -52,7 +93,7 @@
             </table>
             {% if relegated %}
             <p class="small muted" style="padding:8px;">
-                ↓ Relegated: {{ relegated | map(attribute='name') | join(', ') }}</p>
+                Relegated: {{ relegated | map(attribute='name') | join(', ') }}</p>
             {% endif %}
         </div>
     </div>

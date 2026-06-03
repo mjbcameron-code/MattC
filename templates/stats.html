@@ -45,4 +45,82 @@
         </div>
     </div>
 </div>
+
+<div class="grid-2">
+    <div class="panel">
+        <div class="panel-header">Most Appearances</div>
+        <div class="panel-body" style="padding:0;">
+            <table>
+                <thead><tr><th>#</th><th>Player</th><th>Club</th><th class="num">Apps</th></tr></thead>
+                <tbody>
+                {% for ps in top_appearances if ps.appearances > 0 %}
+                <tr class="clickable" onclick="location.href='{{ url_for('player_detail', player_id=ps.player_id) }}'">
+                    <td>{{ loop.index }}</td>
+                    <td>{{ ps.player.name }}</td>
+                    <td class="small muted">{{ ps.club.short_name if ps.club else '' }}</td>
+                    <td class="num"><strong>{{ ps.appearances }}</strong></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" class="muted">No appearances yet.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">Discipline</div>
+        <div class="panel-body" style="padding:0;">
+            <table>
+                <thead><tr><th>#</th><th>Player</th><th>Club</th>
+                    <th class="num" title="Yellow cards">Y</th>
+                    <th class="num" title="Red cards">R</th></tr></thead>
+                <tbody>
+                {% for ps in top_cards %}
+                <tr class="clickable" onclick="location.href='{{ url_for('player_detail', player_id=ps.player_id) }}'">
+                    <td>{{ loop.index }}</td>
+                    <td>{{ ps.player.name }}</td>
+                    <td class="small muted">{{ ps.club.short_name if ps.club else '' }}</td>
+                    <td class="num" style="color:var(--cm-yellow,#e8b13a);">{{ ps.yellow_cards }}</td>
+                    <td class="num" style="color:var(--cm-red);">{{ ps.red_cards }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" class="muted">No cards issued yet.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% if my_stats %}
+<div class="panel">
+    <div class="panel-header">{{ club.name }} — Squad Stats</div>
+    <div class="panel-body" style="padding:0;">
+        <table>
+            <thead><tr>
+                <th>Player</th><th>Pos</th>
+                <th class="num">Apps</th>
+                <th class="num">Goals</th>
+                <th class="num">Assists</th>
+                <th class="num" title="Yellow cards">Y</th>
+                <th class="num" title="Red cards">R</th>
+            </tr></thead>
+            <tbody>
+            {% for ps in my_stats if ps.appearances > 0 %}
+            <tr class="clickable" onclick="location.href='{{ url_for('player_detail', player_id=ps.player_id) }}'">
+                <td>{{ ps.player.name }}</td>
+                <td><span class="pos pos-{{ ps.player.position }}">{{ ps.player.position }}</span></td>
+                <td class="num">{{ ps.appearances }}</td>
+                <td class="num">{{ ps.goals }}</td>
+                <td class="num">{{ ps.assists }}</td>
+                <td class="num" style="color:{% if ps.yellow_cards > 0 %}var(--cm-yellow,#e8b13a){% else %}var(--cm-text-dim){% endif %};">{{ ps.yellow_cards }}</td>
+                <td class="num" style="color:{% if ps.red_cards > 0 %}var(--cm-red){% else %}var(--cm-text-dim){% endif %};">{{ ps.red_cards }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
 {% endblock %}
