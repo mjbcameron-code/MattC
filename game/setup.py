@@ -44,6 +44,11 @@ def seed_database():
         # Backfill agent data for existing saves
         if Player.query.filter((Player.agent_name == None) | (Player.agent_name == '')).first():
             backfill_player_agents()
+        # Backfill scout pool for existing saves
+        from .models import Scout
+        from game.scouting import seed_scouts
+        if Scout.query.count() == 0:
+            seed_scouts()
         return
 
     from data.squads import CLUBS as PL_CLUBS
@@ -117,6 +122,8 @@ def seed_database():
     db.session.commit()
     seed_managers()
     backfill_player_agents()
+    from game.scouting import seed_scouts
+    seed_scouts()
 
 
 def seed_managers():
@@ -174,10 +181,18 @@ def new_game(manager_name, club_id):
     OwnerDemand.query.delete()
     ContractNegotiation.query.delete()
     TransferBid.query.delete()
+    from .models import Scout, ScoutKnowledge
+    ScoutKnowledge.query.delete()
+    for sc in Scout.query.all():
+        sc.club_id = None
+        sc.assignment_player_id = None
+        sc.assignment_region = None
     db.session.commit()
 
-    # Reset manager pool for a clean career start
+    # Reset manager and scout pools for a clean career start
     seed_managers()
+    from game.scouting import seed_scouts, assign_starting_scouts
+    seed_scouts()
 
     season = Season(year=2001, name='2001/02')
     db.session.add(season)
@@ -231,6 +246,8 @@ def new_game(manager_name, club_id):
 
     from game.staff import generate_manager_request
     generate_manager_request(gs)
+
+    assign_starting_scouts(club_id, 2)
 
     auto_pick_lineup(gs)
     return gs

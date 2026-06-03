@@ -274,6 +274,40 @@ class TransferBid(db.Model):
     selling_club = db.relationship('Club', foreign_keys=[selling_club_id])
 
 
+class Scout(db.Model):
+    """A scout employed by the Director of Football to assess players."""
+    __tablename__ = 'scouts'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    nationality = db.Column(db.String(50), default='English')
+    age = db.Column(db.Integer, default=50)
+    judging_ability = db.Column(db.Integer, default=10)    # 1-20
+    judging_potential = db.Column(db.Integer, default=10)  # 1-20
+    region = db.Column(db.String(30), default='England')   # England|Europe|South America|World
+    wage = db.Column(db.Integer, default=2000)
+    club_id = db.Column(db.Integer, db.ForeignKey('clubs.id'), nullable=True)
+    assignment_player_id = db.Column(db.Integer, db.ForeignKey('players.id'), nullable=True)
+    assignment_region = db.Column(db.String(30), nullable=True)
+    assignment_player = db.relationship('Player', foreign_keys=[assignment_player_id])
+
+
+class ScoutKnowledge(db.Model):
+    """The managed club's accumulated scouting knowledge of a player."""
+    __tablename__ = 'scout_knowledge'
+    id = db.Column(db.Integer, primary_key=True)
+    game_state_id = db.Column(db.Integer, db.ForeignKey('game_states.id'))
+    player_id = db.Column(db.Integer, db.ForeignKey('players.id'))
+    knowledge = db.Column(db.Integer, default=0)          # 0-100
+    ca_low = db.Column(db.Integer, nullable=True)
+    ca_high = db.Column(db.Integer, nullable=True)
+    pa_low = db.Column(db.Integer, nullable=True)
+    pa_high = db.Column(db.Integer, nullable=True)
+    recommendation = db.Column(db.Text, nullable=True)
+    shortlisted = db.Column(db.Boolean, default=False)
+    complete = db.Column(db.Boolean, default=False)
+    player = db.relationship('Player', foreign_keys=[player_id])
+
+
 class OwnerDemand(db.Model):
     """A chairman directive that the DoF must fulfil within a deadline."""
     __tablename__ = 'owner_demands'
