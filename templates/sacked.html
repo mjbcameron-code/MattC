@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Sacked{% endblock %}
+{% block content %}
+<div class="panel" style="text-align:center;padding:3em 1em;">
+    <div class="panel-header" style="background:#cc2222;">YOU HAVE BEEN SACKED</div>
+    <div class="panel-body">
+        {% if gs %}
+        <p style="font-size:1.3em;margin:1em 0;">
+            {{ gs.managed_club.name }} have parted ways with
+            <strong>{{ gs.manager_name }}</strong>.
+        </p>
+        <p class="muted">
+            The board lost confidence in your ability to deliver the season target.
+            Thank you for your service — the fans will remember the good times.
+        </p>
+        <div style="margin:2em 0;">
+            <div class="statbox-grid" style="justify-content:center;gap:1em;">
+                <div class="statbox">
+                    <div class="statbox-val">{{ gs.managed_club.name }}</div>
+                    <div class="statbox-label">Club</div>
+                </div>
+                <div class="statbox">
+                    <div class="statbox-val">{{ gs.board_confidence or 0 }}%</div>
+                    <div class="statbox-label">Final Board Confidence</div>
+                </div>
+                <div class="statbox">
+                    <div class="statbox-val">{{ gs.current_date }}</div>
+                    <div class="statbox-label">Date Sacked</div>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <p>No active game found.</p>
+        {% endif %}
+        <form method="post" action="{{ url_for('abandon') }}" style="margin-top:2em;">
+            <button class="btn btn-accent" style="font-size:1.1em;padding:0.8em 2em;">
+                Start a New Career
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -50,6 +50,19 @@ a:hover { text-decoration: underline; }
     border-radius: 4px; font-weight: bold; font-size: 12px;
 }
 .budget-pill { color: var(--cm-accent); }
+.conf-pill {
+    background: rgba(0,0,0,0.3); color: #ccc; padding: 5px 12px;
+    border-radius: 4px; font-weight: bold; font-size: 12px; cursor: default;
+}
+
+/* ---- Board confidence bar ---- */
+.conf-bar-bg {
+    background: var(--cm-border); border-radius: 4px; height: 10px;
+    width: 100%; overflow: hidden;
+}
+.conf-bar-fill {
+    height: 100%; border-radius: 4px; transition: width 0.4s ease;
+}
 
 /* ---- Nav ---- */
 .mainnav {

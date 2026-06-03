@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Board Room{% endblock %}
+{% block nav_board %}active{% endblock %}
+{% block content %}
+<div class="panel">
+    <div class="panel-header">Board Room — {{ gs.managed_club.name }}</div>
+    <div class="panel-body">
+        <div class="grid-2">
+            <div>
+                <p class="muted small">SEASON TARGET</p>
+                <p style="font-size:1.2em;font-weight:bold;color:var(--cm-accent);">
+                    {{ gs.board_target or 'Finish Mid-Table' }}</p>
+
+                <p class="muted small" style="margin-top:1em;">CURRENT POSITION</p>
+                <p style="font-size:1.2em;font-weight:bold;">
+                    {{ position }}{% if total_teams %}/{{ total_teams }}{% endif %}
+                    &nbsp;
+                    <span class="small muted">
+                        (target: {% if gs.board_min_pos == gs.board_max_pos %}
+                            {{ gs.board_min_pos }}
+                        {% else %}
+                            {{ gs.board_min_pos }}–{{ gs.board_max_pos }}
+                        {% endif %})
+                    </span>
+                </p>
+            </div>
+            <div>
+                <p class="muted small">BOARD CONFIDENCE</p>
+                {% set conf = gs.board_confidence or 50 %}
+                {% set conf_color = '#e8b13a' if conf > 30 else '#cc2222' %}
+                <p style="font-size:2em;font-weight:bold;color:{{ conf_color }};">
+                    {{ conf }}%</p>
+                <div class="conf-bar-bg">
+                    <div class="conf-bar-fill" style="width:{{ conf }}%;
+                         background:{{ conf_color }};"></div>
+                </div>
+                <p class="small muted" style="margin-top:0.5em;">
+                    {% if conf >= 70 %}The board are delighted with your progress.
+                    {% elif conf >= 50 %}The board are satisfied with how things are going.
+                    {% elif conf >= 35 %}The board have some concerns about recent form.
+                    {% elif conf >= 20 %}The board are very worried. Results must improve.
+                    {% else %}You are on the verge of being sacked. Win — now.
+                    {% endif %}
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if board_news %}
+<div class="panel">
+    <div class="panel-header">Board Communications</div>
+    <div class="panel-body">
+        {% for item in board_news %}
+        <div style="border-bottom:1px solid var(--cm-border);padding:0.6em 0;">
+            <div style="font-weight:bold;color:var(--cm-accent);">{{ item.headline }}</div>
+            <div class="small muted">{{ item.date }}</div>
+            <div class="small" style="margin-top:0.3em;">{{ item.body }}</div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<p class="small muted">
+    Confidence adjusts after each league match: win +5, draw ±0, loss −6.
+    Your position versus the board's target also applies a bonus or penalty.
+    Falling below 5% results in the sack.
+</p>
+{% endblock %}

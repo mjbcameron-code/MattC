@@ -43,6 +43,7 @@ class Player(db.Model):
     is_injured = db.Column(db.Boolean, default=False)
     injury_weeks = db.Column(db.Integer, default=0)
     morale = db.Column(db.Integer, default=70)        # 0-100
+    is_youth = db.Column(db.Boolean, default=False)
     condition = db.Column(db.Integer, default=100)    # 0-100
     transfer_listed = db.Column(db.Boolean, default=False)
     # Physical
@@ -232,6 +233,11 @@ class GameState(db.Model):
     formation = db.Column(db.String(10), default='4-4-2')
     tactic = db.Column(db.String(20), default='Normal')
     created_at = db.Column(db.String(30))
+    board_confidence = db.Column(db.Integer, default=50)    # 0-100
+    board_target = db.Column(db.String(50), default='Finish Mid-Table')
+    board_min_pos = db.Column(db.Integer, default=7)
+    board_max_pos = db.Column(db.Integer, default=17)
+    is_sacked = db.Column(db.Boolean, default=False)
     managed_club = db.relationship('Club', foreign_keys=[managed_club_id])
     current_season = db.relationship('Season', foreign_keys=[current_season_id])
     news = db.relationship('NewsItem', backref='game_state', lazy=True,

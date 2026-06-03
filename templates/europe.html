@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}European Competition{% endblock %}
+{% block nav_europe %}active{% endblock %}
+{% block content %}
+
+{% if not in_europe %}
+<div class="panel">
+    <div class="panel-header">European Competition</div>
+    <div class="panel-body muted">
+        <p>{{ game_state.managed_club.name }} are not participating in European
+        competition this season. Finish in the top 4 to qualify for the
+        Champions League, or 5th–7th for the UEFA Cup.</p>
+    </div>
+</div>
+{% else %}
+
+{% macro euro_table(matches, title) %}
+<div class="panel">
+    <div class="panel-header">{{ title }}</div>
+    <div class="panel-body" style="padding:0;">
+        {% if matches %}
+        <table>
+            <thead><tr><th>Round</th><th>Date</th><th>H/A</th><th>Opponent</th>
+                <th class="num">Result</th><th></th></tr></thead>
+            <tbody>
+            {% for m in matches %}
+                {% set is_home = m.home_club_id == managed_club_id %}
+                {% set opp = m.away_club if is_home else m.home_club %}
+                <tr class="{% if m.played %}clickable{% endif %}"
+                    {% if m.played %}onclick="location.href='{{ url_for('match_result', match_id=m.id) }}'"{% endif %}>
+                    <td class="small">{{ m.competition }}</td>
+                    <td class="small">{{ m.match_date }}</td>
+                    <td>{{ 'H' if is_home else 'A' }}</td>
+                    <td>{{ opp.name }}</td>
+                    <td class="num">
+                        {% if m.played %}
+                            {% set our = m.home_score if is_home else m.away_score %}
+                            {% set their = m.away_score if is_home else m.home_score %}
+                            {% set cls = 'fp-W' if our > their else ('fp-D' if our == their else 'fp-L') %}
+                            <span class="fp {{ cls }}">{{ 'W' if our > their else ('D' if our == their else 'L') }}</span>
+                            <strong>{{ m.home_score }}-{{ m.away_score }}</strong>
+                        {% else %}
+                            <span class="muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if not m.played %}
+                            <a href="{{ url_for('next_match_preview') }}" class="btn btn-sm btn-accent">Play</a>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="panel-body muted">No fixtures yet.</div>
+        {% endif %}
+    </div>
+</div>
+{% endmacro %}
+
+{% if cl_matches %}
+    {% if group_standings %}
+    <div class="panel">
+        <div class="panel-header">{{ our_group }} Standings</div>
+        <div class="panel-body" style="padding:0;">
+            <table>
+                <thead><tr><th>#</th><th>Club</th><th class="num">P</th>
+                    <th class="num">W</th><th class="num">D</th><th class="num">L</th>
+                    <th class="num">GF</th><th class="num">GA</th>
+                    <th class="num">GD</th><th class="num">Pts</th></tr></thead>
+                <tbody>
+                {% for row in group_standings %}
+                <tr class="{% if row.club and row.club.id == managed_club_id %}highlight{% endif %}">
+                    <td>{{ loop.index }}</td>
+                    <td>{{ row.club.name if row.club else '—' }}</td>
+                    <td class="num">{{ row.P }}</td>
+                    <td class="num">{{ row.W }}</td>
+                    <td class="num">{{ row.D }}</td>
+                    <td class="num">{{ row.L }}</td>
+                    <td class="num">{{ row.GF }}</td>
+                    <td class="num">{{ row.GA }}</td>
+                    <td class="num">{{ row.GD }}</td>
+                    <td class="num"><strong>{{ row.Pts }}</strong></td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+    {{ euro_table(cl_matches, 'Champions League') }}
+{% endif %}
+
+{% if uefa_matches %}
+    {{ euro_table(uefa_matches, 'UEFA Cup') }}
+{% endif %}
+
+{% endif %}
+
+<p class="small muted">Top 2 from each CL group advance to the Quarter-Finals.
+Cup draws are made automatically after each round.</p>
+{% endblock %}

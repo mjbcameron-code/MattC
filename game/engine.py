@@ -222,6 +222,19 @@ def simulate_match(home_club, away_club, season, match_obj, game_state=None):
     a_att = team_attack_rating(away_starters)
     a_def = team_defense_rating(away_starters)
 
+    # Morale modifier for managed club only (AI teams default to neutral morale)
+    if game_state:
+        from .morale import get_morale_multiplier
+        mc_id = game_state.managed_club_id
+        if home_club.id == mc_id:
+            mult = get_morale_multiplier([p.id for p in home_starters])
+            h_att *= mult
+            h_def *= mult
+        elif away_club.id == mc_id:
+            mult = get_morale_multiplier([p.id for p in away_starters])
+            a_att *= mult
+            a_def *= mult
+
     HOME_ADVANTAGE = 8  # raw boost to home attack
 
     h_att_eff = h_att + HOME_ADVANTAGE

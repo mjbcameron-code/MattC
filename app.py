@@ -12,7 +12,7 @@ from flask import (Flask, render_template, request, redirect, url_for,
 
 from game.models import (db, League, Club, Player, Season, Match, MatchEvent,
                          Standing, PlayerStat, Transfer, NewsItem, GameState,
-                         Lineup)
+                         Lineup, Suspension)
 from game.setup import (seed_database, new_game, auto_pick_lineup,
                        database_is_seeded)
 from game import season as season_mod
@@ -20,7 +20,9 @@ from game import engine
 from game import transfers as transfers_mod
 from game import cups as cups_mod
 from game import injuries as injuries_mod
-from game.models import Suspension
+from game import europe as europe_mod
+from game.morale import apply_match_morale
+from game.board import update_board_after_match
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -261,10 +263,13 @@ def set_lineup_player():
 @require_game
 def next_match_preview():
     gs = get_game_state()
-    # Check season-end first
-    if season_mod.is_league_season_over(gs):
-        return redirect(url_for('season_end'))
+    if gs.is_sacked:
+        return redirect(url_for('sacked'))
+    # Allow European matches to be played even after the league season ends
+    league_done = season_mod.is_league_season_over(gs)
     match = get_next_any_match(gs)
+    if league_done and not match:
+        return redirect(url_for('season_end'))
     if not match:
         return redirect(url_for('season_end'))
     home, away = match.home_club, match.away_club
@@ -280,22 +285,29 @@ def next_match_preview():
 @app.route('/match/play/<int:match_id>')
 @require_game
 def play_match(match_id):
+    import random as _rnd
     gs = get_game_state()
+    if gs.is_sacked:
+        return redirect(url_for('sacked'))
+
     match = Match.query.get_or_404(match_id)
     if match.played:
         return redirect(url_for('match_result', match_id=match_id))
 
     season = gs.current_season
-    is_cup = 'Cup' in (match.competition or '')
+    comp   = match.competition or 'League'
+    is_cup = 'Cup' in comp
+    is_cl_group = comp in europe_mod.CL_GROUPS
+    is_euro_ko  = comp in (europe_mod._CL_KO_NAMES + europe_mod._UEFA_NAMES)
+    is_league   = not is_cup and not is_cl_group and not is_euro_ko
     league = League.query.get(match.league_id) if match.league_id else gs.managed_club.league
 
     home_score, away_score, events, commentary, stats = engine.simulate_match(
         match.home_club, match.away_club, season, match, gs)
 
-    # Cup draws must have a winner
-    if is_cup and home_score == away_score:
-        import random
-        if random.random() < 0.5:
+    # Cup and knockout European matches must produce a winner
+    if (is_cup or is_euro_ko) and home_score == away_score:
+        if _rnd.random() < 0.5:
             home_score += 1
         else:
             away_score += 1
@@ -312,52 +324,85 @@ def play_match(match_id):
         db.session.add(me)
     db.session.commit()
 
-    if not is_cup:
+    if is_league:
         season_mod.update_standings(season, league, match.home_club_id,
                                     match.away_club_id, home_score, away_score)
     engine.update_player_stats(events, season.id)
 
-    # Discipline: bans from red cards and yellow accumulation
+    # Discipline
     injuries_mod.process_match_discipline(events, season.id, gs)
 
     # Simulate rest of that league match-day
-    if not is_cup:
+    if is_league:
         season_mod.simulate_other_matches(season, league, match.match_date, gs, app)
 
-    # Simulate AI cup matches on or before this date
+    # Simulate AI cup and European matches
     cups_mod.simulate_cup_day(season, match.match_date, gs)
+    europe_mod.simulate_europe_day(season, match.match_date, gs)
 
-    # Advance injuries one week
+    # ----- Morale update -----
+    mc      = gs.managed_club
+    we_home = match.home_club_id == mc.id
+    our_score   = home_score if we_home else away_score
+    their_score = away_score if we_home else home_score
+
+    starter_ids = [l.player_id for l in
+                   Lineup.query.filter(Lineup.game_state_id == gs.id,
+                                       Lineup.slot <= 11).all()]
+    sub_ids     = [l.player_id for l in
+                   Lineup.query.filter(Lineup.game_state_id == gs.id,
+                                       Lineup.slot > 11).all()]
+    scorer_ids   = [ev['player_id'] for ev in events
+                    if ev['type'] == 'goal' and ev.get('club_id') == mc.id
+                    and ev.get('player_id')]
+    assister_ids = [ev['assist_player_id'] for ev in events
+                    if ev['type'] == 'goal' and ev.get('club_id') == mc.id
+                    and ev.get('assist_player_id')]
+    apply_match_morale(gs, our_score, their_score,
+                       starter_ids, sub_ids, scorer_ids, assister_ids)
+
+    # ----- Board confidence (league matches only) -----
+    sacked = False
+    if is_league:
+        table    = season_mod.get_league_table(gs.current_season_id, mc.league_id)
+        position = next((i + 1 for i, s in enumerate(table)
+                         if s.club_id == mc.id), len(table))
+        result   = ('W' if our_score > their_score else
+                    'D' if our_score == their_score else 'L')
+        sacked = update_board_after_match(gs, result, position)
+
+    # Advance injuries
     injuries_mod.advance_injuries()
 
-    # Random post-match injury for managed club starters
+    # Post-match injury check
     starters, _ = engine.get_squad_for_match(gs.managed_club, gs)
     injuries_mod.check_match_injuries(starters, gs)
 
     # Reduce suspensions
     injuries_mod.reduce_suspensions()
 
-    # Advance game date
+    # Advance date
     gs.current_date = match.match_date
 
     # Post-match news
-    mc = gs.managed_club
-    we_home = match.home_club_id == mc.id
-    our_score = home_score if we_home else away_score
-    their_score = away_score if we_home else home_score
     opp = match.away_club if we_home else match.home_club
     verdict = ('win' if our_score > their_score else
                'draw' if our_score == their_score else 'defeat')
     headline = (f"{mc.short_name} {home_score}-{away_score} {opp.short_name}"
                 if we_home else
                 f"{opp.short_name} {home_score}-{away_score} {mc.short_name}")
-    comp_label = match.competition or 'League'
-    season_mod.add_news(gs, f"[{comp_label}] {headline}",
+    season_mod.add_news(gs, f"[{comp}] {headline}",
                         f"A {verdict} for {mc.name} against {opp.name}.",
                         category='result')
 
     transfers_mod.ai_transfers(gs, gs.current_date)
+
+    if sacked:
+        gs.is_sacked = True
     db.session.commit()
+
+    if sacked:
+        return redirect(url_for('sacked'))
 
     return redirect(url_for('match_view', match_id=match.id))
 
@@ -380,15 +425,26 @@ def match_result(match_id):
     gs = get_game_state()
     match = Match.query.get_or_404(match_id)
     events = sorted(match.events, key=lambda e: e.minute)
-    league = League.query.get(match.league_id)
-    table = season_mod.get_league_table(gs.current_season_id, league.id)
-    # other results that day
-    others = Match.query.filter_by(
-        season_id=gs.current_season_id, league_id=league.id,
-        match_date=match.match_date, played=True).all()
-    others = [m for m in others if m.id != match.id]
+
+    league = League.query.get(match.league_id) if match.league_id else None
+    if league:
+        table  = season_mod.get_league_table(gs.current_season_id, league.id)
+        others = Match.query.filter_by(
+            season_id=gs.current_season_id, league_id=league.id,
+            match_date=match.match_date, played=True).filter(
+            Match.id != match.id).all()
+    else:
+        table  = []
+        others = []
+
+    group_standings = None
+    if match.competition and 'CL Group' in match.competition:
+        group_standings = europe_mod.get_group_standings(
+            gs.current_season_id, match.competition)
+
     return render_template('match_result.html', match=match, events=events,
                            table=table, others=others,
+                           group_standings=group_standings,
                            managed_club_id=gs.managed_club_id)
 
 
@@ -557,6 +613,63 @@ def cup_fixtures():
     lc_all = [m for m in fa if 'League Cup' in m.competition]
     return render_template('cups.html', fa_matches=fa_all, lc_matches=lc_all,
                            managed_club_id=gs.managed_club_id)
+
+
+# ---------------------------------------------------------------------------
+# Routes: European competition
+# ---------------------------------------------------------------------------
+
+@app.route('/europe')
+@require_game
+def europe():
+    gs = get_game_state()
+    all_euro = europe_mod.get_euro_matches_for_club(
+        gs.managed_club_id, gs.current_season_id)
+    cl_matches   = [m for m in all_euro if 'CL' in m.competition]
+    uefa_matches = [m for m in all_euro if 'UEFA' in m.competition]
+
+    our_group     = europe_mod.get_our_cl_group(gs.managed_club_id, gs.current_season_id)
+    group_standings = (europe_mod.get_group_standings(gs.current_season_id, our_group)
+                       if our_group else None)
+    in_europe = bool(all_euro)
+
+    return render_template('europe.html',
+                           cl_matches=cl_matches,
+                           uefa_matches=uefa_matches,
+                           group_standings=group_standings,
+                           our_group=our_group,
+                           managed_club_id=gs.managed_club_id,
+                           in_europe=in_europe)
+
+
+# ---------------------------------------------------------------------------
+# Routes: board room
+# ---------------------------------------------------------------------------
+
+@app.route('/board')
+@require_game
+def board():
+    gs = get_game_state()
+    league   = gs.managed_club.league
+    table    = season_mod.get_league_table(gs.current_season_id, league.id)
+    position = next((i + 1 for i, s in enumerate(table)
+                     if s.club_id == gs.managed_club_id), 0)
+    board_news = NewsItem.query.filter_by(
+        game_state_id=gs.id, category='board').order_by(
+        NewsItem.id.desc()).limit(5).all()
+    return render_template('board.html', gs=gs, position=position,
+                           board_news=board_news,
+                           total_teams=len(table))
+
+
+# ---------------------------------------------------------------------------
+# Routes: sacked
+# ---------------------------------------------------------------------------
+
+@app.route('/sacked')
+def sacked():
+    gs = get_game_state()
+    return render_template('sacked.html', gs=gs)
 
 
 # ---------------------------------------------------------------------------

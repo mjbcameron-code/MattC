@@ -12,6 +12,7 @@
                 <tr>
                     <th class="num">#</th><th>Name</th><th>Pos</th><th>Nat</th>
                     <th class="num">Age</th><th class="num">Rating</th>
+                    <th class="num">Morale</th>
                     <th class="num">Apps</th><th class="num">Gls</th>
                     <th class="num">Value</th><th class="num">Wage</th><th></th>
                 </tr>
@@ -30,12 +31,18 @@
                         {% endif %}
                         <strong>{{ p.name }}</strong>
                         {% if p.transfer_listed %}<span class="listed small">[listed]</span>{% endif %}
+                        {% if p.is_youth %}<span class="small" style="color:var(--cm-green-light);" title="Academy graduate">[Y]</span>{% endif %}
                     </td>
                     <td><span class="pos pos-{{ p.position }}">{{ p.position }}</span></td>
                     <td class="small">{{ p.nationality }}</td>
                     <td class="num">{{ p.age }}</td>
                     <td class="num"><span class="rating {{ rating_class(p.overall_rating()) }}">
                         {{ p.overall_rating() }}</span></td>
+                    <td class="num">
+                        {% set m = p.morale or 70 %}
+                        <span style="color:{% if m >= 75 %}var(--cm-green-light){% elif m >= 50 %}var(--cm-text){% else %}var(--cm-red){% endif %}">
+                            {{ m }}</span>
+                    </td>
                     <td class="num">{{ stats[p.id].appearances if p.id in stats else 0 }}</td>
                     <td class="num">{{ stats[p.id].goals if p.id in stats else 0 }}</td>
                     <td class="num">{{ p.value | money }}</td>
@@ -54,5 +61,5 @@
         </table>
     </div>
 </div>
-<p class="muted small">Highlighted = starting XI. ✚ = injured (weeks remaining). 🟨 = suspended (matches remaining).</p>
+<p class="muted small">Highlighted = starting XI. ✚ = injured (weeks remaining). 🟨 = suspended (matches remaining). [Y] = youth academy graduate.</p>
 {% endblock %}

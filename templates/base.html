@@ -20,6 +20,9 @@
     <div class="topbar-right">
         <div class="date-pill">{{ game_state.current_date }}</div>
         <div class="budget-pill">{{ game_state.managed_club.budget | money }}</div>
+        <div class="conf-pill" title="Board confidence: {{ game_state.board_confidence }}%">
+            Board: {{ game_state.board_confidence or 50 }}%
+        </div>
     </div>
 </header>
 
@@ -31,6 +34,8 @@
     <a href="{{ url_for('league_table') }}" class="{% block nav_table %}{% endblock %}">Table</a>
     <a href="{{ url_for('transfers') }}" class="{% block nav_transfers %}{% endblock %}">Transfers</a>
     <a href="{{ url_for('cup_fixtures') }}" class="{% block nav_cups %}{% endblock %}">Cups</a>
+    <a href="{{ url_for('europe') }}" class="{% block nav_europe %}{% endblock %}">Europe</a>
+    <a href="{{ url_for('board') }}" class="{% block nav_board %}{% endblock %}">Board</a>
     <a href="{{ url_for('stats') }}" class="{% block nav_stats %}{% endblock %}">Stats</a>
     <a href="{{ url_for('news') }}" class="{% block nav_news %}{% endblock %} news-link">
         News{% if unread_news %}<span class="badge">{{ unread_news }}</span>{% endif %}</a>

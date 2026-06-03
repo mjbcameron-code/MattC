@@ -128,6 +128,10 @@ def new_game(manager_name, club_id):
     generate_fa_cup(season)
     generate_league_cup(season)
 
+    from game.europe import generate_champions_league, generate_uefa_cup
+    generate_champions_league(season)
+    generate_uefa_cup(season)
+
     gs = GameState(
         managed_club_id=club_id,
         current_date='2001-08-18',
@@ -146,6 +150,10 @@ def new_game(manager_name, club_id):
              f"{club.name}. The fans expect results this season. You have a "
              f"transfer budget of £{club.budget:,} to strengthen the squad. "
              f"Good luck!", category='general')
+
+    # Set initial board target
+    from game.board import set_board_target
+    set_board_target(gs)
 
     # Auto-pick an initial lineup
     auto_pick_lineup(gs)

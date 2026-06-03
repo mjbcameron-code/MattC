@@ -231,6 +231,15 @@ def process_new_season(game_state):
                      if s.club_id == mc.id), len(table))
     relegated = [s.club_id for s in table[-3:]] if len(table) >= 20 else []
 
+    # Capture league tables for European qualification before overwriting
+    from .models import League as LeagueModel
+    prev_standings = {}
+    for lg in LeagueModel.query.filter(
+            LeagueModel.name.in_(['Premier League', 'La Liga',
+                                  'Serie A', 'Bundesliga'])).all():
+        t = get_league_table(season.id, lg.id)
+        prev_standings[lg.name] = [s.club for s in t]
+
     # ---- Age and develop players ----
     for p in Player.query.all():
         p.age += 1
@@ -273,6 +282,10 @@ def process_new_season(game_state):
     generate_fa_cup(new_season)
     generate_league_cup(new_season)
 
+    from game.europe import generate_champions_league, generate_uefa_cup
+    generate_champions_league(new_season, prev_standings)
+    generate_uefa_cup(new_season, prev_standings)
+
     # Slight budget boost (summer window)
     for club in Club.query.all():
         club.budget = int(club.budget * 1.08)
@@ -299,6 +312,25 @@ def process_new_season(game_state):
              f"The new {new_season.name} season is underway. "
              f"Fixtures have been generated and the transfer window is open. "
              f"Budget: £{mc.budget:,}. Good luck!", 'general')
+
+    # European qualification news
+    if position <= 4:
+        add_news(game_state, f'{mc.name} qualify for the Champions League!',
+                 f'A {position}{"st" if position==1 else "nd" if position==2 else "rd" if position==3 else "th"}-place '
+                 f'finish earns Champions League football next season. '
+                 f'The group stage draw awaits!', 'general')
+    elif position <= 7:
+        add_news(game_state, f'{mc.name} qualify for the UEFA Cup!',
+                 f'A {position}th-place finish secures UEFA Cup football '
+                 f'next season. A reward for a solid campaign.', 'general')
+
+    # Youth intake
+    from game.youth import generate_youth_intake
+    generate_youth_intake(game_state)
+
+    # Reset board confidence for new season
+    from game.board import set_board_target
+    set_board_target(game_state)
 
     from game.setup import auto_pick_lineup
     auto_pick_lineup(game_state)

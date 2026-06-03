@@ -49,6 +49,32 @@
     </div>
 </div>
 
+{% if group_standings %}
+<div class="panel">
+    <div class="panel-header">{{ match.competition }} Standings</div>
+    <div class="panel-body" style="padding:0;">
+        <table>
+            <thead><tr><th>#</th><th>Club</th><th class="num">P</th>
+                <th class="num">W</th><th class="num">D</th><th class="num">L</th>
+                <th class="num">GF</th><th class="num">GA</th>
+                <th class="num">GD</th><th class="num">Pts</th></tr></thead>
+            <tbody>
+            {% for row in group_standings %}
+            <tr class="{% if row.club and row.club.id == managed_club_id %}highlight{% endif %}">
+                <td>{{ loop.index }}</td>
+                <td>{{ row.club.short_name if row.club else '—' }}</td>
+                <td class="num">{{ row.P }}</td><td class="num">{{ row.W }}</td>
+                <td class="num">{{ row.D }}</td><td class="num">{{ row.L }}</td>
+                <td class="num">{{ row.GF }}</td><td class="num">{{ row.GA }}</td>
+                <td class="num">{{ row.GD }}</td>
+                <td class="num"><strong>{{ row.Pts }}</strong></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% elif table %}
 <div class="panel">
     <div class="panel-header">League Table</div>
     <div class="panel-body" style="padding:0;">
@@ -71,6 +97,7 @@
         </table>
     </div>
 </div>
+{% endif %}
 
 <div class="center mb">
     <a href="{{ url_for('dashboard') }}" class="btn">Back to Office</a>
