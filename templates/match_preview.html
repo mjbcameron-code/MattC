@@ -60,9 +60,11 @@
         </div>
         {% endif %}
         <div class="center mt">
-            <a href="{{ url_for('play_match', match_id=match.id) }}" class="btn btn-accent"
-               style="font-size:16px;padding:12px 40px;">Kick Off ▶</a>
-            <a href="{{ url_for('tactics') }}" class="btn" style="margin-left:8px;">View Lineup</a>
+            <a href="{{ url_for('press_pre_match', match_id=match.id) }}" class="btn btn-accent"
+               style="font-size:16px;padding:12px 40px;">Press Conference ▶</a>
+            <a href="{{ url_for('play_match', match_id=match.id) }}" class="btn"
+               style="margin-left:8px;" title="Skip the press conference">Kick Off</a>
+            <a href="{{ url_for('tactics') }}" class="btn" style="margin-left:8px;">Lineup</a>
         </div>
     </div>
 </div>

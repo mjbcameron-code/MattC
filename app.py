@@ -30,6 +30,7 @@ from game import contracts as contracts_mod
 from game import scouting as scouting_mod
 from game import commercial as commercial_mod
 from game import academy as academy_mod
+from game import press as press_mod
 from game.morale import apply_match_morale
 from game.board import update_board_after_match
 
@@ -769,6 +770,31 @@ def next_match_preview():
                            home_form=home_form, away_form=away_form)
 
 
+@app.route('/press/pre-match/<int:match_id>', methods=['GET', 'POST'])
+@require_game
+def press_pre_match(match_id):
+    gs    = get_game_state()
+    match = Match.query.get_or_404(match_id)
+    if match.played:
+        return redirect(url_for('match_result', match_id=match_id))
+
+    if request.method == 'POST':
+        q_id       = request.form.get('q_id', '')
+        answer_key = request.form.get('answer_key', '')
+        question   = press_mod.get_question_by_id(q_id)
+        if question and answer_key:
+            answer = press_mod.apply_pre_match_answer(gs, question, answer_key)
+            if answer:
+                flash(answer['flavour'], 'success')
+        return redirect(url_for('play_match', match_id=match_id))
+
+    question, _ = press_mod.get_pre_match_question(gs, match)
+    opp = (match.away_club if match.home_club_id == gs.managed_club_id
+           else match.home_club)
+    return render_template('press_conference.html', match=match, opp=opp,
+                           question=question, gs=gs)
+
+
 @app.route('/match/play/<int:match_id>')
 @require_game
 def play_match(match_id):
@@ -924,6 +950,9 @@ def play_match(match_id):
 
     # Ongoing head-coach feedback to the DoF (occasional)
     staff_mod.maybe_coach_feedback(gs)
+
+    # Post-match media reaction
+    press_mod.generate_post_match_headline(gs, our_score, their_score, opp, comp)
 
     # Players pushing for transfers or contract talks
     transfers_mod.maybe_player_transfer_request(gs)
