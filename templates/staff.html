@@ -78,6 +78,13 @@
                     — {% if sat >= 70 %}Happy{% elif sat >= 50 %}Content{% elif sat >= 30 %}Unsettled{% else %}Wants out{% endif %}
                 </span>
             </p>
+            {% if friction and friction >= 2 %}
+            <div style="margin-top:6px;padding:8px 10px;border-radius:4px;background:#2a1414;border:1px solid #5a2a2a;">
+                <span class="small" style="color:#e08a8a;">⚠ <strong>Lingering resentment</strong> —
+                    {{ head_coach.name }} hasn't forgotten how recent meetings have gone.
+                    He'll walk far sooner than usual if pushed again.</span>
+            </div>
+            {% endif %}
 
             <div class="mt flex" style="gap:8px;flex-wrap:wrap;">
                 <form method="post" action="{{ url_for('renew_manager') }}">

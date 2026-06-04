@@ -277,10 +277,12 @@ def tactics():
 @require_game
 def staff():
     gs = get_game_state()
+    friction = staff_mod.recent_friction(gs) if gs.managed_club.head_coach else 0
     return render_template('staff.html',
                            head_coach=gs.managed_club.head_coach,
                            available=staff_mod.get_available_managers(),
                            pending_meetings=staff_mod.get_pending_meetings(gs),
+                           friction=friction,
                            club=gs.managed_club, gs=gs)
 
 

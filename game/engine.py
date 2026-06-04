@@ -242,6 +242,18 @@ def simulate_match(home_club, away_club, season, match_obj, game_state=None):
             # Fixed ordering (ta>=18 was unreachable in old code); narrower range so
             # even a great manager gives only a 7% boost rather than 15%
             ta_mult = 0.92 if ta <= 6 else (1.07 if ta >= 18 else (1.04 if ta >= 14 else 1.00))
+            # Relationship with the DoF feeds into the dressing room: a settled,
+            # well-backed manager gets a touch more out of the side; a manager at
+            # war with the board is undermined. Small swing (~±4%).
+            sat = mgr.satisfaction if mgr.satisfaction is not None else 70
+            if sat >= 80:
+                ta_mult *= 1.04
+            elif sat >= 65:
+                ta_mult *= 1.02
+            elif sat < 25:
+                ta_mult *= 0.94
+            elif sat < 40:
+                ta_mult *= 0.97
             style = mgr.preferred_style or 'balanced'
         else:
             ta_mult = 0.88  # no manager — modest leaderless penalty

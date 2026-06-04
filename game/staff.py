@@ -213,16 +213,74 @@ def update_manager_satisfaction(game_state, event, delta=None):
     mgr.satisfaction = max(0, min(100, (mgr.satisfaction or 70) + change))
 
 
+# Confrontational meeting responses the manager will hold against the DoF.
+_CONFRONTATIONAL_CHOICES = {
+    'ultimatum', 'override', 'dof_leads', 'board_mandate',
+    'dof_vision', 'no_extension', 'formal_review',
+}
+
+
+def recent_friction(game_state, limit=4):
+    """Count confrontational meeting outcomes among the manager's last few meetings.
+
+    A manager 'remembers' how he's been treated: repeated hard lines build
+    resentment that makes him quicker to walk away.
+    """
+    from .models import ManagerMeeting
+    mgr = game_state.managed_club.head_coach
+    if not mgr:
+        return 0
+    recent = (ManagerMeeting.query
+              .filter_by(game_state_id=game_state.id, manager_id=mgr.id,
+                         status='resolved')
+              .order_by(ManagerMeeting.id.desc())
+              .limit(limit).all())
+    return sum(1 for m in recent
+               if m.resolved_choice in _CONFRONTATIONAL_CHOICES)
+
+
 def check_manager_status(game_state):
     """
     Check whether the manager wants to resign.
     Returns True if the manager has quit (caller should re-query the club).
+
+    Sustained friction matters: a manager who has been repeatedly overruled
+    or undermined in meetings will walk at a higher satisfaction threshold
+    than one who's merely having a rough patch.
     """
     mgr = game_state.managed_club.head_coach
     if not mgr:
         return False
 
     sat = mgr.satisfaction or 70
+
+    # Friction raises the bar at which the manager resigns. Each confrontational
+    # meeting in recent memory lifts the resignation threshold (det-resistant
+    # managers in particular won't tolerate being bossed around).
+    friction = recent_friction(game_state)
+    resign_threshold = 10
+    if friction >= 3:
+        resign_threshold = 22
+    elif friction >= 2:
+        resign_threshold = 16
+
+    # A strong-willed, high-reputation manager is prouder and walks sooner
+    # once the relationship has soured.
+    if friction >= 2 and ((mgr.determination or 10) >= 15 or (mgr.reputation or 50) >= 80):
+        resign_threshold += 4
+
+    if sat <= resign_threshold and friction >= 2:
+        add_news(game_state,
+                 f"{mgr.name} resigns over breakdown with the board",
+                 f"{mgr.name} has walked away from "
+                 f"{game_state.managed_club.name}. Sources point to a series of "
+                 f"meetings in which the {mgr.nationality} coach felt overruled and "
+                 f"undermined by the Director of Football. 'A manager has to feel "
+                 f"backed,' said one insider. 'He didn't.'", 'staff')
+        game_state.board_confidence = max(0, (game_state.board_confidence or 50) - 12)
+        _release_manager(mgr)
+        db.session.commit()
+        return True
 
     if sat <= 10:
         add_news(game_state,
@@ -750,11 +808,20 @@ def maybe_schedule_meeting(game_state):
     except Exception:
         cur_month = 8
 
+    board_conf = game_state.board_confidence or 50
+
     # Pick topic and trigger probability
     topic = None
     prob = 0.0
+    board_forced = False
 
-    if losses >= 3:
+    # The board can force a crisis meeting when confidence has collapsed and
+    # results are poor — this is not optional and lands with extra weight.
+    if board_conf < 30 and losses >= 2:
+        topic = 'form_review'
+        prob = 0.80
+        board_forced = True
+    elif losses >= 3:
         topic = 'form_review'
         prob = 0.65
     elif contract_remaining <= 1:
@@ -783,11 +850,20 @@ def maybe_schedule_meeting(game_state):
     db.session.commit()
 
     title = MEETING_TOPICS[topic]['title']
-    add_news(game_state,
-             f"{mgr.name} has requested a meeting — {title}",
-             f"{mgr.name} has asked for a meeting to discuss {title.lower()}. "
-             f"Head to the Staff page to respond.",
-             'staff')
+    if board_forced:
+        add_news(game_state,
+                 f"Board orders crisis meeting with {mgr.name}",
+                 f"With confidence at a low ebb and results sliding, the board "
+                 f"have instructed the Director of Football to sit down with "
+                 f"{mgr.name} for a {title.lower()}. How you handle it will be "
+                 f"noted upstairs. Respond from the Staff page.",
+                 'staff')
+    else:
+        add_news(game_state,
+                 f"{mgr.name} has requested a meeting — {title}",
+                 f"{mgr.name} has asked for a meeting to discuss {title.lower()}. "
+                 f"Head to the Staff page to respond.",
+                 'staff')
 
 
 def get_pending_meetings(game_state):
