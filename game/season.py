@@ -123,7 +123,7 @@ def update_standings(season, league, home_club_id, away_club_id, home_score, awa
 
 def simulate_other_matches(season, league, match_date, game_state, app):
     """Simulate all other matches on the same match day (not the managed club's match)."""
-    from .engine import simulate_match as eng_sim, update_player_stats
+    from .engine import simulate_match as eng_sim, update_player_stats, record_participation
     from .models import MatchEvent
 
     other_matches = Match.query.filter_by(
@@ -138,7 +138,7 @@ def simulate_other_matches(season, league, match_date, game_state, app):
         if (m.home_club_id == game_state.managed_club_id or
                 m.away_club_id == game_state.managed_club_id):
             continue
-        h_score, a_score, events, _, _ = eng_sim(m.home_club, m.away_club, season, m)
+        h_score, a_score, events, _, _, participants = eng_sim(m.home_club, m.away_club, season, m)
         m.home_score = h_score
         m.away_score = a_score
         m.played = True
@@ -155,6 +155,7 @@ def simulate_other_matches(season, league, match_date, game_state, app):
             db.session.add(me)
         update_standings(season, league, m.home_club_id, m.away_club_id, h_score, a_score)
         update_player_stats(events, season.id)
+        record_participation(participants, season.id, m.id)
         results.append((m, h_score, a_score))
 
     db.session.commit()

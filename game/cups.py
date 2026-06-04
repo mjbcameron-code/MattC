@@ -177,7 +177,7 @@ def check_and_advance_cups(season, game_state):
 
 def simulate_cup_day(season, match_date, game_state):
     """Simulate all AI cup matches on or before match_date."""
-    from .engine import simulate_match as _sim, update_player_stats
+    from .engine import simulate_match as _sim, update_player_stats, record_participation
     from .models import MatchEvent
 
     pending = Match.query.filter_by(season_id=season.id, played=False).filter(
@@ -189,7 +189,7 @@ def simulate_cup_day(season, match_date, game_state):
         mid = game_state.managed_club_id
         if m.home_club_id == mid or m.away_club_id == mid:
             continue
-        hs, as_, events, _, _ = _sim(m.home_club, m.away_club, season, m)
+        hs, as_, events, _, _, participants = _sim(m.home_club, m.away_club, season, m)
         # Cups must have a winner — ET goal for draws
         if hs == as_:
             if random.random() < 0.5:
@@ -203,6 +203,7 @@ def simulate_cup_day(season, match_date, game_state):
                 player_id=ev.get('player_id'), assist_player_id=ev.get('assist_player_id'),
                 club_id=ev.get('club_id'), description=ev.get('description', '')))
         update_player_stats(events, season.id)
+        record_participation(participants, season.id, m.id)
 
     db.session.commit()
     check_and_advance_cups(season, game_state)

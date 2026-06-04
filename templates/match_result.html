@@ -49,6 +49,39 @@
     </div>
 </div>
 
+{% if home_ratings or away_ratings %}
+{% macro ratings_table(rows) %}
+<table>
+    <tbody>
+    {% for r in rows %}
+    <tr class="clickable" onclick="location.href='{{ url_for('player_detail', player_id=r.player_id) }}'">
+        <td><span class="pos pos-{{ r.player.position }}">{{ r.player.position }}</span></td>
+        <td>{{ r.player.name }}
+            {% if r.goals %}<span class="small">{{ '⚽' * r.goals }}</span>{% endif %}
+            {% if r.assists %}<span class="small muted">{{ r.assists }}🅰</span>{% endif %}
+            {% if not r.started %}<span class="small muted" title="Substitute">(s)</span>{% endif %}
+        </td>
+        <td class="num" style="width:48px;">
+            {% set rc = 'var(--cm-green-light)' if r.rating >= 7.5 else ('var(--cm-accent)' if r.rating >= 6.5 else ('var(--cm-red)' if r.rating < 5.5 else 'var(--cm-text)')) %}
+            <strong style="color:{{ rc }};">{{ "%.1f"|format(r.rating) }}</strong>
+        </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endmacro %}
+<div class="grid-2">
+    <div class="panel">
+        <div class="panel-header">{{ match.home_club.short_name }} — Player Ratings</div>
+        <div class="panel-body" style="padding:0;">{{ ratings_table(home_ratings) }}</div>
+    </div>
+    <div class="panel">
+        <div class="panel-header">{{ match.away_club.short_name }} — Player Ratings</div>
+        <div class="panel-body" style="padding:0;">{{ ratings_table(away_ratings) }}</div>
+    </div>
+</div>
+{% endif %}
+
 {% if group_standings %}
 <div class="panel">
     <div class="panel-header">{{ match.competition }} Standings</div>

@@ -27,6 +27,12 @@
                         <span class="muted">Unknown — not scouted</span>
                     {% endif %}
                     </td></tr>
+                {% if managed or tier == 3 %}
+                <tr><td class="muted">Current Ability</td>
+                    <td><span style="color:var(--cm-accent);">{{ "%.1f"|format(cur_star) }}★</span></td></tr>
+                <tr><td class="muted">Potential</td>
+                    <td><span style="color:var(--cm-blue);">{{ "%.1f"|format(pot_star) }}★</span></td></tr>
+                {% endif %}
                 <tr><td class="muted">Value</td><td>{{ value | money }}</td></tr>
                 {% if managed or tier >= 2 %}
                 <tr><td class="muted">Wage</td><td>{{ player.wage | money }} p/w</td></tr>
@@ -59,6 +65,31 @@
                 <div class="stat-item"><div class="big">{{ stats.appearances }}</div><div class="lbl">Apps</div></div>
                 <div class="stat-item"><div class="big">{{ stats.goals }}</div><div class="lbl">Goals</div></div>
                 <div class="stat-item"><div class="big">{{ stats.assists }}</div><div class="lbl">Assists</div></div>
+                {% set ar = stats.avg_rating %}
+                <div class="stat-item">
+                    <div class="big" style="color:{% if ar and ar >= 7.5 %}var(--cm-green-light){% elif ar and ar >= 6.5 %}var(--cm-accent){% elif ar %}var(--cm-text){% else %}var(--cm-text-dim){% endif %};">
+                        {{ "%.2f"|format(ar) if ar else '—' }}</div>
+                    <div class="lbl">Avg Rating</div>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if recent_ratings %}
+            <div class="mt">
+                <p class="muted small mb">RECENT FORM</p>
+                <div class="flex" style="gap:6px;flex-wrap:wrap;">
+                {% for mr, m in recent_ratings %}
+                    {% set rc = 'var(--cm-green-light)' if mr.rating >= 7.5 else ('var(--cm-accent)' if mr.rating >= 6.5 else ('var(--cm-red)' if mr.rating < 5.5 else 'var(--cm-text)')) %}
+                    <div style="text-align:center;min-width:54px;border:1px solid var(--cm-border);border-radius:4px;padding:4px 6px;"
+                         {% if m %}title="{{ m.home_club.short_name }} {{ m.home_score }}-{{ m.away_score }} {{ m.away_club.short_name }}"{% endif %}>
+                        <div style="font-weight:bold;color:{{ rc }};">{{ "%.1f"|format(mr.rating) }}</div>
+                        <div class="small muted" style="font-size:0.7em;">
+                            {%- if mr.goals %}{{ mr.goals }}⚽{% endif %}{% if mr.assists %} {{ mr.assists }}🅰{% endif %}
+                            {%- if not mr.goals and not mr.assists %}{% if mr.started %}90'{% else %}sub{% endif %}{% endif -%}
+                        </div>
+                    </div>
+                {% endfor %}
+                </div>
             </div>
             {% endif %}
 

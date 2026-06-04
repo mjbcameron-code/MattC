@@ -7,6 +7,7 @@ release those who won't make it, generate annual intakes.
 import random
 from .models import db, Player
 from .season import add_news
+from data.player_factory import build_player
 
 _FIRST = [
     'Danny', 'Jamie', 'Kyle', 'Tom', 'Jack', 'Ryan', 'Liam', 'Ben',
@@ -40,10 +41,11 @@ def generate_intake(gs):
     """Annual youth intake. Call at season start."""
     aq = gs.managed_club.academy_quality or 2
     rng = random.Random(gs.current_season_id * 37 + gs.managed_club_id * 13)
+    base_year = gs.current_season.year if gs.current_season else 2025
     count = rng.randint(3 + aq, 5 + aq)
     players = []
     for _ in range(count):
-        p = _make_youth_player(gs.managed_club, aq, rng)
+        p = _make_youth_player(gs.managed_club, aq, rng, base_year)
         db.session.add(p)
         players.append(p)
     db.session.flush()
@@ -61,74 +63,49 @@ def seed_youth_for_new_game(gs):
     """Seed a small initial youth squad for the managed club on game start."""
     aq = gs.managed_club.academy_quality or 2
     rng = random.Random(gs.managed_club_id * 99 + 7)
+    base_year = gs.current_season.year if gs.current_season else 2025
     for _ in range(4 + aq):
-        p = _make_youth_player(gs.managed_club, aq, rng)
+        p = _make_youth_player(gs.managed_club, aq, rng, base_year)
         db.session.add(p)
     db.session.flush()
 
 
-def _make_youth_player(club, aq, rng=None):
+# Distinct surnames per intake so two youths rarely share a build seed
+_youth_seq = 0
+
+
+def _make_youth_player(club, aq, rng=None, base_year=2025):
+    """Generate a teenager on the same 1-200 ability scale as the senior squad.
+
+    Current ability is deliberately low (a 15-17 year old is nowhere near the
+    first team yet); the interest is in *potential*. A stronger academy raises
+    both the odds and the ceiling of a genuine prospect emerging.
+    """
+    global _youth_seq
     if rng is None:
         rng = random
     age = rng.randint(15, 17)
     position = rng.choice(POSITIONS)
-    ca = rng.randint(8, 16 + aq * 2)
-    pa_ceiling = min(100, 25 + aq * 13)
-    pa = rng.randint(min(ca + 12, pa_ceiling), max(ca + 15, pa_ceiling))
+
+    # Current quality: low for a teenager (2-6 on the 1-20 scale → CA 20-60)
+    q_cur = rng.randint(2, 6)
+
+    # Potential quality distribution, lifted by academy quality
+    roll = rng.random()
+    if roll < 0.55:
+        q_pot = rng.randint(6, 9)       # squad filler / lower-league level
+    elif roll < 0.88:
+        q_pot = rng.randint(9, 12)      # solid first-team potential
+    else:
+        q_pot = rng.randint(12, 16)     # genuine prospect
+    q_pot = min(20, q_pot + (aq - 1))
+    q_pot = max(q_pot, q_cur + 2)
+
+    _youth_seq += 1
     name = f"{rng.choice(_FIRST)} {rng.choice(_LAST)}"
-
-    def a(frac):
-        v = int(ca * frac / 10) + rng.randint(-2, 2)
-        return max(1, min(20, v))
-
-    if position == 'GK':
-        attrs = dict(
-            pace=a(4), acceleration=a(4), stamina=a(6), strength=a(5),
-            agility=a(6), jumping=a(5), crossing=a(2), dribbling=a(2),
-            finishing=a(1), first_touch=a(3), heading=a(4), long_shots=a(2),
-            marking=a(3), passing=a(4), tackling=a(3), technique=a(3),
-            aggression=a(5), anticipation=a(6), bravery=a(7), composure=a(6),
-            concentration=a(7), creativity=a(3), decisions=a(6), determination=a(6),
-            flair=a(2), off_the_ball=a(3), positioning=a(7), teamwork=a(6),
-            work_rate=a(5), handling=a(7), reflexes=a(7), aerial=a(5),
-            one_on_ones=a(6), rushing_out=a(5),
-        )
-    elif position in ('CB', 'RB', 'LB'):
-        attrs = dict(
-            pace=a(6), acceleration=a(6), stamina=a(7), strength=a(7),
-            agility=a(5), jumping=a(6), crossing=a(4), dribbling=a(3),
-            finishing=a(2), first_touch=a(5), heading=a(7), long_shots=a(3),
-            marking=a(8), passing=a(5), tackling=a(8), technique=a(4),
-            aggression=a(7), anticipation=a(6), bravery=a(7), composure=a(5),
-            concentration=a(7), creativity=a(3), decisions=a(6), determination=a(7),
-            flair=a(2), off_the_ball=a(4), positioning=a(7), teamwork=a(6),
-            work_rate=a(7), handling=a(2), reflexes=a(2), aerial=a(4),
-            one_on_ones=a(2), rushing_out=a(2),
-        )
-    elif position in ('CM', 'AM', 'RM', 'LM'):
-        attrs = dict(
-            pace=a(6), acceleration=a(6), stamina=a(8), strength=a(5),
-            agility=a(6), jumping=a(5), crossing=a(6), dribbling=a(6),
-            finishing=a(4), first_touch=a(7), heading=a(4), long_shots=a(5),
-            marking=a(4), passing=a(7), tackling=a(5), technique=a(7),
-            aggression=a(5), anticipation=a(6), bravery=a(5), composure=a(6),
-            concentration=a(6), creativity=a(7), decisions=a(6), determination=a(6),
-            flair=a(6), off_the_ball=a(6), positioning=a(5), teamwork=a(6),
-            work_rate=a(7), handling=a(2), reflexes=a(2), aerial=a(3),
-            one_on_ones=a(2), rushing_out=a(2),
-        )
-    else:  # ST
-        attrs = dict(
-            pace=a(7), acceleration=a(7), stamina=a(7), strength=a(6),
-            agility=a(6), jumping=a(6), crossing=a(3), dribbling=a(6),
-            finishing=a(7), first_touch=a(6), heading=a(6), long_shots=a(5),
-            marking=a(2), passing=a(5), tackling=a(2), technique=a(6),
-            aggression=a(5), anticipation=a(7), bravery=a(6), composure=a(6),
-            concentration=a(5), creativity=a(5), decisions=a(6), determination=a(6),
-            flair=a(6), off_the_ball=a(7), positioning=a(6), teamwork=a(5),
-            work_rate=a(7), handling=a(2), reflexes=a(2), aerial=a(5),
-            one_on_ones=a(6), rushing_out=a(2),
-        )
+    # Unique seed name so build_player's deterministic RNG varies per intake
+    built = build_player(f"{name} #{_youth_seq}", 'England', age, position,
+                         q_cur, q_pot)
 
     return Player(
         name=name,
@@ -139,12 +116,12 @@ def _make_youth_player(club, aq, rng=None):
         club_id=club.id,
         is_youth=True,
         wage=rng.randint(100, 400),
-        value=ca * 4000,
-        contract_end=2003 + rng.randint(0, 2),
-        current_ability=ca,
-        potential_ability=pa,
+        value=built['value'],
+        contract_end=base_year + rng.randint(2, 4),
+        current_ability=built['current_ability'],
+        potential_ability=built['potential_ability'],
         morale=70,
-        **attrs,
+        **built['attrs'],
     )
 
 
@@ -198,14 +175,18 @@ def upgrade_academy(gs):
 
 
 def age_youth_players(gs):
-    """Season-end: age youth squad, slight CA gain, release those past 18 with no deal."""
+    """Season-end: age youth squad, develop toward potential, release the rest."""
     new_year = gs.current_season.year + 1
+    tl = gs.managed_club.training_level or 2
     released = []
     for p in get_youth_squad(gs):
         p.age += 1
         if p.current_ability < p.potential_ability:
-            gain = random.randint(0, 2)
-            p.current_ability = min(p.potential_ability, p.current_ability + gain)
+            gap = p.potential_ability - p.current_ability
+            # Better training facilities accelerate development
+            gain = random.randint(2, 6) + tl
+            p.current_ability = min(p.potential_ability,
+                                    p.current_ability + min(gain, gap))
         if p.age >= 19 and p.contract_end <= new_year:
             p.club_id = None
             released.append(p.name)
@@ -229,10 +210,11 @@ def get_coach_youth_recommendation(gs, player):
     mgr = gs.managed_club.head_coach
     if not mgr:
         return 'neutral'
-    if player.potential_ability >= 70:
+    # Scale is 1-200; 120 ≈ 3★ ceiling, 90 ≈ 2.25★
+    if player.potential_ability >= 120:
         return 'promote'
-    if player.age >= 18 and player.current_ability >= 35:
+    if player.age >= 18 and player.current_ability >= 80:
         return 'promote'
-    if player.age >= 19:
+    if player.age >= 19 and player.potential_ability < 90:
         return 'release'
     return 'neutral'

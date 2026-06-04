@@ -14,7 +14,8 @@ from game.models import (db, League, Club, Player, Season, Match, MatchEvent,
                          Standing, PlayerStat, Transfer, NewsItem, GameState,
                          Lineup, Suspension, Loan, Manager, OwnerDemand,
                          ContractNegotiation, TransferBid, Scout, ScoutKnowledge,
-                         Stadium, SponsorDeal, IncomingBid, TransferRequest)
+                         Stadium, SponsorDeal, IncomingBid, TransferRequest,
+                         MatchRating)
 from game.setup import (seed_database, new_game, auto_pick_lineup,
                        database_is_seeded)
 from game import season as season_mod
@@ -229,11 +230,23 @@ def player_detail(player_id):
     idle_scouts = scouting_mod.get_idle_club_scouts(gs) if not managed else []
     cur_star = scouting_mod.stars(player.current_ability)
     pot_star = scouting_mod.stars(player.potential_ability)
+
+    # Recent per-match ratings (most recent first) for the player's profile
+    recent_ratings = []
+    if managed or tier == 3:
+        from game.models import MatchRating
+        rows = (MatchRating.query.filter_by(player_id=player.id)
+                .order_by(MatchRating.id.desc()).limit(6).all())
+        for mr in rows:
+            m = Match.query.get(mr.match_id)
+            recent_ratings.append((mr, m))
+
     return render_template('player.html', player=player, stats=stats,
                            value=value, managed=managed,
                            on_loan=on_loan, know=know, tier=tier,
                            idle_scouts=idle_scouts, cur_star=cur_star,
-                           pot_star=pot_star)
+                           pot_star=pot_star, recent_ratings=recent_ratings,
+                           stars=scouting_mod.stars)
 
 
 # ---------------------------------------------------------------------------
@@ -523,7 +536,8 @@ def academy():
     recs = {p.id: academy_mod.get_coach_youth_recommendation(gs, p) for p in youth}
     return render_template('academy.html', gs=gs, youth=youth,
                            aq=aq, upgrade_cost=upgrade_cost,
-                           academy_labels=academy_mod.ACADEMY_LABELS, recs=recs)
+                           academy_labels=academy_mod.ACADEMY_LABELS, recs=recs,
+                           stars=scouting_mod.stars)
 
 
 @app.route('/academy/promote/<int:player_id>', methods=['POST'])
@@ -771,7 +785,7 @@ def play_match(match_id):
     is_league   = not is_cup and not is_cl_group and not is_euro_ko
     league = League.query.get(match.league_id) if match.league_id else gs.managed_club.league
 
-    home_score, away_score, events, commentary, stats = engine.simulate_match(
+    home_score, away_score, events, commentary, stats, participants = engine.simulate_match(
         match.home_club, match.away_club, season, match, gs)
 
     # Cup and knockout European matches must produce a winner
@@ -797,6 +811,7 @@ def play_match(match_id):
         season_mod.update_standings(season, league, match.home_club_id,
                                     match.away_club_id, home_score, away_score)
     engine.update_player_stats(events, season.id)
+    engine.record_participation(participants, season.id, match.id)
 
     # Discipline
     injuries_mod.process_match_discipline(events, season.id, gs)
@@ -965,10 +980,17 @@ def match_result(match_id):
         group_standings = europe_mod.get_group_standings(
             gs.current_season_id, match.competition)
 
+    ratings = MatchRating.query.filter_by(match_id=match.id).all()
+    home_ratings = sorted([r for r in ratings if r.club_id == match.home_club_id],
+                          key=lambda r: r.rating, reverse=True)
+    away_ratings = sorted([r for r in ratings if r.club_id == match.away_club_id],
+                          key=lambda r: r.rating, reverse=True)
+
     return render_template('match_result.html', match=match, events=events,
                            table=table, others=others,
                            group_standings=group_standings,
-                           managed_club_id=gs.managed_club_id)
+                           managed_club_id=gs.managed_club_id,
+                           home_ratings=home_ratings, away_ratings=away_ratings)
 
 
 # ---------------------------------------------------------------------------
@@ -1221,6 +1243,13 @@ def stats():
         season_id=gs.current_season_id).filter(
         (PlayerStat.yellow_cards > 0) | (PlayerStat.red_cards > 0)).order_by(
         (PlayerStat.yellow_cards + PlayerStat.red_cards * 3).desc()).limit(15).all()
+    # Top rated (min 5 apps) — avg_rating is computed, so sort in Python
+    rated = db.session.query(PlayerStat).filter(
+        PlayerStat.season_id == gs.current_season_id,
+        PlayerStat.appearances >= 5,
+        PlayerStat.total_rating > 0).all()
+    top_rated = sorted(rated, key=lambda p: p.total_rating / p.appearances,
+                       reverse=True)[:20]
     # My squad stats
     my_stats = db.session.query(PlayerStat).filter_by(
         season_id=gs.current_season_id,
@@ -1229,6 +1258,7 @@ def stats():
     return render_template('stats.html',
                            top_scorers=top_scorers, top_assists=top_assists,
                            top_appearances=top_appearances, top_cards=top_cards,
+                           top_rated=top_rated,
                            my_stats=my_stats, club=gs.managed_club)
 
 
@@ -1396,7 +1426,22 @@ def _migrate_db():
             ('training_level',  'ALTER TABLE clubs ADD COLUMN training_level INTEGER DEFAULT 2'),
             ('academy_quality', 'ALTER TABLE clubs ADD COLUMN academy_quality INTEGER DEFAULT 2'),
         ])
+        _add_missing('player_stats', [
+            ('total_rating', 'ALTER TABLE player_stats ADD COLUMN total_rating INTEGER DEFAULT 0'),
+        ])
         # Create new tables if missing
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS match_ratings (
+                id INTEGER PRIMARY KEY,
+                match_id INTEGER REFERENCES matches(id),
+                player_id INTEGER REFERENCES players(id),
+                club_id INTEGER REFERENCES clubs(id),
+                rating FLOAT DEFAULT 6.0,
+                started BOOLEAN DEFAULT 1,
+                goals INTEGER DEFAULT 0,
+                assists INTEGER DEFAULT 0
+            )
+        """)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS incoming_bids (
                 id INTEGER PRIMARY KEY,

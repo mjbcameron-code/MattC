@@ -189,6 +189,29 @@ class PlayerStat(db.Model):
     assists = db.Column(db.Integer, default=0)
     yellow_cards = db.Column(db.Integer, default=0)
     red_cards = db.Column(db.Integer, default=0)
+    total_rating = db.Column(db.Integer, default=0)   # sum of per-match rating × 10
+    player = db.relationship('Player', foreign_keys=[player_id])
+    club = db.relationship('Club', foreign_keys=[club_id])
+
+    @property
+    def avg_rating(self):
+        """Average match rating out of 10, or None if never rated."""
+        if not self.appearances or not self.total_rating:
+            return None
+        return round(self.total_rating / 10.0 / self.appearances, 2)
+
+
+class MatchRating(db.Model):
+    """A single player's performance rating in one match."""
+    __tablename__ = 'match_ratings'
+    id = db.Column(db.Integer, primary_key=True)
+    match_id = db.Column(db.Integer, db.ForeignKey('matches.id'))
+    player_id = db.Column(db.Integer, db.ForeignKey('players.id'))
+    club_id = db.Column(db.Integer, db.ForeignKey('clubs.id'))
+    rating = db.Column(db.Float, default=6.0)
+    started = db.Column(db.Boolean, default=True)
+    goals = db.Column(db.Integer, default=0)
+    assists = db.Column(db.Integer, default=0)
     player = db.relationship('Player', foreign_keys=[player_id])
     club = db.relationship('Club', foreign_keys=[club_id])
 

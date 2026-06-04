@@ -287,6 +287,12 @@ def simulate_match(home_club, away_club, season, match_obj, game_state=None):
     home_sub_pool = list(home_subs)
     away_sub_pool = list(away_subs)
 
+    # Track everyone who appears (starters + subs who come on) for ratings
+    home_played = {p.id: p for p in home_starters}
+    away_played = {p.id: p for p in away_starters}
+    home_started_ids = set(home_played)
+    away_started_ids = set(away_played)
+
     def score_str():
         return f"{home_club.short_name or home_club.name} {home_score}-{away_score} {away_club.short_name or away_club.name}"
 
@@ -437,6 +443,7 @@ def simulate_match(home_club, away_club, season, match_obj, game_state=None):
                 commentary_log.append({'minute': minute, 'text': text, 'type': 'substitution'})
                 current_home.remove(out_player)
                 current_home.append(in_player)
+                home_played[in_player.id] = in_player
                 home_subs_used += 1
             if away_subs_used < 3 and away_sub_pool and random.random() < 0.04:
                 out_player = random.choice([p for p in current_away if p.position != 'GK'
@@ -448,6 +455,7 @@ def simulate_match(home_club, away_club, season, match_obj, game_state=None):
                 commentary_log.append({'minute': minute, 'text': text, 'type': 'substitution'})
                 current_away.remove(out_player)
                 current_away.append(in_player)
+                away_played[in_player.id] = in_player
                 away_subs_used += 1
 
         # Half-time
@@ -470,7 +478,67 @@ def simulate_match(home_club, away_club, season, match_obj, game_state=None):
         'away_possession': 100 - possession_pct,
     }
 
-    return home_score, away_score, events, commentary_log, stats
+    # ----- Player match ratings -----
+    goals_by, assists_by, yellows_by, reds_by = {}, {}, {}, {}
+    for ev in events:
+        pid = ev.get('player_id')
+        if ev['type'] == 'goal':
+            goals_by[pid] = goals_by.get(pid, 0) + 1
+            ap = ev.get('assist_player_id')
+            if ap:
+                assists_by[ap] = assists_by.get(ap, 0) + 1
+        elif ev['type'] == 'yellow_card':
+            yellows_by[pid] = yellows_by.get(pid, 0) + 1
+        elif ev['type'] == 'red_card':
+            reds_by[pid] = reds_by.get(pid, 0) + 1
+
+    def _rate(p, team_gf, team_ga, won, lost):
+        r = 6.7
+        r += 1.0 * goals_by.get(p.id, 0)
+        r += 0.6 * assists_by.get(p.id, 0)
+        r -= 0.3 * yellows_by.get(p.id, 0)
+        r -= 1.5 * reds_by.get(p.id, 0)
+        if won:
+            r += 0.3
+        elif lost:
+            r -= 0.3
+        if p.position == 'GK':
+            if team_ga == 0:
+                r += 1.0
+            else:
+                r -= 0.25 * team_ga
+        elif p.position in ('CB', 'RB', 'LB'):
+            if team_ga == 0:
+                r += 0.5
+            elif team_ga >= 3:
+                r -= 0.5
+        elif p.position in ('ST', 'AM'):
+            if team_gf == 0:
+                r -= 0.2
+        # Better players are slightly more dependable performers
+        r += ((p.current_ability or 100) / 200.0 - 0.5) * 0.6
+        r += random.uniform(-0.3, 0.3)
+        return max(4.0, min(10.0, round(r, 1)))
+
+    participants = []
+    home_won = home_score > away_score
+    away_won = away_score > home_score
+    for pid, p in home_played.items():
+        participants.append({
+            'player_id': pid, 'club_id': home_club.id,
+            'rating': _rate(p, home_score, away_score, home_won, away_won),
+            'started': pid in home_started_ids,
+            'goals': goals_by.get(pid, 0), 'assists': assists_by.get(pid, 0),
+        })
+    for pid, p in away_played.items():
+        participants.append({
+            'player_id': pid, 'club_id': away_club.id,
+            'rating': _rate(p, away_score, home_score, away_won, home_won),
+            'started': pid in away_started_ids,
+            'goals': goals_by.get(pid, 0), 'assists': assists_by.get(pid, 0),
+        })
+
+    return home_score, away_score, events, commentary_log, stats, participants
 
 
 def _get_or_create_stat(player_id, season_id, club_id):
@@ -491,14 +559,17 @@ def _get_or_create_stat(player_id, season_id, club_id):
 
 
 def update_player_stats(events, season_id):
-    """Update PlayerStat rows based on match events."""
+    """Update PlayerStat goal/assist/card tallies from match events.
+
+    Appearances and ratings are recorded separately via record_participation()
+    so that every player who took the field is counted, not only scorers.
+    """
     for ev in events:
         if not ev.get('player_id') or not ev.get('club_id'):
             continue
         ps = _get_or_create_stat(ev['player_id'], season_id, ev['club_id'])
         if ev['type'] == 'goal':
             ps.goals += 1
-            ps.appearances += 1
             if ev.get('assist_player_id'):
                 asp = _get_or_create_stat(ev['assist_player_id'], season_id,
                                           ev['club_id'])
@@ -507,4 +578,19 @@ def update_player_stats(events, season_id):
             ps.yellow_cards += 1
         elif ev['type'] == 'red_card':
             ps.red_cards += 1
+    db.session.commit()
+
+
+def record_participation(participants, season_id, match_id):
+    """Record appearances, season rating totals, and per-match ratings."""
+    from .models import MatchRating
+    for part in participants:
+        ps = _get_or_create_stat(part['player_id'], season_id, part['club_id'])
+        ps.appearances = (ps.appearances or 0) + 1
+        ps.total_rating = (ps.total_rating or 0) + int(round(part['rating'] * 10))
+        db.session.add(MatchRating(
+            match_id=match_id, player_id=part['player_id'],
+            club_id=part['club_id'], rating=part['rating'],
+            started=part['started'],
+            goals=part.get('goals', 0), assists=part.get('assists', 0)))
     db.session.commit()

@@ -14,6 +14,7 @@
                     <th class="num">Age</th><th class="num">Rating</th>
                     <th class="num">Morale</th>
                     <th class="num">Apps</th><th class="num">Gls</th>
+                    <th class="num" title="Average match rating this season">Avg</th>
                     <th class="num">Value</th><th class="num">Wage</th><th></th>
                 </tr>
             </thead>
@@ -46,6 +47,10 @@
                     </td>
                     <td class="num">{{ stats[p.id].appearances if p.id in stats else 0 }}</td>
                     <td class="num">{{ stats[p.id].goals if p.id in stats else 0 }}</td>
+                    <td class="num">
+                        {% set ar = stats[p.id].avg_rating if p.id in stats else None %}
+                        {% if ar %}<span style="color:{% if ar >= 7.5 %}var(--cm-green-light){% elif ar >= 6.5 %}var(--cm-accent){% elif ar < 5.5 %}var(--cm-red){% else %}var(--cm-text){% endif %};">{{ "%.2f"|format(ar) }}</span>{% else %}<span class="muted">—</span>{% endif %}
+                    </td>
                     <td class="num">{{ p.value | money }}</td>
                     <td class="num">{{ p.wage | money }}</td>
                     <td onclick="event.stopPropagation();">

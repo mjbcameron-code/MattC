@@ -2,6 +2,17 @@
 {% block title %}Youth Academy — {{ gs.managed_club.name }}{% endblock %}
 {% block content %}
 
+{# Render a 0.5-5.0 rating as filled/half/empty stars #}
+{% macro starbar(val) %}
+    {% set full = val | int %}
+    {% set half = 1 if (val - full) >= 0.5 else 0 %}
+    <span style="color:var(--cm-accent);white-space:nowrap;letter-spacing:1px;">
+        {%- for i in range(full) %}★{% endfor -%}
+        {%- if half %}⯨{% endif -%}
+        {%- for i in range(5 - full - half) %}<span style="color:var(--cm-border);">★</span>{% endfor -%}
+    </span>
+{% endmacro %}
+
 {# ── Academy header ─────────────────────────────────────────────────────── #}
 <div class="statbox mb">
     <div class="stat-item">
@@ -18,8 +29,8 @@
         <div class="lbl">Eligible for Promotion (17+)</div>
     </div>
     <div class="stat-item">
-        <div class="big muted">{{ youth | selectattr('potential_ability', 'ge', 65) | list | length }}</div>
-        <div class="lbl">High Potential (PA 65+)</div>
+        <div class="big muted">{{ youth | selectattr('potential_ability', 'ge', 140) | list | length }}</div>
+        <div class="lbl">High Potential (4★+)</div>
     </div>
 </div>
 
@@ -37,8 +48,8 @@
                 <th>Name</th>
                 <th>Pos</th>
                 <th class="num">Age</th>
-                <th class="num">CA</th>
-                <th class="num">PA</th>
+                <th>Current</th>
+                <th>Potential</th>
                 <th>Coach</th>
                 <th></th>
             </tr>
@@ -50,9 +61,8 @@
             <td><strong>{{ p.name }}</strong></td>
             <td><span class="badge">{{ p.position }}</span></td>
             <td class="num">{{ p.age }}</td>
-            <td class="num">{{ p.current_ability }}</td>
-            <td class="num" style="color:{% if p.potential_ability >= 70 %}var(--cm-green-light){% elif p.potential_ability >= 50 %}var(--cm-accent){% else %}var(--cm-text-dim){% endif %};">
-                {{ p.potential_ability }}</td>
+            <td title="{{ '%.1f'|format(stars(p.current_ability)) }}★">{{ starbar(stars(p.current_ability)) }}</td>
+            <td title="{{ '%.1f'|format(stars(p.potential_ability)) }}★">{{ starbar(stars(p.potential_ability)) }}</td>
             <td class="small">
                 {% if rec == 'promote' %}
                     <span style="color:var(--cm-green-light);">▲ Promote</span>
@@ -152,8 +162,9 @@
             Those unlikely to develop are best <strong>released</strong> to free space for the next intake.
         </p>
         <p class="small muted" style="margin-bottom:8px;">
-            Youth players develop slowly (CA improves 0–2 points per season) until they reach
-            their potential. Better <strong>training facilities</strong> accelerate this.
+            Youngsters start with a low <strong>current ability</strong> (shown in stars) but
+            the exciting figure is their <strong>potential</strong>. They develop towards it
+            each season — better <strong>training facilities</strong> accelerate this.
         </p>
         <p class="small muted">
             Players still in the academy at 19 with an expired contract will leave automatically.
