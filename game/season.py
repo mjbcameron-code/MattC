@@ -18,34 +18,33 @@ def generate_fixtures(season, league):
     # Clear existing fixtures for this season/league
     Match.query.filter_by(season_id=season.id, league_id=league.id).delete()
 
-    # Round-robin algorithm
+    # Round-robin via the circle method
     club_ids = [c.id for c in clubs]
+    if len(club_ids) % 2 == 1:
+        club_ids.append(None)  # odd count -> one club rests each round
     n = len(club_ids)
-    if n % 2 == 1:
-        club_ids.append(None)  # bye
-        n += 1
-
     rounds = n - 1
-    matches_per_round = n // 2
+    half = n // 2
 
     # Start date: first Saturday of August 2001
     start_date = date(2001, 8, 18)
 
     all_fixtures = []
-    fixed = club_ids[0]
-    rotating = club_ids[1:]
-
+    arr = club_ids[:]
     for round_num in range(rounds):
-        pairs = []
-        pairs.append((fixed, rotating[0]))
-        for i in range(1, matches_per_round):
-            pairs.append((rotating[i], rotating[n - 2 - i]))
-        for h, a in pairs:
-            if h is not None and a is not None:
+        for i in range(half):
+            h, a = arr[i], arr[n - 1 - i]
+            if h is None or a is None:
+                continue  # the rotating bye -> club rests this round
+            # Alternate home/away by round so a club isn't always at home
+            if round_num % 2 == 0:
                 all_fixtures.append((round_num + 1, h, a))
-        rotating = [rotating[-1]] + rotating[:-1]
+            else:
+                all_fixtures.append((round_num + 1, a, h))
+        # Rotate all clubs except the first, fixed one
+        arr = [arr[0]] + [arr[-1]] + arr[1:-1]
 
-    # Return fixtures (second half = reversed home/away)
+    # Second half of the season = reverse fixtures (home/away swapped)
     second_half = [(r + rounds, a, h) for r, h, a in all_fixtures]
     all_fixtures = all_fixtures + second_half
     random.shuffle(all_fixtures)
