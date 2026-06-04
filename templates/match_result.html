@@ -4,7 +4,8 @@
 <div class="scoreboard">
     <div class="team"><div class="tn">{{ match.home_club.name }}</div></div>
     <div class="score">{{ match.home_score }} - {{ match.away_score }}
-        <div class="vs-min">Full Time</div></div>
+        <div class="vs-min">Full Time</div>
+        {% if match.attendance %}<div class="vs-min" style="font-size:10px;margin-top:2px;">{{ "{:,}".format(match.attendance) }}</div>{% endif %}</div>
     <div class="team"><div class="tn">{{ match.away_club.name }}</div></div>
 </div>
 

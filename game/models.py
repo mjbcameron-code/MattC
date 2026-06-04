@@ -135,6 +135,7 @@ class Match(db.Model):
     match_week = db.Column(db.Integer, default=1)
     competition = db.Column(db.String(50), default='League')
     played = db.Column(db.Boolean, default=False)
+    attendance = db.Column(db.Integer, nullable=True)
     home_score = db.Column(db.Integer)
     away_score = db.Column(db.Integer)
     home_club = db.relationship('Club', foreign_keys=[home_club_id])

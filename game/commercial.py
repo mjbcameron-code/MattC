@@ -12,6 +12,45 @@ from .season import add_news
 
 
 TRAINING_UPGRADE_COST  = {1: 500_000, 2: 1_500_000, 3: 3_000_000, 4: 6_000_000}
+
+# End-of-season prize money by league level: (base for 1st, per-position drop)
+_PRIZE_SCHEDULE = {
+    1: (100_000_000, 3_500_000),   # Premier League
+    2: (8_000_000,    280_000),    # Championship
+    3: (1_500_000,     55_000),    # League One
+    4: (500_000,       18_000),    # League Two
+}
+
+_FAN_POSITIVE = [
+    "Brilliant result today. The lads are playing with real belief this season.",
+    "That's what we came to see! If we keep this up, top four is very possible.",
+    "What a performance. Loving the style of play we're seeing at the moment.",
+    "Goals, entertainment, three points — this is why we love this club.",
+    "Manager has got this squad firing. Cannot wait for the next one.",
+]
+_FAN_NEUTRAL = [
+    "We'll take the point. Need a bit more going forward to push up the table.",
+    "Inconsistent performances are costing us. One week brilliant, the next average.",
+    "Need to be more clinical. Creating chances but not taking them.",
+    "Hard to judge where we're at. Some good signs but need more consistency.",
+    "Squad has potential — need to see it more regularly.",
+]
+_FAN_NEGATIVE = [
+    "That was simply not good enough. We deserve better than this.",
+    "Same story every week. No creativity, no goals, no effort.",
+    "Absolutely shocking. Manager needs to take a hard look at this squad.",
+    "Embarrassing performance. Something needs to change urgently.",
+    "The squad is clearly not good enough. We need signings NOW.",
+]
+_FAN_DEMAND = [
+    "We need new signings this window, no excuses. The squad is threadbare.",
+    "Sign a striker or we're going nowhere this season. Fans are getting impatient.",
+    "The board need to back the manager. Spend the money!",
+]
+_FAN_PRICE = [
+    "Paying through the nose for this? Ticket prices are daylight robbery for this quality.",
+    "Ordinary fans can no longer afford to come. Lower the prices or lose the fanbase.",
+]
 TRAINING_LABELS        = {1: 'Basic', 2: 'Decent', 3: 'Good', 4: 'Excellent', 5: 'World Class'}
 STADIUM_COST_PER_SEAT  = 200           # game £ per new seat
 STADIUM_QUALITY_COST   = 1_000_000    # per quality level
@@ -246,31 +285,53 @@ def set_ticket_prices(game_state, std_price, premium_price):
 
 
 # ---------------------------------------------------------------------------
-# Matchday revenue
+# Matchday revenue / attendance
+
+def _compute_fill(rep, fan_happiness, opp_rep, quality, std_price):
+    """Compute stadium fill rate (0–1). High-rep clubs fill nearly every week."""
+    base = min(0.92, 0.40 + rep * 0.007)
+    fh = fan_happiness or 65
+    if fh >= 80:    base += 0.05
+    elif fh >= 65:  base += 0.02
+    elif fh < 40:   base -= 0.08
+    elif fh < 55:   base -= 0.03
+    if opp_rep >= 80:    base += 0.06
+    elif opp_rep >= 65:  base += 0.03
+    base += (quality - 5) * 0.01
+    price_mult = max(0.70, 1.0 - max(0, std_price - 25) * 0.004)
+    return max(0.15, min(0.99, base * price_mult))
+
 
 def calculate_matchday_revenue(game_state, match):
     mc = game_state.managed_club
     is_home = match.home_club_id == mc.id
-    stadium = get_or_create_stadium(mc)
-    fan_h = game_state.fan_happiness or 65
     std_p = game_state.ticket_price_std or 25
     prem_p = game_state.ticket_price_premium or 45
+    fan_h = game_state.fan_happiness or 65
 
     if is_home:
+        stadium = get_or_create_stadium(mc)
         opp = match.away_club
         opp_rep = opp.reputation if opp else 50
-        fill = 0.60
-        fill += 0.12 if fan_h >= 75 else (-0.12 if fan_h < 45 else 0.02)
-        fill += 0.08 if opp_rep >= 75 else (0.04 if opp_rep >= 60 else 0.0)
-        fill += (stadium.quality - 5) * 0.015
-        fill = max(0.30, min(0.97, fill))
+        fill = _compute_fill(mc.reputation or 50, fan_h, opp_rep,
+                             stadium.quality, std_p)
         attendance = int(stadium.capacity * fill)
+        match.attendance = attendance
         std_seats = int(attendance * 0.88)
         prem_seats = attendance - std_seats
         revenue = (std_seats * std_p + prem_seats * prem_p) // 100
     else:
-        # Away allocation — a small share of the home ground capacity
-        revenue = int(stadium.capacity * 0.015 * std_p) // 100
+        home_club = match.home_club
+        home_stadium = get_or_create_stadium(home_club)
+        home_rep = home_club.reputation or 50
+        our_rep = mc.reputation or 50
+        # Approximate home crowd (away team quality boosts attendance)
+        approx_fill = min(0.92, 0.40 + home_rep * 0.007) + 0.02
+        if our_rep >= 80:    approx_fill += 0.06
+        elif our_rep >= 65:  approx_fill += 0.03
+        match.attendance = int(home_stadium.capacity * max(0.15, min(0.99, approx_fill)))
+        # Away allocation only for revenue
+        revenue = int(home_stadium.capacity * 0.015 * std_p) // 100
 
     mc.budget += revenue
     game_state.season_revenue = (game_state.season_revenue or 0) + revenue
@@ -311,15 +372,16 @@ def get_summary(game_state):
     lvl = getattr(game_state.managed_club, 'training_level', 1) or 1
     next_cost = TRAINING_UPGRADE_COST.get(lvl)
     fh = game_state.fan_happiness or 65
-    # Projected home revenue per match at current prices
-    fill = 0.60 + (0.12 if fh >= 75 else (-0.12 if fh < 45 else 0.02))
-    fill += (stadium.quality - 5) * 0.015
-    fill = max(0.30, min(0.97, fill))
+    mc = game_state.managed_club
+    std_p = game_state.ticket_price_std or 25
+    prem_p = game_state.ticket_price_premium or 45
+    fill = _compute_fill(mc.reputation or 50, fh, 60, stadium.quality, std_p)
     att = int(stadium.capacity * fill)
-    proj_match = (int(att * 0.88) * (game_state.ticket_price_std or 25) +
-                  int(att * 0.12) * (game_state.ticket_price_premium or 45)) // 100
-    wage_bill = get_wage_bill(game_state.managed_club)
+    proj_match = (int(att * 0.88) * std_p + int(att * 0.12) * prem_p) // 100
+    wage_bill = get_wage_bill(mc)
     wage_cap = game_state.wage_cap_weekly or 0
+    season_rev = game_state.season_revenue or 0
+    wage_annual = wage_bill * 52
     return {
         'stadium': stadium,
         'active_sponsors': active,
@@ -327,7 +389,7 @@ def get_summary(game_state):
         'training_level': lvl,
         'training_label': TRAINING_LABELS.get(lvl, 'Basic'),
         'next_training_cost': next_cost,
-        'season_revenue': game_state.season_revenue or 0,
+        'season_revenue': season_rev,
         'fan_happiness': fh,
         'fan_mood': fan_mood_label(fh),
         'fan_color': fan_mood_color(fh),
@@ -338,8 +400,9 @@ def get_summary(game_state):
         'quality_upgrade_cost': STADIUM_QUALITY_COST,
         'wage_bill_weekly': wage_bill,
         'wage_cap_weekly': wage_cap,
-        'wage_bill_annual': wage_bill * 52,
+        'wage_bill_annual': wage_annual,
         'over_cap': wage_cap > 0 and wage_bill > wage_cap,
+        'net_season': season_rev - wage_annual,
     }
 
 
@@ -349,3 +412,97 @@ def get_wage_bill(club):
         p.wage for p in club.players
         if not p.is_youth and p.wage
     )
+
+
+# ---------------------------------------------------------------------------
+# Prize money
+
+def _fmt(v):
+    if abs(v) >= 1_000_000:
+        return f'£{v/1_000_000:.1f}M'
+    if abs(v) >= 1_000:
+        return f'£{v/1_000:.0f}K'
+    return f'£{v:,}'
+
+
+def calculate_prize_money(position, league_level=1):
+    """Return prize money amount without applying it."""
+    level = max(1, min(4, league_level))
+    base, drop = _PRIZE_SCHEDULE.get(level, (500_000, 18_000))
+    return max(0, base - (position - 1) * drop)
+
+
+def pay_prize_money(game_state, position, league_level=1):
+    """Award end-of-season TV/prize money based on final league position."""
+    prize = calculate_prize_money(position, league_level)
+    mc = game_state.managed_club
+    mc.budget += prize
+    game_state.season_revenue = (game_state.season_revenue or 0) + prize
+    pos_sfx = 'st' if position == 1 else 'nd' if position == 2 else 'rd' if position == 3 else 'th'
+    add_news(game_state,
+             f"League prize money: {_fmt(prize)} received",
+             f"{mc.name} finish {position}{pos_sfx} and receive {_fmt(prize)} from the league's "
+             f"TV rights distribution and merit payments.",
+             'commercial')
+    db.session.commit()
+    return prize
+
+
+# ---------------------------------------------------------------------------
+# Fan forum
+
+def maybe_fan_forum_post(game_state, our_score, their_score):
+    """Probabilistically generate a fan reaction news item after a match."""
+    fh = game_state.fan_happiness or 65
+    result = ('win' if our_score > their_score else
+              'draw' if our_score == their_score else 'loss')
+    chances = {'win': 0.38, 'draw': 0.50, 'loss': 0.68}
+    forced = fh < 30 or fh >= 85
+    if not forced and random.random() > chances[result]:
+        return
+
+    mc = game_state.managed_club
+    std = game_state.ticket_price_std or 25
+    expected_p = 15 + (mc.reputation or 50) * 0.30
+
+    if fh >= 80 or (result == 'win' and fh >= 65):
+        pool = _FAN_POSITIVE
+    elif fh < 40 or (result == 'loss' and fh < 55):
+        pool = list(_FAN_NEGATIVE)
+        if fh < 35:
+            pool += _FAN_DEMAND
+    else:
+        pool = _FAN_NEUTRAL
+
+    if std > expected_p * 1.35 and result != 'win':
+        pool = list(_FAN_PRICE) + pool
+
+    message = random.choice(pool)
+    if fh >= 80:
+        headline = "Fan Forum: Supporters are delighted"
+    elif fh >= 65:
+        headline = "Fan Forum: Fans in good spirits"
+    elif fh >= 45:
+        headline = "Fan Forum: Supporters voice mixed views"
+    elif fh >= 30:
+        headline = "Fan Forum: Frustrated fans demand improvement"
+    else:
+        headline = "Fan Forum: Angry supporters call for change"
+
+    add_news(game_state, headline, message, 'fan')
+
+
+# ---------------------------------------------------------------------------
+# Ticket price ongoing pressure
+
+def tick_ticket_happiness(game_state):
+    """After each home match, apply a small happiness drain for over-priced tickets."""
+    mc = game_state.managed_club
+    std = game_state.ticket_price_std or 25
+    # Expected price bracket for this club's reputation
+    expected = 15 + (mc.reputation or 50) * 0.28
+    if std > expected * 1.5:
+        update_fan_happiness(game_state, event=None, delta=-1)
+    elif std > expected * 1.25:
+        if random.random() < 0.5:  # 50% chance of drain each match
+            update_fan_happiness(game_state, event=None, delta=-1)

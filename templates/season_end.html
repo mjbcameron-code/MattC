@@ -22,6 +22,17 @@
                 <div class="big" style="color:{{ conf_color }};">{{ conf }}%</div>
                 <div class="lbl">Board Confidence</div>
             </div>
+            <div class="stat-item">
+                {% set fh = gs.fan_happiness or 65 %}
+                <div class="big" style="color:{% if fh >= 65 %}var(--cm-green-light){% elif fh >= 45 %}var(--cm-yellow){% else %}var(--cm-red){% endif %};">{{ fh }}%</div>
+                <div class="lbl">Fan Happiness</div>
+            </div>
+            {% if prize_money %}
+            <div class="stat-item">
+                <div class="big" style="color:var(--cm-accent);">{{ prize_money | money }}</div>
+                <div class="lbl">Prize Money (on advance)</div>
+            </div>
+            {% endif %}
             {% endif %}
         </div>
 

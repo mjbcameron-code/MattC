@@ -453,10 +453,14 @@ def commercial():
     gs = get_game_state()
     summary = commercial_mod.get_summary(gs)
     offers = commercial_mod.get_available_offers(gs)
+    fan_news = NewsItem.query.filter_by(
+        game_state_id=gs.id, category='fan'
+    ).order_by(NewsItem.id.desc()).limit(6).all()
     return render_template('commercial.html', gs=gs, club=gs.managed_club,
                            summary=summary, offers=offers,
                            training_labels=commercial_mod.TRAINING_LABELS,
-                           training_costs=commercial_mod.TRAINING_UPGRADE_COST)
+                           training_costs=commercial_mod.TRAINING_UPGRADE_COST,
+                           fan_news=fan_news)
 
 
 @app.route('/commercial/tickets', methods=['POST'])
@@ -914,6 +918,9 @@ def play_match(match_id):
     else:
         commercial_mod.update_fan_happiness(gs, 'loss')
     commercial_mod.check_expansion_complete(gs)
+    commercial_mod.maybe_fan_forum_post(gs, our_score, their_score)
+    if we_home:
+        commercial_mod.tick_ticket_happiness(gs)
 
     # Ongoing head-coach feedback to the DoF (occasional)
     staff_mod.maybe_coach_feedback(gs)
@@ -1294,16 +1301,25 @@ def season_end():
         uefa_winner = (uefa_final.home_club if (uefa_final.home_score or 0) >= (uefa_final.away_score or 0)
                        else uefa_final.away_club)
 
+    prize_money = commercial_mod.calculate_prize_money(position, league.level or 1) if position else 0
     return render_template('season_end.html', table=table, mc=mc, position=position,
                            relegated=relegated, season=season, top_scorers=top_scorers,
                            board_met=board_met, cl_winner=cl_winner, uefa_winner=uefa_winner,
-                           gs=gs)
+                           gs=gs, prize_money=prize_money)
 
 
 @app.route('/season-end/advance', methods=['POST'])
 @require_game
 def advance_season():
     gs = get_game_state()
+    # Pay prize money before rolling over (position is from completed season)
+    season = gs.current_season
+    league = gs.managed_club.league
+    table = season_mod.get_league_table(season.id, league.id)
+    mc = gs.managed_club
+    position = next((i + 1 for i, s in enumerate(table) if s.club_id == mc.id), len(table))
+    commercial_mod.pay_prize_money(gs, position, league.level or 1)
+
     transfers_mod.return_loaned_out(gs)   # return any players you loaned out
     season_mod.process_new_season(gs)
     commercial_mod.process_season_sponsors(gs)
@@ -1428,6 +1444,9 @@ def _migrate_db():
         ])
         _add_missing('player_stats', [
             ('total_rating', 'ALTER TABLE player_stats ADD COLUMN total_rating INTEGER DEFAULT 0'),
+        ])
+        _add_missing('matches', [
+            ('attendance', 'ALTER TABLE matches ADD COLUMN attendance INTEGER'),
         ])
         # Create new tables if missing
         cursor.execute("""
