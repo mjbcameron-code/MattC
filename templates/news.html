@@ -2,18 +2,50 @@
 {% block title %}News{% endblock %}
 {% block nav_news %}active{% endblock %}
 {% block content %}
+
+{% set cat_color = {
+    'result':     'var(--cm-accent)',
+    'transfer':   'var(--cm-green-light)',
+    'press':      '#9b59b6',
+    'fan':        'var(--cm-yellow)',
+    'commercial': '#3498db',
+    'injury':     'var(--cm-red)',
+    'staff':      'var(--cm-text-dim)',
+    'board':      '#e67e22',
+    'academy':    '#1abc9c',
+    'general':    'var(--cm-text-dim)',
+} %}
+
+{% macro cat_link(category) %}
+    {% if category == 'result' %}<a href="{{ url_for('fixtures') }}" class="btn btn-sm" style="font-size:11px;padding:3px 8px;">Fixtures →</a>
+    {% elif category == 'transfer' %}<a href="{{ url_for('transfers') }}" class="btn btn-sm" style="font-size:11px;padding:3px 8px;">Transfers →</a>
+    {% elif category == 'injury' %}<a href="{{ url_for('squad') }}" class="btn btn-sm" style="font-size:11px;padding:3px 8px;">Squad →</a>
+    {% elif category == 'staff' %}<a href="{{ url_for('staff') }}" class="btn btn-sm" style="font-size:11px;padding:3px 8px;">Staff →</a>
+    {% elif category == 'fan' or category == 'commercial' %}<a href="{{ url_for('commercial') }}" class="btn btn-sm" style="font-size:11px;padding:3px 8px;">Commercial →</a>
+    {% elif category == 'board' %}<a href="{{ url_for('board') }}" class="btn btn-sm" style="font-size:11px;padding:3px 8px;">Board →</a>
+    {% elif category == 'academy' %}<a href="{{ url_for('academy') }}" class="btn btn-sm" style="font-size:11px;padding:3px 8px;">Academy →</a>
+    {% elif category == 'press' %}<a href="{{ url_for('stats') }}" class="btn btn-sm" style="font-size:11px;padding:3px 8px;">Stats →</a>
+    {% elif category == 'general' %}<a href="{{ url_for('club_records') }}" class="btn btn-sm" style="font-size:11px;padding:3px 8px;">Records →</a>
+    {% endif %}
+{% endmacro %}
+
 <div class="panel">
-    <div class="panel-header">Inbox</div>
+    <div class="panel-header" style="display:flex;align-items:center;justify-content:space-between;">
+        <span>Inbox</span>
+        <span class="small muted" style="font-weight:normal;">{{ items | length }} items</span>
+    </div>
     <div class="panel-body" style="padding:0;">
         {% for item in items %}
         <div style="padding:12px 16px;border-bottom:1px solid var(--cm-border);">
-            <div class="flex-between">
-                <div style="font-weight:bold;font-size:14px;">{{ item.headline }}</div>
-                {% set cat_color = {'result':'var(--cm-accent)','transfer':'var(--cm-green-light)','press':'#9b59b6','fan':'var(--cm-yellow)','commercial':'#3498db','injury':'var(--cm-red)'} %}
-                <span class="tag" style="color:{{ cat_color.get(item.category,'var(--cm-text-dim)') }};">{{ item.category }}</span>
+            <div class="flex-between" style="align-items:flex-start;gap:8px;">
+                <div style="font-weight:bold;font-size:14px;flex:1;">{{ item.headline }}</div>
+                <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+                    <span class="tag" style="color:{{ cat_color.get(item.category,'var(--cm-text-dim)') }};">{{ item.category }}</span>
+                    {{ cat_link(item.category) }}
+                </div>
             </div>
-            <div class="small muted mb">{{ item.date }}</div>
-            <div>{{ item.body }}</div>
+            <div class="small muted" style="margin:3px 0 6px;">{{ item.date }}</div>
+            <div class="small" style="color:var(--cm-text-dim);line-height:1.5;">{{ item.body }}</div>
         </div>
         {% else %}
         <div class="panel-body muted">No news yet.</div>

@@ -172,12 +172,14 @@ def dashboard():
             break
 
     wage_bill = transfers_mod.get_wage_bill(club)
+    pending_meetings = staff_mod.get_pending_meetings(gs)
     return render_template('dashboard.html',
                            club=club, next_match=next_match, recent=recent,
                            table=table[:8], position=position, news=news,
                            squad_size=squad_size, injured=injured,
                            total_teams=len(table), avg_morale=avg_morale,
-                           next_euro=next_euro, wage_bill=wage_bill)
+                           next_euro=next_euro, wage_bill=wage_bill,
+                           pending_meetings=pending_meetings)
 
 
 # ---------------------------------------------------------------------------

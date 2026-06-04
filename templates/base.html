@@ -64,6 +64,7 @@
     <a href="{{ url_for('commercial') }}" class="{% block nav_commercial %}{% endblock %}">Commercial</a>
     <a href="{{ url_for('board') }}" class="{% block nav_board %}{% endblock %}">Board</a>
     <a href="{{ url_for('stats') }}" class="{% block nav_stats %}{% endblock %}">Stats</a>
+    <a href="{{ url_for('club_records') }}" class="{% block nav_records %}{% endblock %}">Records</a>
     <a href="{{ url_for('news') }}" class="{% block nav_news %}{% endblock %} news-link">
         News{% if unread_news %}<span class="badge">{{ unread_news }}</span>{% endif %}</a>
     <a href="{{ url_for('next_match_preview') }}" class="continue-btn">Continue ▶</a>

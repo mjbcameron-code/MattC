@@ -14,8 +14,9 @@
         <div class="big" style="color:{% if avg_morale >= 75 %}var(--cm-green-light){% elif avg_morale >= 50 %}var(--cm-text){% else %}var(--cm-red){% endif %}">
             {{ avg_morale }}</div>
         <div class="lbl">Avg Morale</div></div>
-    <div class="stat-item"><div class="big">{{ injured }}</div>
-        <div class="lbl">Injured</div></div>
+    <div class="stat-item" style="cursor:pointer;" onclick="location.href='{{ url_for('squad') }}'">
+        <div class="big" style="{% if injured > 3 %}color:var(--cm-red);{% endif %}">{{ injured }}</div>
+        <div class="lbl">Injured <span class="small muted">→</span></div></div>
     {% set wb = wage_bill or 0 %}
     {% set wb_pct = ((wb / club.wage_budget) * 100) | int if club.wage_budget else 0 %}
     <div class="stat-item">
@@ -112,6 +113,19 @@
 
     <div>
         {% set hc = game_state.managed_club.head_coach %}
+        {% if pending_meetings %}
+        <div style="background:#0e1c2f;border:2px solid var(--cm-accent);border-radius:4px;padding:10px 14px;margin-bottom:8px;">
+            <div style="font-weight:bold;font-size:13px;color:var(--cm-accent);">
+                📋 {{ pending_meetings | length }} Pending Meeting{{ 's' if pending_meetings | length > 1 else '' }}
+            </div>
+            <div class="small muted" style="margin:4px 0 8px;">
+                {{ pending_meetings[0].manager.name if pending_meetings[0].manager else 'Your manager' }}
+                has requested a meeting
+            </div>
+            <a href="{{ url_for('staff') }}" class="btn btn-sm btn-accent" style="width:100%;text-align:center;display:block;">
+                Respond →</a>
+        </div>
+        {% endif %}
         <div class="panel">
             <div class="panel-header">Head Coach</div>
             <div class="panel-body">
@@ -197,6 +211,9 @@
                 {% else %}
                 <div class="panel-body muted small">No contracts expiring soon.</div>
                 {% endif %}
+                <div style="padding:8px;">
+                    <a href="{{ url_for('contracts') }}" class="btn btn-sm btn-block">Manage Contracts →</a>
+                </div>
             </div>
         </div>
     </div>
