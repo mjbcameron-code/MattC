@@ -254,15 +254,23 @@ def process_new_season(game_state):
         prev_standings[lg.name] = [s.club for s in t]
 
     # ---- Age and develop players ----
+    from game.transfers import get_transfer_value
     for p in Player.query.all():
+        if p.is_youth:
+            continue  # youth players are aged separately in age_youth_players()
         p.age += 1
-        if p.age <= 24 and p.current_ability < p.potential_ability:
-            gain = _rnd.randint(0, min(10, p.potential_ability - p.current_ability))
-            p.current_ability += gain
+        # Training quality multiplier: level 1=0.6x ... level 5=1.4x
+        tl = getattr(p.club, 'training_level', 3) if p.club else 3
+        tl_factor = 0.6 + (tl - 1) * 0.2
+        if p.age <= 28 and p.current_ability < p.potential_ability:
+            gap = p.potential_ability - p.current_ability
+            if p.age <= 24:
+                raw = _rnd.randint(0, min(10, gap))
+            else:  # 25-28: slower growth
+                raw = _rnd.randint(0, min(2, gap))
+            p.current_ability += int(raw * tl_factor)
         elif p.age >= 33:
-            p.current_ability = max(50, p.current_ability - _rnd.randint(0, 5))
-        # Refresh value
-        from game.transfers import get_transfer_value
+            p.current_ability = max(1, p.current_ability - _rnd.randint(0, 5))
         p.value = get_transfer_value(p)
 
     # ---- Contract expiry ----

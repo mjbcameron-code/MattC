@@ -55,17 +55,26 @@
         </span>
     </div>
     <div class="panel-body" style="padding:0;">
-        <div style="display:flex;border-bottom:1px solid var(--cm-border);">
+        <div style="display:flex;border-bottom:1px solid var(--cm-border);flex-wrap:wrap;">
             <a href="{{ url_for('transfers', tab='buy') }}"
-               style="padding:10px 20px;font-weight:600;text-decoration:none;
+               style="padding:10px 18px;font-weight:600;text-decoration:none;
                       {% if tab == 'buy' %}color:#fff;border-bottom:3px solid var(--cm-accent);{% else %}color:var(--cm-text-dim);{% endif %}">
                 Buy</a>
+            <a href="{{ url_for('transfers', tab='free-agents') }}"
+               style="padding:10px 18px;font-weight:600;text-decoration:none;
+                      {% if tab == 'free-agents' %}color:#fff;border-bottom:3px solid var(--cm-accent);{% else %}color:var(--cm-text-dim);{% endif %}">
+                Free Agents</a>
             <a href="{{ url_for('transfers', tab='loan') }}"
-               style="padding:10px 20px;font-weight:600;text-decoration:none;
+               style="padding:10px 18px;font-weight:600;text-decoration:none;
                       {% if tab == 'loan' %}color:#fff;border-bottom:3px solid var(--cm-accent);{% else %}color:var(--cm-text-dim);{% endif %}">
                 Loan In</a>
+            <a href="{{ url_for('transfers', tab='loan-out') }}"
+               style="padding:10px 18px;font-weight:600;text-decoration:none;
+                      {% if tab == 'loan-out' %}color:#fff;border-bottom:3px solid var(--cm-accent);{% else %}color:var(--cm-text-dim);{% endif %}">
+                Loan Out</a>
         </div>
 
+        {# ── BUY TAB ─────────────────────────────────────────────── #}
         {% if tab == 'buy' %}
         <div style="padding:12px;">
         <form method="get" action="{{ url_for('transfers') }}" class="flex" style="flex-wrap:wrap;">
@@ -85,6 +94,22 @@
         </form>
         </div>
 
+        {# ── FREE AGENTS TAB ─────────────────────────────────────── #}
+        {% elif tab == 'free-agents' %}
+        <div style="padding:12px;">
+        <form method="get" action="{{ url_for('transfers') }}" class="flex" style="flex-wrap:wrap;">
+            <input type="hidden" name="tab" value="free-agents">
+            <div><label>Position</label>
+                <select name="position">
+                    {% for p in ['All','GK','RB','CB','LB','RM','CM','LM','AM','ST'] %}
+                    <option value="{{ p }}" {% if p == position %}selected{% endif %}>{{ p }}</option>
+                    {% endfor %}
+                </select></div>
+            <div style="align-self:flex-end;"><button class="btn btn-accent">Filter</button></div>
+        </form>
+        </div>
+
+        {# ── LOAN IN TAB ─────────────────────────────────────────── #}
         {% elif tab == 'loan' %}
         <div style="padding:12px;">
         <form method="get" action="{{ url_for('transfers') }}" class="flex" style="flex-wrap:wrap;">
@@ -104,9 +129,16 @@
     </div>
 </div>
 
-{% if results %}
+{# ── BUY / LOAN-IN RESULTS ───────────────────────────────────────── #}
+{% if results and tab in ['buy', 'loan'] %}
 <div class="panel">
-    <div class="panel-header">{{ results | length }} players found</div>
+    <div class="panel-header">
+        {% if tab == 'buy' and not query and position == 'All' and not max_value %}
+            Transfer Listed Players ({{ results | length }})
+        {% else %}
+            {{ results | length }} player(s) found
+        {% endif %}
+    </div>
     <div class="panel-body" style="padding:0;">
         <table>
             <thead><tr><th>Name</th><th>Pos</th><th>Club</th><th>Nat</th>
@@ -144,18 +176,131 @@
         </table>
     </div>
 </div>
-{% else %}
+{% elif tab in ['buy', 'loan'] and not results %}
 <p class="muted center mt">
     {% if tab == 'loan' %}
-    Search for players to bring in on a season-long loan. Younger players at big clubs are
-    often available. Loan requests are not guaranteed to be accepted.
+    Search for players to bring in on a season-long loan.
     {% else %}
-    Use the search above to find players to sign. Try filtering by position or search a
-    player name.
+    No transfer-listed players match your criteria. Try a broader search.
     {% endif %}
 </p>
 {% endif %}
 
+{# ── FREE AGENTS PANEL ───────────────────────────────────────────── #}
+{% if tab == 'free-agents' %}
+<div class="panel">
+    <div class="panel-header">Free Agents ({{ free_agents | length }})</div>
+    <div class="panel-body" style="padding:0;">
+        {% if free_agents %}
+        <table>
+            <thead><tr><th>Name</th><th>Pos</th><th>Nat</th>
+                <th class="num">Age</th><th class="num">Rat</th>
+                <th>Sign (wage/wk · years)</th></tr></thead>
+            <tbody>
+            {% for p in free_agents %}
+            {% set min_wage = (p.current_ability * 325) | int %}
+            <tr>
+                <td class="clickable" onclick="location.href='{{ url_for('player_detail', player_id=p.id) }}'">
+                    <strong>{{ p.name }}</strong></td>
+                <td><span class="pos pos-{{ p.position }}">{{ p.position }}</span></td>
+                <td class="small">{{ p.nationality }}</td>
+                <td class="num">{{ p.age }}</td>
+                <td class="num">{{ p.overall_rating() }}</td>
+                <td>
+                    <form method="post" action="{{ url_for('transfer_sign_free_agent') }}"
+                          class="flex" style="gap:4px;align-items:center;">
+                        <input type="hidden" name="player_id" value="{{ p.id }}">
+                        <span class="small muted" style="white-space:nowrap;">min ~£{{ '{:,}'.format(min_wage) }}</span>
+                        <input type="number" name="wage" value="{{ min_wage }}" step="500"
+                               min="500" style="width:100px;" placeholder="Wage">
+                        <select name="years" style="width:60px;">
+                            {% for y in [1,2,3,4,5] %}
+                            <option value="{{ y }}" {% if y == 2 %}selected{% endif %}>{{ y }}yr</option>
+                            {% endfor %}
+                        </select>
+                        <button class="btn btn-sm btn-accent">Sign</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="muted" style="padding:12px;">No free agents available right now.</p>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{# ── LOAN OUT PANEL ──────────────────────────────────────────────── #}
+{% if tab == 'loan-out' %}
+
+{% if loaned_out %}
+<div class="panel">
+    <div class="panel-header">Players Currently Out on Loan ({{ loaned_out | length }})</div>
+    <div class="panel-body" style="padding:0;">
+        <table>
+            <thead><tr><th>Player</th><th>Pos</th><th>At Club</th>
+                <th class="num">Age</th><th class="num">Rat</th><th>Action</th></tr></thead>
+            <tbody>
+            {% for ln in loaned_out %}
+            <tr>
+                <td class="clickable" onclick="location.href='{{ url_for('player_detail', player_id=ln.player_id) }}'">
+                    {{ ln.player.name }}</td>
+                <td><span class="pos pos-{{ ln.player.position }}">{{ ln.player.position }}</span></td>
+                <td class="small">{{ ln.loan_club.name if ln.loan_club else '—' }}</td>
+                <td class="num">{{ ln.player.age }}</td>
+                <td class="num">{{ ln.player.overall_rating() }}</td>
+                <td>
+                    <form method="post" action="{{ url_for('transfer_recall_loan', loan_id=ln.id) }}">
+                        <button class="btn btn-sm btn-danger">Recall</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<div class="panel">
+    <div class="panel-header">Send a Player on Loan</div>
+    <div class="panel-body" style="padding:0;">
+        {% if loan_candidates %}
+        <table>
+            <thead><tr><th>Player</th><th>Pos</th><th class="num">Age</th>
+                <th class="num">Rat</th><th class="num">Wage/wk</th><th>Action</th></tr></thead>
+            <tbody>
+            {% for p in loan_candidates %}
+            <tr>
+                <td class="clickable" onclick="location.href='{{ url_for('player_detail', player_id=p.id) }}'">
+                    {{ p.name }}
+                    {% if p.age <= 21 %}<span class="small" style="color:var(--cm-green-light);"> ★</span>{% endif %}
+                </td>
+                <td><span class="pos pos-{{ p.position }}">{{ p.position }}</span></td>
+                <td class="num">{{ p.age }}</td>
+                <td class="num">{{ p.overall_rating() }}</td>
+                <td class="num">{{ p.wage | money }}</td>
+                <td>
+                    <form method="post" action="{{ url_for('transfer_loan_out', player_id=p.id) }}">
+                        <button class="btn btn-sm" style="background:var(--cm-blue);">Send on Loan</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        <p class="small muted" style="padding:8px;">
+            ★ = Under 22. Clubs are more likely to accept young players on development loans.</p>
+        {% else %}
+        <p class="muted" style="padding:12px;">All players are already on loan or your squad is fully needed.</p>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{# ── ACTIVE LOANS IN ─────────────────────────────────────────────── #}
 {% if active_loans %}
 <div class="panel">
     <div class="panel-header">Current Loan Players ({{ active_loans | length }})</div>

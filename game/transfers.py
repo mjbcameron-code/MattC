@@ -358,6 +358,168 @@ def offer_contract(game_state, player_id):
     return True, f'{player.name} has signed a new contract until {new_end}!'
 
 
+def get_free_agents(position='', min_ability=0, limit=60):
+    """Players with no club, available for free."""
+    q = Player.query.filter_by(club_id=None, is_youth=False)
+    if position and position != 'All':
+        q = q.filter(Player.position == position)
+    if min_ability:
+        q = q.filter(Player.current_ability >= min_ability)
+    return q.order_by(Player.current_ability.desc()).limit(limit).all()
+
+
+def get_transfer_listed(exclude_club_id=None, position='', limit=80):
+    """Players actively listed for sale at other clubs."""
+    q = Player.query.filter_by(transfer_listed=True, is_youth=False)
+    if exclude_club_id:
+        q = q.filter(Player.club_id != exclude_club_id)
+    if position and position != 'All':
+        q = q.filter(Player.position == position)
+    return q.order_by(Player.current_ability.desc()).limit(limit).all()
+
+
+def sign_free_agent(game_state, player_id, wage_offer, years):
+    """Sign a free agent — no transfer fee, just agree personal terms."""
+    player = Player.query.get(player_id)
+    if not player:
+        return False, "Player not found."
+    if player.club_id is not None:
+        return False, f"{player.name} is not a free agent."
+    if player.is_youth:
+        return False, "Use the academy to manage youth players."
+
+    managed_club = game_state.managed_club
+    # Expected wage: roughly CA × 500 per week, agent accepts at ~70%+ of that
+    expected_wage = player.current_ability * 500
+    min_acceptable = int(expected_wage * 0.65)
+    if wage_offer < min_acceptable:
+        return False, (
+            f"{player.name}'s agent rejected the offer. He expects at least "
+            f"£{min_acceptable:,}/week. (You offered £{wage_offer:,}/week.)"
+        )
+    if years < 1 or years > 5:
+        return False, "Contract must be between 1 and 5 years."
+
+    season_year = game_state.current_season.year if game_state.current_season else 2001
+    player.club_id = managed_club.id
+    player.wage = wage_offer
+    player.contract_end = season_year + years
+    player.morale = 75
+    player.transfer_listed = False
+    # Assign next available squad number
+    used = {p.squad_number for p in managed_club.players if p.squad_number}
+    for n in range(1, 60):
+        if n not in used:
+            player.squad_number = n
+            break
+
+    from .season import add_news
+    add_news(game_state,
+             f"{player.name} signs as a free agent!",
+             f"{player.name} ({player.age}, {player.position}) has joined "
+             f"{managed_club.name} on a free transfer, signing a {years}-year deal "
+             f"worth £{wage_offer:,}/week.",
+             'transfer')
+    db.session.commit()
+    return True, f"{player.name} has signed for {managed_club.name}!"
+
+
+def loan_out_player(game_state, player_id):
+    """Send one of your players on a development loan to an AI club."""
+    player = Player.query.get(player_id)
+    if not player or player.club_id != game_state.managed_club_id:
+        return False, "Player not found in your squad."
+    if player.is_youth:
+        return False, "Promote to first team before loaning out."
+
+    # Check not already on loan out
+    existing = Loan.query.filter_by(
+        player_id=player_id, parent_club_id=game_state.managed_club_id,
+        season_id=game_state.current_season_id, active=True).first()
+    if existing:
+        return False, f"{player.name} is already on loan."
+
+    # Pick a suitable AI club (lower or similar reputation)
+    max_rep = (game_state.managed_club.reputation or 70) + 10
+    candidates = Club.query.filter(
+        Club.id != game_state.managed_club_id,
+        Club.reputation <= max_rep,
+    ).all()
+    if not candidates:
+        candidates = Club.query.filter(Club.id != game_state.managed_club_id).all()
+
+    dest = random.choice(candidates) if candidates else None
+    if not dest:
+        return False, "No suitable clubs available for a loan right now."
+
+    # AI clubs accept at 75% (more likely for younger players)
+    accept_rate = 0.80 if player.age <= 23 else 0.65
+    if random.random() > accept_rate:
+        return False, (f"{dest.name} have declined the loan request for "
+                       f"{player.name}. Try a different club next month.")
+
+    loan = Loan(
+        player_id=player.id,
+        parent_club_id=game_state.managed_club_id,
+        loan_club_id=dest.id,
+        season_id=game_state.current_season_id,
+        start_date=game_state.current_date,
+        active=True,
+    )
+    db.session.add(loan)
+    player.club_id = dest.id
+
+    from .season import add_news
+    add_news(game_state,
+             f"{player.name} joins {dest.name} on loan.",
+             f"{player.name} ({player.age}) has joined {dest.name} on a "
+             f"season-long loan to gain regular first-team experience.",
+             'transfer')
+    db.session.commit()
+    return True, f"{player.name} has joined {dest.name} on loan for the season."
+
+
+def get_loaned_out(game_state):
+    """Players currently loaned out from the managed club."""
+    return Loan.query.filter_by(
+        parent_club_id=game_state.managed_club_id,
+        season_id=game_state.current_season_id,
+        active=True).all()
+
+
+def recall_loan(game_state, loan_id):
+    """Recall a player from a loan."""
+    loan = Loan.query.get(loan_id)
+    if not loan or loan.parent_club_id != game_state.managed_club_id:
+        return False, "Loan not found."
+    player = loan.player
+    player.club_id = game_state.managed_club_id
+    loan.active = False
+    db.session.commit()
+    return True, f"{player.name} has been recalled from his loan."
+
+
+def return_loaned_out(game_state):
+    """Season end: return all loaned-out players back to the managed club."""
+    loans = Loan.query.filter_by(
+        parent_club_id=game_state.managed_club_id,
+        season_id=game_state.current_season_id,
+        active=True).all()
+    returned = []
+    for ln in loans:
+        ln.player.club_id = game_state.managed_club_id
+        ln.active = False
+        returned.append(ln.player.name)
+    if returned:
+        from .season import add_news
+        add_news(game_state,
+                 f"{len(returned)} loan(s) completed — players return.",
+                 f"End of season: {', '.join(returned)} have returned from "
+                 f"their loan spells.", 'transfer')
+    db.session.commit()
+    return returned
+
+
 def format_money(v):
     if v >= 1_000_000:
         return f'£{v/1_000_000:.1f}M'

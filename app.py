@@ -950,11 +950,37 @@ def transfers():
     max_value_int = int(max_value) if max_value.isdigit() else 999999999
 
     results = []
-    if query or position != 'All' or max_value:
-        results = transfers_mod.search_players(
-            query=query, position=position, max_value=max_value_int,
-            exclude_club_id=club.id)
-        results = [(p, transfers_mod.get_transfer_value(p)) for p in results]
+    free_agents = []
+    loan_candidates = []
+    loaned_out = []
+
+    if tab == 'buy':
+        if query or position != 'All' or max_value:
+            players = transfers_mod.search_players(
+                query=query, position=position, max_value=max_value_int,
+                exclude_club_id=club.id)
+        else:
+            players = transfers_mod.get_transfer_listed(
+                exclude_club_id=club.id, position=position)
+        results = [(p, transfers_mod.get_transfer_value(p)) for p in players]
+    elif tab == 'loan':
+        if query or position != 'All':
+            players = transfers_mod.search_players(
+                query=query, position=position, exclude_club_id=club.id)
+        else:
+            players = transfers_mod.search_players(
+                position=position, exclude_club_id=club.id)
+        results = [(p, transfers_mod.get_transfer_value(p)) for p in players]
+    elif tab == 'free-agents':
+        free_agents = transfers_mod.get_free_agents(position=position)
+    elif tab == 'loan-out':
+        loaned_out = transfers_mod.get_loaned_out(gs)
+        loaned_out_ids = {ln.player_id for ln in loaned_out}
+        loan_candidates = [
+            p for p in club.players
+            if not p.is_youth and p.id not in loaned_out_ids
+        ]
+        loan_candidates.sort(key=lambda p: p.age)
 
     active_loans = Loan.query.filter_by(
         loan_club_id=club.id, season_id=gs.current_season_id,
@@ -967,6 +993,8 @@ def transfers():
     return render_template('transfers.html', club=club, results=results,
                            query=query, position=position, max_value=max_value,
                            tab=tab, active_loans=active_loans,
+                           free_agents=free_agents, loan_candidates=loan_candidates,
+                           loaned_out=loaned_out,
                            window_open=window_open, window_msg=window_msg,
                            wage_bill=wage_bill, pending_bids=pending_bids)
 
@@ -1029,6 +1057,49 @@ def transfer_loan(player_id):
     if ok:
         auto_pick_lineup(gs)
     return redirect(request.referrer or url_for('transfers'))
+
+
+@app.route('/transfers/sign-free-agent', methods=['POST'])
+@require_game
+def transfer_sign_free_agent():
+    gs = get_game_state()
+    player_id = int(request.form.get('player_id'))
+    try:
+        wage = int(request.form.get('wage', 0))
+        years = int(request.form.get('years', 2))
+    except (ValueError, TypeError):
+        flash('Invalid wage or contract length.', 'error')
+        return redirect(url_for('transfers', tab='free-agents'))
+    ok, msg = transfers_mod.sign_free_agent(gs, player_id, wage, years)
+    flash(msg, 'success' if ok else 'error')
+    if ok:
+        demands_mod.on_player_signed(gs, Player.query.get(player_id).position if Player.query.get(player_id) else 'any')
+        auto_pick_lineup(gs)
+    return redirect(url_for('transfers', tab='free-agents'))
+
+
+@app.route('/transfers/loan-out/<int:player_id>', methods=['POST'])
+@require_game
+def transfer_loan_out(player_id):
+    gs = get_game_state()
+    window_open, window_msg, _ = transfers_mod.is_window_open(gs.current_date)
+    if not window_open:
+        flash(f'Transfer window is closed. {window_msg}', 'error')
+        return redirect(url_for('transfers', tab='loan-out'))
+    ok, msg = transfers_mod.loan_out_player(gs, player_id)
+    flash(msg, 'success' if ok else 'error')
+    return redirect(url_for('transfers', tab='loan-out'))
+
+
+@app.route('/transfers/recall-loan/<int:loan_id>', methods=['POST'])
+@require_game
+def transfer_recall_loan(loan_id):
+    gs = get_game_state()
+    ok, msg = transfers_mod.recall_loan(gs, loan_id)
+    flash(msg, 'success' if ok else 'error')
+    if ok:
+        auto_pick_lineup(gs)
+    return redirect(url_for('transfers', tab='loan-out'))
 
 
 @app.route('/contract/offer/<int:player_id>', methods=['POST'])
@@ -1131,6 +1202,7 @@ def season_end():
 @require_game
 def advance_season():
     gs = get_game_state()
+    transfers_mod.return_loaned_out(gs)   # return any players you loaned out
     season_mod.process_new_season(gs)
     commercial_mod.process_season_sponsors(gs)
     gs.season_revenue = 0   # reset annual counter
