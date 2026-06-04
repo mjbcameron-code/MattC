@@ -13,9 +13,7 @@
             {% for s in table %}
                 <tr class="{% if s.club_id == managed_club_id %}highlight{% endif %}">
                     <td>{{ loop.index }}</td>
-                    <td><span class="club-badge" style="width:14px;height:14px;border-width:2px;
-                        vertical-align:middle;background:{{ s.club.primary_color }};
-                        border-color:{{ s.club.secondary_color }}"></span> {{ s.club.name }}</td>
+                    <td>{{ club_crest(s.club, 22) }} {{ s.club.name }}</td>
                     <td class="num">{{ s.played }}</td><td class="num">{{ s.won }}</td>
                     <td class="num">{{ s.drawn }}</td><td class="num">{{ s.lost }}</td>
                     <td class="num">{{ s.goals_for }}</td><td class="num">{{ s.goals_against }}</td>

@@ -175,6 +175,10 @@ label { display: block; margin-bottom: 4px; color: var(--cm-text-dim);
 .r-poor { background: #ff9800; }
 .r-bad { background: #d54a4a; color: #fff; }
 
+/* ---- Star ratings ---- */
+.stars { color: #f5c542; letter-spacing: 1px; white-space: nowrap; font-size: 13px; }
+.stars .star-empty { color: #4a4f5a; }
+
 /* ---- Attribute grid ---- */
 .attr-grid {
     display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 24px;

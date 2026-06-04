@@ -11,7 +11,9 @@
             <thead>
                 <tr>
                     <th class="num">#</th><th>Name</th><th>Pos</th><th>Nat</th>
-                    <th class="num">Age</th><th class="num">Rating</th>
+                    <th class="num">Age</th>
+                    <th title="Current ability">Current</th>
+                    <th title="Potential ability">Potential</th>
                     <th class="num">Morale</th>
                     <th class="num">Apps</th><th class="num">Gls</th>
                     <th class="num" title="Average match rating this season">Avg</th>
@@ -38,8 +40,9 @@
                     <td><span class="pos pos-{{ p.position }}">{{ p.position }}</span></td>
                     <td class="small">{{ p.nationality }}</td>
                     <td class="num">{{ p.age }}</td>
-                    <td class="num"><span class="rating {{ rating_class(p.overall_rating()) }}">
-                        {{ p.overall_rating() }}</span></td>
+                    <td title="CA {{ p.current_ability }}">{{ p.current_ability | starbar }}</td>
+                    <td title="PA {{ p.potential_ability }}">
+                        <span style="opacity:0.85;">{{ p.potential_ability | starbar }}</span></td>
                     <td class="num">
                         {% set m = p.morale or 70 %}
                         <span style="color:{% if m >= 75 %}var(--cm-green-light){% elif m >= 50 %}var(--cm-text){% else %}var(--cm-red){% endif %}">

@@ -101,6 +101,79 @@ def format_money(value):
 app.jinja_env.filters['money'] = format_money
 
 
+def stars_value(ca):
+    """Convert a current/potential ability (CA, 1-200) to a 0.5-5.0 star rating."""
+    return max(0.5, min(5.0, round((ca or 0) / 40 * 2) / 2))
+
+
+def stars_html(ca):
+    """Render a CA value as filled/half/empty stars (out of 5)."""
+    from markupsafe import Markup
+    n = stars_value(ca)
+    full = int(n)
+    half = 1 if (n - full) >= 0.5 else 0
+    empty = 5 - full - half
+    out = ('<span class="stars">'
+           + '★' * full
+           + ('⯨' if half else '')
+           + '<span class="star-empty">' + '☆' * empty + '</span>'
+           + '</span>')
+    return Markup(out)
+
+
+app.jinja_env.filters['stars'] = stars_value
+app.jinja_env.filters['starbar'] = stars_html
+
+
+def _club_initials(club):
+    """Short crest initials from a club's name (e.g. 'Newcastle United' -> 'NU')."""
+    name = (getattr(club, 'short_name', None) or getattr(club, 'name', '') or '?')
+    skip = {'united', 'city', 'town', 'fc', 'afc', 'hotspur', 'wanderers',
+            'albion', 'rovers', 'county', 'athletic', 'and', 'the', '&'}
+    words = [w for w in name.replace('&', ' ').split() if w.lower() not in skip]
+    if not words:
+        words = name.split()
+    if len(words) == 1:
+        return words[0][:3].upper()
+    return ''.join(w[0] for w in words[:3]).upper()
+
+
+def club_crest(club, size=34):
+    """Generate an inline SVG shield crest from the club's real colours + initials.
+
+    A self-contained, license-safe stand-in for real-life crests: each club gets
+    a distinctive two-tone shield badge in its actual kit colours."""
+    from markupsafe import Markup
+    if club is None:
+        return Markup('')
+    primary = getattr(club, 'primary_color', None) or '#cc0000'
+    secondary = getattr(club, 'secondary_color', None) or '#ffffff'
+    initials = _club_initials(club)
+    # Choose readable text colour against the primary fill.
+    try:
+        r, g, b = (int(primary[1:3], 16), int(primary[3:5], 16), int(primary[5:7], 16))
+        lum = (0.299 * r + 0.587 * g + 0.114 * b)
+        text_col = '#1a1a1a' if lum > 150 else '#ffffff'
+    except (ValueError, IndexError):
+        text_col = '#ffffff'
+    fs = max(9, int(size * 0.34))
+    svg = (
+        f'<svg class="crest" width="{size}" height="{size}" viewBox="0 0 40 44" '
+        f'xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;flex-shrink:0;">'
+        f'<path d="M2 2 H38 V24 Q38 38 20 43 Q2 38 2 24 Z" fill="{primary}" '
+        f'stroke="{secondary}" stroke-width="2.5"/>'
+        f'<path d="M2 2 H20 V43 Q2 38 2 24 Z" fill="{secondary}" opacity="0.18"/>'
+        f'<text x="20" y="24" font-family="Arial Black, Arial, sans-serif" '
+        f'font-size="{fs}" font-weight="bold" fill="{text_col}" '
+        f'text-anchor="middle" dominant-baseline="middle">{initials}</text>'
+        f'</svg>'
+    )
+    return Markup(svg)
+
+
+app.jinja_env.globals['club_crest'] = club_crest
+
+
 # ---------------------------------------------------------------------------
 # Routes: setup / new game
 # ---------------------------------------------------------------------------
@@ -1117,7 +1190,7 @@ def transfers():
         if query or position != 'All' or max_value:
             players = transfers_mod.search_players(
                 query=query, position=position, max_value=max_value_int,
-                exclude_club_id=club.id)
+                exclude_club_id=club.id, buying_club=club)
         else:
             players = transfers_mod.get_transfer_listed(
                 exclude_club_id=club.id, position=position)
@@ -1125,10 +1198,11 @@ def transfers():
     elif tab == 'loan':
         if query or position != 'All':
             players = transfers_mod.search_players(
-                query=query, position=position, exclude_club_id=club.id)
+                query=query, position=position, exclude_club_id=club.id,
+                buying_club=club)
         else:
             players = transfers_mod.search_players(
-                position=position, exclude_club_id=club.id)
+                position=position, exclude_club_id=club.id, buying_club=club)
         results = [(p, transfers_mod.get_transfer_value(p)) for p in players]
     elif tab == 'free-agents':
         free_agents = transfers_mod.get_free_agents(position=position)

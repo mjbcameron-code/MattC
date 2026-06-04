@@ -44,25 +44,77 @@ def get_wage_bill(club):
 
 
 def get_transfer_value(player):
-    """Estimate market value of a player based on ability, age and potential."""
-    base = player.current_ability * 100000
+    """Estimate market value of a player based on ability, age and potential.
+
+    Present-day scale: CA 180 (quality ~18, Declan Rice tier) ≈ £110-120M,
+    CA 200 (world class) ≈ £180-200M.
+    """
+    q = (player.current_ability or 100) / 10.0
+    base = (q ** 2.2) * 200_000
     age_factor = 1.0
     if player.age <= 22:
-        age_factor = 1.0 + (player.potential_ability - player.current_ability) / 200
+        age_factor = 1.0 + (player.potential_ability - player.current_ability) / 150
     elif player.age <= 27:
-        age_factor = 1.0
+        age_factor = 1.10
     elif player.age <= 31:
         age_factor = 0.8
     elif player.age <= 35:
-        age_factor = 0.5
+        age_factor = 0.45
     else:
         age_factor = 0.2
-    return max(100000, int(base * age_factor))
+    return max(50_000, int(base * age_factor))
+
+
+def player_interest(player, club):
+    """How realistically would `player` consider joining `club`?
+
+    Returns a tuple (interested: bool, reason: str). Based mostly on the
+    reputation gap between the player's current club and the buyer — a player
+    at an elite club won't drop down to a mid-table side, but a fringe player
+    or one at a smaller club will look upward. The buying club's own
+    reputation, European football and squad strength widen the net.
+    """
+    club_rep = club.reputation or 50
+    cur = player.club
+    if cur is None:
+        return True, 'Free agent'              # free agents will talk to anyone
+    if cur.id == club.id:
+        return False, 'Already at club'
+    player_rep = cur.reputation or 50
+
+    # A player's personal standing: a star (high CA) at a big club is harder
+    # to tempt than a squad player. Scale the effective "pull" the buyer needs.
+    ca = player.current_ability or 100
+    star_at_big = player_rep >= 78 and ca >= 150
+
+    # How far below the player's current club can the buyer be?
+    # Bigger clubs can reach further down; nobody reaches far up.
+    gap = club_rep - player_rep
+
+    if star_at_big:
+        # Elite player — only a lateral or upward move appeals.
+        if gap >= -4:
+            return True, 'Would consider a move at this level'
+        return False, 'Settled at a bigger club'
+
+    # Normal player: open to a step up, a sideways move, or a small step down
+    # if the buyer is clearly ambitious (high rep).
+    if gap >= -18:
+        return True, 'Open to the move'
+    # Fringe/young players (low CA relative to club) chase game time downward.
+    if ca <= 120 and gap >= -28:
+        return True, 'Seeking regular football'
+    return False, 'Move unrealistic — club not big enough'
 
 
 def search_players(query='', position='', min_ability=0, max_value=999999999,
-                   exclude_club_id=None, for_sale_only=False):
-    """Search available players for transfer."""
+                   exclude_club_id=None, for_sale_only=False, buying_club=None):
+    """Search available players for transfer.
+
+    When `buying_club` is supplied, only players who would realistically
+    consider the move are returned (see `player_interest`). Transfer-listed
+    and free-agent players bypass the interest filter.
+    """
     q = Player.query
     if query:
         q = q.filter(Player.name.ilike(f'%{query}%'))
@@ -74,12 +126,19 @@ def search_players(query='', position='', min_ability=0, max_value=999999999,
         q = q.filter(Player.current_ability >= min_ability)
     if exclude_club_id:
         q = q.filter(Player.club_id != exclude_club_id)
-    players = q.order_by(Player.current_ability.desc()).limit(100).all()
+    players = q.order_by(Player.current_ability.desc()).limit(250).all()
     result = []
     for p in players:
         val = get_transfer_value(p)
-        if val <= max_value:
-            result.append(p)
+        if val > max_value:
+            continue
+        if buying_club is not None and not p.transfer_listed:
+            interested, _ = player_interest(p, buying_club)
+            if not interested:
+                continue
+        result.append(p)
+        if len(result) >= 100:
+            break
     return result
 
 
@@ -96,6 +155,13 @@ def make_offer(game_state, player_id, offer_amount):
 
     fair_value = get_transfer_value(player)
     selling_club = player.club
+
+    # Will the player even entertain the move? Listed players always will.
+    if not player.transfer_listed:
+        interested, reason = player_interest(player, managed_club)
+        if not interested:
+            return False, (f"{player.name} is not interested in joining "
+                           f"{managed_club.name}. {reason}.")
 
     if offer_amount > managed_club.budget:
         return False, f"Insufficient funds. You have £{managed_club.budget:,} available."
@@ -539,8 +605,11 @@ def ai_transfers(game_state, current_date):
     """Simulate AI clubs occasionally signing players; incoming bids land in DoF inbox."""
     from game.season import add_news
 
-    # Incoming bid on a listed player — DoF must review it
-    if random.random() < 0.12:
+    window_open, _, _ = is_window_open(current_date)
+
+    # Incoming bid on a listed player — DoF must review it.
+    # Rival clubs can only approach your players while the window is open.
+    if window_open and random.random() < 0.12:
         listed = Player.query.filter_by(
             club_id=game_state.managed_club_id, transfer_listed=True).all()
         if listed:

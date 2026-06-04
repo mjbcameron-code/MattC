@@ -56,22 +56,42 @@ STADIUM_COST_PER_SEAT  = 200           # game £ per new seat
 STADIUM_QUALITY_COST   = 1_000_000    # per quality level
 EXPAND_DAYS            = 90
 
+# Candidate partners per deal type. Annual values are computed dynamically
+# from club reputation (see `_sponsor_value`) so a top club like Newcastle
+# earns a realistic shirt deal of tens of millions, not a few hundred grand.
 _SPONSOR_POOL = {
     'shirt': [
-        ('SportXcel', 200_000), ('TurboFuel', 180_000), ('FastBet', 250_000),
-        ('ClearWater', 150_000), ('AeroTech', 350_000), ('BritBuilds', 120_000),
-        ('GlobalMed', 400_000), ('NordBank', 500_000), ('EuroStar', 300_000),
-        ('TeamForce',  80_000), ('PromoMax', 220_000), ('AlphaLager', 160_000),
+        'SportXcel', 'TurboFuel', 'FastBet', 'ClearWater', 'AeroTech',
+        'BritBuilds', 'GlobalMed', 'NordBank', 'EuroStar', 'TeamForce',
+        'PromoMax', 'AlphaLager',
     ],
     'kit_supplier': [
-        ('ProKits', 100_000), ('StrikeWear', 80_000), ('NorthSport', 120_000),
-        ('AlphaGear', 150_000), ('FitZone', 60_000), ('EliteKit', 200_000),
+        'ProKits', 'StrikeWear', 'NorthSport', 'AlphaGear', 'FitZone', 'EliteKit',
     ],
     'stadium_naming': [
-        ('MegaArena', 200_000), ('InfraBuild', 150_000), ('TeleCom Group', 250_000),
-        ('NordBank Park', 300_000), ('AeroTech Park', 350_000),
+        'MegaArena', 'InfraBuild', 'TeleCom Group', 'NordBank Park', 'AeroTech Park',
     ],
 }
+
+# (base, span) in £/yr. Value = base + span * t**1.5, where t scales with rep.
+_SPONSOR_SCALE = {
+    'shirt':          (1_500_000, 45_000_000),
+    'kit_supplier':   (  800_000, 22_000_000),
+    'stadium_naming': (  700_000, 18_000_000),
+}
+
+
+def _sponsor_value(deal_type, rep, rng):
+    """Reputation-scaled annual sponsorship value with a little variance."""
+    base, span = _SPONSOR_SCALE.get(deal_type, (500_000, 5_000_000))
+    t = max(0.0, min(1.2, (rep - 40) / 55.0))
+    value = base + span * (t ** 1.5)
+    value *= rng.uniform(0.88, 1.12)          # partner-to-partner variance
+    if value >= 10_000_000:
+        return int(round(value / 500_000) * 500_000)
+    if value >= 1_000_000:
+        return int(round(value / 100_000) * 100_000)
+    return int(round(value / 25_000) * 25_000)
 
 FAN_DELTAS = {
     'win': 2, 'draw': 0, 'loss': -3, 'heavy_loss': -7,
@@ -214,15 +234,13 @@ def get_available_offers(game_state):
             st = get_or_create_stadium(game_state.managed_club)
             if st.quality < 5:
                 continue
-        scale = 0.5 + rep / 100.0
-        available = [(n, int(v * scale)) for n, v in pool if int(v * scale) >= 30_000]
-        if available:
-            pick = rng.choice(available[:max(1, len(available) // 2 + 1)])
-            years = rng.choice([2, 3, 3, 4])
-            offers.append({
-                'type': deal_type, 'label': DEAL_LABELS.get(deal_type, deal_type),
-                'company': pick[0], 'annual_value': pick[1], 'years': years,
-            })
+        company = rng.choice(pool)
+        value = _sponsor_value(deal_type, rep, rng)
+        years = rng.choice([2, 3, 3, 4])
+        offers.append({
+            'type': deal_type, 'label': DEAL_LABELS.get(deal_type, deal_type),
+            'company': company, 'annual_value': value, 'years': years,
+        })
     return offers
 
 
@@ -382,6 +400,19 @@ def get_summary(game_state):
     wage_cap = game_state.wage_cap_weekly or 0
     season_rev = game_state.season_revenue or 0
     wage_annual = wage_bill * 52
+
+    # Transfer activity this season
+    transfer_in, transfer_out = _season_transfer_flows(game_state)
+
+    # Decompose recorded revenue: sponsorship vs matchday/TV/other
+    matchday_other = max(0, season_rev - sponsor_annual)
+
+    # Full-season projection (income side)
+    proj_season_income = proj_match * 19 + sponsor_annual
+    # Bottom line: income − wages − net transfer spend
+    net_transfer = transfer_in - transfer_out
+    proj_profit = proj_season_income - wage_annual + net_transfer
+
     return {
         'stadium': stadium,
         'active_sponsors': active,
@@ -390,12 +421,13 @@ def get_summary(game_state):
         'training_label': TRAINING_LABELS.get(lvl, 'Basic'),
         'next_training_cost': next_cost,
         'season_revenue': season_rev,
+        'matchday_other': matchday_other,
         'fan_happiness': fh,
         'fan_mood': fan_mood_label(fh),
         'fan_color': fan_mood_color(fh),
         'proj_attendance': att,
         'proj_match_revenue': proj_match,
-        'proj_season_revenue': proj_match * 19 + sponsor_annual,
+        'proj_season_revenue': proj_season_income,
         'expand_cost_per_k': STADIUM_COST_PER_SEAT * 1000,
         'quality_upgrade_cost': STADIUM_QUALITY_COST,
         'wage_bill_weekly': wage_bill,
@@ -403,7 +435,28 @@ def get_summary(game_state):
         'wage_bill_annual': wage_annual,
         'over_cap': wage_cap > 0 and wage_bill > wage_cap,
         'net_season': season_rev - wage_annual,
+        'transfer_in': transfer_in,
+        'transfer_out': transfer_out,
+        'net_transfer': net_transfer,
+        'proj_profit': proj_profit,
+        'budget': mc.budget or 0,
     }
+
+
+def _season_transfer_flows(game_state):
+    """Sum transfer fees in/out for the managed club during the current season."""
+    from .models import Transfer
+    mc_id = game_state.managed_club_id
+    season = game_state.current_season
+    start = f"{season.year}-07-01" if season else "0000-00-00"
+    rows = (Transfer.query
+            .filter(Transfer.status == 'accepted')
+            .filter((Transfer.to_club_id == mc_id) | (Transfer.from_club_id == mc_id))
+            .filter(Transfer.transfer_date >= start)
+            .all())
+    income = sum((t.fee or 0) for t in rows if t.from_club_id == mc_id)
+    spend = sum((t.fee or 0) for t in rows if t.to_club_id == mc_id)
+    return income, spend
 
 
 def get_wage_bill(club):

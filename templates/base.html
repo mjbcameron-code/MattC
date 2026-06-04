@@ -10,8 +10,7 @@
 {% if game_state %}
 <header class="topbar">
     <div class="topbar-left">
-        <span class="club-badge" style="background:{{ game_state.managed_club.primary_color }};
-              border-color:{{ game_state.managed_club.secondary_color }}"></span>
+        {{ club_crest(game_state.managed_club, 42) }}
         <div>
             <div class="club-name">{{ game_state.managed_club.name }}</div>
             <div class="manager-name">DoF: {{ game_state.manager_name }}</div>

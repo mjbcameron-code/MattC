@@ -38,34 +38,62 @@
 
 {# ── Financial P&L ────────────────────────────────────────────────────────── #}
 <div class="panel mb">
-    <div class="panel-header">Season Finances — P&amp;L Overview</div>
+    <div class="panel-header">Season Finances — Profit &amp; Loss</div>
     <div class="panel-body">
-        <div class="grid-2" style="gap:8px;">
+        <div class="grid-2" style="gap:16px;">
+            {# INCOME #}
             <div>
-                <table>
-                    <thead><tr><th colspan="2" style="color:var(--cm-green-light);">Income (YTD)</th></tr></thead>
+                <table style="width:100%;">
+                    <thead><tr><th colspan="2" style="color:var(--cm-green-light);border-bottom:1px solid var(--cm-border);">Income (YTD)</th></tr></thead>
                     <tbody>
-                        <tr><td class="muted small">Matchday &amp; TV</td><td class="num">{{ summary.season_revenue | money }}</td></tr>
+                        <tr><td class="muted small">Matchday, TV &amp; prize money</td><td class="num">{{ summary.matchday_other | money }}</td></tr>
                         <tr><td class="muted small">Sponsorship (annual)</td><td class="num">{{ summary.sponsor_annual | money }}</td></tr>
-                        <tr><td class="muted small">Projected full season</td><td class="num"><strong>{{ summary.proj_season_revenue | money }}</strong></td></tr>
+                        <tr><td class="muted small">Player sales</td><td class="num" style="color:var(--cm-green-light);">{{ summary.transfer_in | money }}</td></tr>
+                        <tr style="border-top:1px solid var(--cm-border);">
+                            <td class="small"><strong>Total income</strong></td>
+                            <td class="num"><strong>{{ (summary.matchday_other + summary.sponsor_annual + summary.transfer_in) | money }}</strong></td></tr>
+                        <tr><td class="muted small">Projected full-season revenue</td><td class="num muted">{{ summary.proj_season_revenue | money }}</td></tr>
                     </tbody>
                 </table>
             </div>
+            {# OUTGOINGS #}
             <div>
-                <table>
-                    <thead><tr><th colspan="2" style="color:var(--cm-red);">Outgoings (annual)</th></tr></thead>
+                <table style="width:100%;">
+                    <thead><tr><th colspan="2" style="color:var(--cm-red);border-bottom:1px solid var(--cm-border);">Outgoings</th></tr></thead>
                     <tbody>
-                        <tr><td class="muted small">Wage bill</td><td class="num">{{ summary.wage_bill_annual | money }}/yr</td></tr>
-                        <tr><td class="muted small">Weekly</td><td class="num">{{ summary.wage_bill_weekly | money }}/wk</td></tr>
-                        <tr>
-                            <td class="muted small">Season net (rev – wages)</td>
-                            <td class="num"><strong style="color:{% if summary.net_season >= 0 %}var(--cm-green-light){% else %}var(--cm-red){% endif %};">
-                                {{ summary.net_season | money }}</strong></td>
-                        </tr>
+                        <tr><td class="muted small">Wage bill (annual)</td><td class="num">{{ summary.wage_bill_annual | money }}</td></tr>
+                        <tr><td class="muted small">&nbsp;&nbsp;— weekly</td><td class="num muted">{{ summary.wage_bill_weekly | money }}/wk</td></tr>
+                        <tr><td class="muted small">Transfer spend (YTD)</td><td class="num" style="color:var(--cm-red);">{{ summary.transfer_out | money }}</td></tr>
+                        <tr style="border-top:1px solid var(--cm-border);">
+                            <td class="small"><strong>Total outgoings</strong></td>
+                            <td class="num"><strong>{{ (summary.wage_bill_annual + summary.transfer_out) | money }}</strong></td></tr>
                     </tbody>
                 </table>
             </div>
         </div>
+
+        {# BOTTOM LINE #}
+        <div class="grid-3" style="gap:8px;margin-top:14px;border-top:1px solid var(--cm-border);padding-top:12px;">
+            <div style="text-align:center;padding:8px;background:var(--cm-panel-dark,#0d1520);border-radius:4px;">
+                <div style="font-size:1.3em;font-weight:bold;color:{% if summary.net_transfer >= 0 %}var(--cm-green-light){% else %}var(--cm-red){% endif %};">
+                    {{ summary.net_transfer | money }}</div>
+                <div class="small muted">Net Transfer Balance</div>
+            </div>
+            <div style="text-align:center;padding:8px;background:var(--cm-panel-dark,#0d1520);border-radius:4px;">
+                <div style="font-size:1.3em;font-weight:bold;color:{% if summary.proj_profit >= 0 %}var(--cm-green-light){% else %}var(--cm-red){% endif %};">
+                    {{ summary.proj_profit | money }}</div>
+                <div class="small muted">Projected Season Profit</div>
+            </div>
+            <div style="text-align:center;padding:8px;background:var(--cm-panel-dark,#0d1520);border-radius:4px;">
+                <div style="font-size:1.3em;font-weight:bold;color:var(--cm-accent);">{{ summary.budget | money }}</div>
+                <div class="small muted">Transfer Budget Remaining</div>
+            </div>
+        </div>
+        <p class="small muted" style="margin-top:10px;">
+            The owners expect the club to remain <strong>profitable</strong> as well as competitive.
+            A sustained loss — overspending on fees or wages without matching revenue — will erode
+            board confidence even if results hold up.
+        </p>
     </div>
 </div>
 

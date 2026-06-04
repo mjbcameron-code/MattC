@@ -154,22 +154,25 @@ def build_player(name, nationality, age, position, quality, potential):
 
 
 def _estimate_value(quality, age, potential):
-    base = (quality ** 2) * 18000
+    # Present-day market: a 20-quality world-class player tops ~£180-200M,
+    # an 18 (e.g. Declan Rice tier) lands around £110-120M.
+    base = (quality ** 2.2) * 200_000
     if age <= 21:
-        base *= 1.0 + (potential - quality) * 0.08
+        base *= 1.0 + (potential - quality) * 0.10
     elif age <= 27:
-        base *= 1.1
+        base *= 1.10
     elif age <= 30:
         base *= 0.85
     elif age <= 33:
-        base *= 0.5
+        base *= 0.45
     else:
-        base *= 0.22
-    return int(max(25000, base))
+        base *= 0.20
+    return int(max(50_000, base))
 
 
 def _estimate_wage(quality, age):
-    base = (quality ** 2) * 95
+    # Present-day wages: elite players command £250-400K/wk.
+    base = (quality ** 2) * 600
     if 24 <= age <= 30:
         base *= 1.15
-    return int(max(500, base))
+    return int(max(750, base))
