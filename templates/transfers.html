@@ -3,31 +3,12 @@
 {% block nav_transfers %}active{% endblock %}
 {% block content %}
 
-{% if pending_bids %}
-<div class="panel">
-    <div class="panel-header" style="background:#2a1a00;color:#f0c060;">
-        Pending Counter-Offers ({{ pending_bids|length }})
-    </div>
-    <div class="panel-body" style="padding:0;">
-        {% for bid in pending_bids %}
-        {% set p = bid.player %}
-        <div style="padding:12px;border-bottom:1px solid var(--cm-border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
-            <div>
-                <strong>{{ p.name }}</strong>
-                <span class="pos pos-{{ p.position }}" style="margin-left:6px;">{{ p.position }}</span>
-                <span class="small muted" style="margin-left:6px;">from {{ bid.selling_club.name if bid.selling_club else 'Free Agent' }}</span>
-                <div class="small muted">Your bid: £{{ '{:,}'.format(bid.bid_fee) }} · Counter: <strong style="color:#f0c060;">£{{ '{:,}'.format(bid.counter_fee) }}</strong></div>
-            </div>
-            <div class="flex" style="gap:6px;">
-                <form method="post" action="{{ url_for('transfer_accept_counter', bid_id=bid.id) }}">
-                    <button class="btn btn-sm btn-accent">Accept £{{ "%.1f"|format(bid.counter_fee/1000000) }}m</button>
-                </form>
-                <form method="post" action="{{ url_for('transfer_decline_counter', bid_id=bid.id) }}">
-                    <button class="btn btn-sm btn-danger">Decline</button>
-                </form>
-            </div>
-        </div>
-        {% endfor %}
+{% set inbox_count = (incoming_bids|length) + (transfer_requests|length) + (pending_bids|length) %}
+{% if inbox_count > 0 %}
+<div class="panel" style="border-color:#c8a020;">
+    <div class="panel-header" style="background:#4a3000;color:#f0c060;">
+        Transfer Inbox — {{ inbox_count }} item{{ 's' if inbox_count != 1 }}
+        <span class="small" style="float:right;opacity:0.7;">Incoming bids · Player requests · Counter-offers</span>
     </div>
 </div>
 {% endif %}
@@ -56,6 +37,11 @@
     </div>
     <div class="panel-body" style="padding:0;">
         <div style="display:flex;border-bottom:1px solid var(--cm-border);flex-wrap:wrap;">
+            {% set inbox_count = (incoming_bids|length) + (transfer_requests|length) + (pending_bids|length) %}
+            <a href="{{ url_for('transfers', tab='inbox') }}"
+               style="padding:10px 18px;font-weight:600;text-decoration:none;
+                      {% if tab == 'inbox' %}color:#fff;border-bottom:3px solid #f0c060;{% else %}color:var(--cm-text-dim);{% endif %}">
+                Inbox{% if inbox_count > 0 %} <span style="background:#c8a020;color:#000;border-radius:10px;padding:1px 7px;font-size:0.78em;">{{ inbox_count }}</span>{% endif %}</a>
             <a href="{{ url_for('transfers', tab='buy') }}"
                style="padding:10px 18px;font-weight:600;text-decoration:none;
                       {% if tab == 'buy' %}color:#fff;border-bottom:3px solid var(--cm-accent);{% else %}color:var(--cm-text-dim);{% endif %}">
@@ -73,6 +59,12 @@
                       {% if tab == 'loan-out' %}color:#fff;border-bottom:3px solid var(--cm-accent);{% else %}color:var(--cm-text-dim);{% endif %}">
                 Loan Out</a>
         </div>
+
+        {# ── INBOX TAB ───────────────────────────────────────────── #}
+        {% if tab == 'inbox' %}
+        <p class="small muted" style="padding:10px 14px 0;">
+            Review bids received for your players, player transfer requests, and any pending counter-offers you've made.</p>
+        {% endif %}
 
         {# ── BUY TAB ─────────────────────────────────────────────── #}
         {% if tab == 'buy' %}
@@ -128,6 +120,133 @@
         {% endif %}
     </div>
 </div>
+
+{# ── INBOX PANELS ────────────────────────────────────────────────── #}
+{% if tab == 'inbox' %}
+
+{# Incoming bids from AI clubs #}
+{% if incoming_bids %}
+<div class="panel">
+    <div class="panel-header" style="background:#1a3a1a;color:var(--cm-green-light);">
+        Incoming Bids ({{ incoming_bids|length }})
+    </div>
+    <div class="panel-body" style="padding:0;">
+        {% for bid in incoming_bids %}
+        {% set p = bid.player %}
+        {% set val = (p.current_ability * 100000)|int %}
+        {% set suggested = (bid.offered_fee * 1.12)|int %}
+        <div style="padding:14px;border-bottom:1px solid var(--cm-border);">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
+                <div>
+                    <strong style="font-size:1.05em;">{{ p.name }}</strong>
+                    <span class="pos pos-{{ p.position }}" style="margin-left:6px;">{{ p.position }}</span>
+                    <span class="small muted" style="margin-left:6px;">{{ p.age }} yrs · {{ p.nationality }}</span>
+                    <div style="margin-top:6px;">
+                        <span style="color:var(--cm-green-light);font-weight:bold;font-size:1.1em;">
+                            £{{ '{:,.0f}'.format(bid.offered_fee) }}
+                        </span>
+                        <span class="small muted"> offered by {{ bid.bidding_club.name if bid.bidding_club else 'Unknown Club' }}</span>
+                        <span class="small muted" style="margin-left:10px;">Received: {{ bid.created_date }}</span>
+                    </div>
+                </div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+                    <form method="post" action="{{ url_for('incoming_bid_accept', bid_id=bid.id) }}">
+                        <button class="btn btn-sm" style="background:var(--cm-green);color:#fff;">
+                            Accept £{{ '%.1f'|format(bid.offered_fee/1000000) }}m</button>
+                    </form>
+                    <form method="post" action="{{ url_for('incoming_bid_counter', bid_id=bid.id) }}" class="flex" style="gap:4px;">
+                        <input type="number" name="counter_fee" value="{{ suggested }}" step="100000"
+                               style="width:110px;" title="Your asking price">
+                        <button class="btn btn-sm btn-accent">Counter</button>
+                    </form>
+                    <form method="post" action="{{ url_for('incoming_bid_reject', bid_id=bid.id) }}">
+                        <button class="btn btn-sm btn-danger">Reject</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{# Player transfer requests #}
+{% if transfer_requests %}
+<div class="panel">
+    <div class="panel-header" style="background:#1a1a3a;color:#a0a0ff;">
+        Player Transfer Requests ({{ transfer_requests|length }})
+    </div>
+    <div class="panel-body" style="padding:0;">
+        {% for req in transfer_requests %}
+        {% set p = req.player %}
+        <div style="padding:14px;border-bottom:1px solid var(--cm-border);">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
+                <div>
+                    <strong style="font-size:1.05em;">{{ p.name }}</strong>
+                    <span class="pos pos-{{ p.position }}" style="margin-left:6px;">{{ p.position }}</span>
+                    <span class="small muted" style="margin-left:6px;">{{ p.age }} yrs · morale {{ p.morale or 70 }}%</span>
+                    <div class="small" style="margin-top:5px;color:#a0a0ff;">
+                        {% if req.reason == 'unhappy' %}
+                            Unhappy at the club — wants a move elsewhere.
+                        {% elif req.reason == 'contract_expiring' %}
+                            Contract expiring — will not renew and wants a transfer now.
+                        {% elif req.reason == 'ambition' %}
+                            Ambitious — believes he can achieve more at a bigger club.
+                        {% else %}
+                            Has handed in a formal transfer request.
+                        {% endif %}
+                    </div>
+                </div>
+                <div style="display:flex;gap:6px;">
+                    <form method="post" action="{{ url_for('transfer_request_grant', req_id=req.id) }}">
+                        <button class="btn btn-sm btn-accent">Grant (list player)</button>
+                    </form>
+                    <form method="post" action="{{ url_for('transfer_request_deny', req_id=req.id) }}">
+                        <button class="btn btn-sm btn-danger">Deny</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{# Pending counter-offers the DoF made on outgoing bids #}
+{% if pending_bids %}
+<div class="panel">
+    <div class="panel-header" style="background:#2a1a00;color:#f0c060;">
+        Your Pending Counter-Offers ({{ pending_bids|length }})
+    </div>
+    <div class="panel-body" style="padding:0;">
+        {% for bid in pending_bids %}
+        {% set p = bid.player %}
+        <div style="padding:12px;border-bottom:1px solid var(--cm-border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+            <div>
+                <strong>{{ p.name }}</strong>
+                <span class="pos pos-{{ p.position }}" style="margin-left:6px;">{{ p.position }}</span>
+                <span class="small muted" style="margin-left:6px;">from {{ bid.selling_club.name if bid.selling_club else 'Free Agent' }}</span>
+                <div class="small muted">Your bid: £{{ '{:,}'.format(bid.bid_fee) }} · Counter: <strong style="color:#f0c060;">£{{ '{:,}'.format(bid.counter_fee) }}</strong></div>
+            </div>
+            <div class="flex" style="gap:6px;">
+                <form method="post" action="{{ url_for('transfer_accept_counter', bid_id=bid.id) }}">
+                    <button class="btn btn-sm btn-accent">Accept £{{ "%.1f"|format(bid.counter_fee/1000000) }}m</button>
+                </form>
+                <form method="post" action="{{ url_for('transfer_decline_counter', bid_id=bid.id) }}">
+                    <button class="btn btn-sm btn-danger">Decline</button>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{% if not incoming_bids and not transfer_requests and not pending_bids %}
+<p class="muted center mt" style="padding:20px;">No pending inbox items. Bids and player requests will appear here.</p>
+{% endif %}
+
+{% endif %}
 
 {# ── BUY / LOAN-IN RESULTS ───────────────────────────────────────── #}
 {% if results and tab in ['buy', 'loan'] %}

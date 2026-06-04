@@ -405,3 +405,30 @@ class Lineup(db.Model):
     slot = db.Column(db.Integer)   # 1-11 = starters, 12-16 = subs
     position_played = db.Column(db.String(10))
     player = db.relationship('Player', foreign_keys=[player_id])
+
+
+class IncomingBid(db.Model):
+    """A bid received from an AI club on one of the DoF's listed players."""
+    __tablename__ = 'incoming_bids'
+    id = db.Column(db.Integer, primary_key=True)
+    game_state_id = db.Column(db.Integer, db.ForeignKey('game_states.id'))
+    player_id = db.Column(db.Integer, db.ForeignKey('players.id'))
+    bidding_club_id = db.Column(db.Integer, db.ForeignKey('clubs.id'))
+    offered_fee = db.Column(db.Integer, default=0)
+    counter_fee = db.Column(db.Integer, nullable=True)
+    status = db.Column(db.String(30), default='pending')  # pending|accepted|rejected|countered
+    created_date = db.Column(db.String(20))
+    player = db.relationship('Player', foreign_keys=[player_id])
+    bidding_club = db.relationship('Club', foreign_keys=[bidding_club_id])
+
+
+class TransferRequest(db.Model):
+    """A player requesting to leave the club."""
+    __tablename__ = 'transfer_requests'
+    id = db.Column(db.Integer, primary_key=True)
+    game_state_id = db.Column(db.Integer, db.ForeignKey('game_states.id'))
+    player_id = db.Column(db.Integer, db.ForeignKey('players.id'))
+    reason = db.Column(db.String(100), default='unhappy')
+    created_date = db.Column(db.String(20))
+    status = db.Column(db.String(20), default='pending')  # pending|granted|denied
+    player = db.relationship('Player', foreign_keys=[player_id])

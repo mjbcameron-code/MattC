@@ -14,7 +14,7 @@ from game.models import (db, League, Club, Player, Season, Match, MatchEvent,
                          Standing, PlayerStat, Transfer, NewsItem, GameState,
                          Lineup, Suspension, Loan, Manager, OwnerDemand,
                          ContractNegotiation, TransferBid, Scout, ScoutKnowledge,
-                         Stadium, SponsorDeal)
+                         Stadium, SponsorDeal, IncomingBid, TransferRequest)
 from game.setup import (seed_database, new_game, auto_pick_lineup,
                        database_is_seeded)
 from game import season as season_mod
@@ -659,6 +659,68 @@ def transfer_decline_counter(bid_id):
     return redirect(url_for('transfers'))
 
 
+@app.route('/transfers/incoming/accept/<int:bid_id>', methods=['POST'])
+@require_game
+def incoming_bid_accept(bid_id):
+    gs = get_game_state()
+    bid = IncomingBid.query.get(bid_id)
+    player_was_listed = bid.player.transfer_listed if bid and bid.player else False
+    ok, msg = transfers_mod.accept_incoming_bid(gs, bid_id)
+    flash(msg, 'success' if ok else 'error')
+    if ok:
+        if player_was_listed:
+            demands_mod.on_player_sold(gs)
+        auto_pick_lineup(gs)
+    return redirect(url_for('transfers', tab='inbox'))
+
+
+@app.route('/transfers/incoming/reject/<int:bid_id>', methods=['POST'])
+@require_game
+def incoming_bid_reject(bid_id):
+    gs = get_game_state()
+    ok, msg = transfers_mod.reject_incoming_bid(gs, bid_id)
+    flash(msg, 'success' if ok else 'error')
+    return redirect(url_for('transfers', tab='inbox'))
+
+
+@app.route('/transfers/incoming/counter/<int:bid_id>', methods=['POST'])
+@require_game
+def incoming_bid_counter(bid_id):
+    gs = get_game_state()
+    try:
+        counter_fee = int(request.form.get('counter_fee', 0))
+    except (ValueError, TypeError):
+        flash('Invalid counter-offer amount.', 'error')
+        return redirect(url_for('transfers', tab='inbox'))
+    bid = IncomingBid.query.get(bid_id)
+    player_was_listed = bid.player.transfer_listed if bid and bid.player else False
+    ok, msg = transfers_mod.counter_incoming_bid(gs, bid_id, counter_fee)
+    flash(msg, 'success' if ok else 'error')
+    if ok:
+        if player_was_listed:
+            demands_mod.on_player_sold(gs)
+        auto_pick_lineup(gs)
+    return redirect(url_for('transfers', tab='inbox'))
+
+
+@app.route('/transfers/request/grant/<int:req_id>', methods=['POST'])
+@require_game
+def transfer_request_grant(req_id):
+    gs = get_game_state()
+    ok, msg = transfers_mod.grant_transfer_request(gs, req_id)
+    flash(msg, 'success' if ok else 'error')
+    return redirect(url_for('transfers', tab='inbox'))
+
+
+@app.route('/transfers/request/deny/<int:req_id>', methods=['POST'])
+@require_game
+def transfer_request_deny(req_id):
+    gs = get_game_state()
+    ok, msg = transfers_mod.deny_transfer_request(gs, req_id)
+    flash(msg, 'success' if ok else 'error')
+    return redirect(url_for('transfers', tab='inbox'))
+
+
 # ---------------------------------------------------------------------------
 # Routes: match / advance
 # ---------------------------------------------------------------------------
@@ -841,6 +903,9 @@ def play_match(match_id):
     # Ongoing head-coach feedback to the DoF (occasional)
     staff_mod.maybe_coach_feedback(gs)
 
+    # Players pushing for transfers or contract talks
+    transfers_mod.maybe_player_transfer_request(gs)
+
     # Check if manager wants to resign after this result
     manager_resigned = staff_mod.check_manager_status(gs)
 
@@ -992,6 +1057,8 @@ def transfers():
     window_open, window_msg, _ = transfers_mod.is_window_open(gs.current_date)
     wage_bill = transfers_mod.get_wage_bill(club)
     pending_bids = transfers_mod.get_pending_bids(gs)
+    incoming_bids = transfers_mod.get_incoming_bids(gs)
+    transfer_requests = transfers_mod.get_transfer_requests(gs)
 
     return render_template('transfers.html', club=club, results=results,
                            query=query, position=position, max_value=max_value,
@@ -999,7 +1066,9 @@ def transfers():
                            free_agents=free_agents, loan_candidates=loan_candidates,
                            loaned_out=loaned_out,
                            window_open=window_open, window_msg=window_msg,
-                           wage_bill=wage_bill, pending_bids=pending_bids)
+                           wage_bill=wage_bill, pending_bids=pending_bids,
+                           incoming_bids=incoming_bids,
+                           transfer_requests=transfer_requests)
 
 
 @app.route('/transfers/offer', methods=['POST'])
@@ -1327,6 +1396,29 @@ def _migrate_db():
             ('training_level',  'ALTER TABLE clubs ADD COLUMN training_level INTEGER DEFAULT 2'),
             ('academy_quality', 'ALTER TABLE clubs ADD COLUMN academy_quality INTEGER DEFAULT 2'),
         ])
+        # Create new tables if missing
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS incoming_bids (
+                id INTEGER PRIMARY KEY,
+                game_state_id INTEGER REFERENCES game_states(id),
+                player_id INTEGER REFERENCES players(id),
+                bidding_club_id INTEGER REFERENCES clubs(id),
+                offered_fee INTEGER DEFAULT 0,
+                counter_fee INTEGER,
+                status VARCHAR(30) DEFAULT 'pending',
+                created_date VARCHAR(20)
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS transfer_requests (
+                id INTEGER PRIMARY KEY,
+                game_state_id INTEGER REFERENCES game_states(id),
+                player_id INTEGER REFERENCES players(id),
+                reason VARCHAR(100) DEFAULT 'unhappy',
+                created_date VARCHAR(20),
+                status VARCHAR(20) DEFAULT 'pending'
+            )
+        """)
         conn.commit()
         conn.close()
     except Exception:

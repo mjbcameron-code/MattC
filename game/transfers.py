@@ -1,6 +1,6 @@
 import random
 from datetime import datetime, timedelta
-from .models import db, Player, Club, Transfer, NewsItem, Loan, TransferBid
+from .models import db, Player, Club, Transfer, NewsItem, Loan, TransferBid, IncomingBid, TransferRequest
 
 
 def is_window_open(date_str):
@@ -536,34 +536,44 @@ def is_on_loan_to(player_id, club_id, season_id):
 
 
 def ai_transfers(game_state, current_date):
-    """Simulate AI clubs occasionally signing players; also bid on the manager's listed players."""
+    """Simulate AI clubs occasionally signing players; incoming bids land in DoF inbox."""
     from game.season import add_news
 
-    # Occasionally bid on a player listed for transfer by the managed club
+    # Incoming bid on a listed player — DoF must review it
     if random.random() < 0.12:
         listed = Player.query.filter_by(
             club_id=game_state.managed_club_id, transfer_listed=True).all()
         if listed:
             target = random.choice(listed)
-            value = get_transfer_value(target)
-            bidder = random.choice(
-                Club.query.filter(Club.id != game_state.managed_club_id).all() or [None])
-            if bidder and bidder.budget >= value * 0.6:
-                # Accept if bid is at least 80% of value
-                offer = int(value * random.uniform(0.8, 1.2))
-                if offer >= value * 0.8:
-                    bidder.budget -= offer
-                    game_state.managed_club.budget += offer
-                    target.club_id = bidder.id
-                    target.transfer_listed = False
-                    add_news(game_state,
-                             f"{target.name} sold to {bidder.name}",
-                             f"{bidder.name} have signed {target.name} for "
-                             f"£{offer:,}. The fee has been added to your transfer budget.",
-                             'transfers')
-                    db.session.commit()
-                    return
+            existing = IncomingBid.query.filter_by(
+                game_state_id=game_state.id, player_id=target.id,
+                status='pending').first()
+            if not existing:
+                clubs = Club.query.filter(
+                    Club.id != game_state.managed_club_id).all()
+                bidder = random.choice(clubs) if clubs else None
+                if bidder:
+                    value = get_transfer_value(target)
+                    if bidder.budget >= value * 0.5:
+                        offer = int(value * random.uniform(0.70, 1.10))
+                        bid = IncomingBid(
+                            game_state_id=game_state.id,
+                            player_id=target.id,
+                            bidding_club_id=bidder.id,
+                            offered_fee=offer,
+                            status='pending',
+                            created_date=current_date,
+                        )
+                        db.session.add(bid)
+                        add_news(game_state,
+                                 f"Bid received for {target.name}",
+                                 f"{bidder.name} have submitted a bid of £{offer:,} for "
+                                 f"{target.name}. Go to Transfers → Inbox to review.",
+                                 'transfer')
+                        db.session.commit()
+                        return
 
+    # AI clubs sign free agents
     if random.random() > 0.05:
         return
     free_agents = Player.query.filter_by(club_id=None).order_by(
@@ -581,3 +591,218 @@ def ai_transfers(game_state, current_date):
         club.budget -= fee
         player.club_id = club.id
         db.session.commit()
+
+
+def get_incoming_bids(game_state):
+    """Pending bids from AI clubs on the DoF's listed players."""
+    return (IncomingBid.query
+            .filter_by(game_state_id=game_state.id, status='pending')
+            .order_by(IncomingBid.id.desc())
+            .all())
+
+
+def accept_incoming_bid(game_state, bid_id):
+    """Accept an AI club's bid — complete the sale at the offered fee."""
+    from game.season import add_news
+    bid = IncomingBid.query.get(bid_id)
+    if not bid or bid.game_state_id != game_state.id or bid.status != 'pending':
+        return False, "Bid not found or no longer active."
+    player = Player.query.get(bid.player_id)
+    bidder = Club.query.get(bid.bidding_club_id)
+    if not player:
+        return False, "Player not found."
+    if bidder and bidder.budget < bid.offered_fee:
+        bid.status = 'rejected'
+        db.session.commit()
+        return False, f"{bidder.name if bidder else 'Club'} can no longer afford the fee."
+
+    fee = bid.offered_fee
+    game_state.managed_club.budget += fee
+    if bidder:
+        bidder.budget -= fee
+    old_name = player.name
+    player.club_id = bidder.id if bidder else None
+    player.transfer_listed = False
+    bid.status = 'accepted'
+
+    t = Transfer(
+        player_id=player.id,
+        from_club_id=game_state.managed_club_id,
+        to_club_id=bidder.id if bidder else None,
+        fee=fee,
+        transfer_date=game_state.current_date,
+        status='accepted',
+    )
+    db.session.add(t)
+    add_news(game_state,
+             f"{old_name} sold to {bidder.name if bidder else 'Unknown'}",
+             f"{old_name} has completed a move to "
+             f"{bidder.name if bidder else 'an unknown club'} for £{fee:,}.",
+             'transfer')
+    db.session.commit()
+    return True, f"{old_name} sold to {bidder.name if bidder else 'Unknown'} for £{fee:,}!"
+
+
+def reject_incoming_bid(game_state, bid_id):
+    """Reject an AI club's bid."""
+    bid = IncomingBid.query.get(bid_id)
+    if not bid or bid.game_state_id != game_state.id or bid.status != 'pending':
+        return False, "Bid not found or no longer active."
+    player = Player.query.get(bid.player_id)
+    bidder = Club.query.get(bid.bidding_club_id)
+    bid.status = 'rejected'
+    db.session.commit()
+    name = player.name if player else 'Player'
+    club_name = bidder.name if bidder else 'Club'
+    return True, f"Bid from {club_name} for {name} has been rejected."
+
+
+def counter_incoming_bid(game_state, bid_id, counter_fee):
+    """DoF names a price; AI club responds immediately."""
+    from game.season import add_news
+    bid = IncomingBid.query.get(bid_id)
+    if not bid or bid.game_state_id != game_state.id or bid.status != 'pending':
+        return False, "Bid not found or no longer active."
+    player = Player.query.get(bid.player_id)
+    bidder = Club.query.get(bid.bidding_club_id)
+    if not player or not bidder:
+        return False, "Player or bidding club not found."
+
+    bid.counter_fee = counter_fee
+    bid.status = 'countered'
+
+    # AI club acceptance based on how far above their offer the counter is
+    ratio = counter_fee / max(1, bid.offered_fee)
+    accept = (ratio <= 1.10 or
+              (ratio <= 1.25 and random.random() < 0.60) or
+              (ratio <= 1.45 and random.random() < 0.25))
+
+    if accept and bidder.budget >= counter_fee:
+        game_state.managed_club.budget += counter_fee
+        bidder.budget -= counter_fee
+        player.club_id = bidder.id
+        player.transfer_listed = False
+
+        t = Transfer(
+            player_id=player.id,
+            from_club_id=game_state.managed_club_id,
+            to_club_id=bidder.id,
+            fee=counter_fee,
+            transfer_date=game_state.current_date,
+            status='accepted',
+        )
+        db.session.add(t)
+        add_news(game_state,
+                 f"{player.name} sold to {bidder.name}",
+                 f"{bidder.name} accepted your asking price of £{counter_fee:,} "
+                 f"for {player.name}.",
+                 'transfer')
+        db.session.commit()
+        return True, f"{player.name} sold to {bidder.name} for £{counter_fee:,}!"
+
+    bid.status = 'rejected'
+    db.session.commit()
+    return False, (f"{bidder.name} rejected your counter of £{counter_fee:,} "
+                   f"for {player.name} and have walked away.")
+
+
+def maybe_player_transfer_request(game_state):
+    """Unhappy or ambitious players occasionally request a transfer."""
+    from game.season import add_news
+
+    if random.random() > 0.09:
+        return
+
+    season_year = game_state.current_season.year if game_state.current_season else 2025
+    candidates = []
+
+    for p in game_state.managed_club.players:
+        if p.is_youth or p.transfer_listed:
+            continue
+        existing = TransferRequest.query.filter_by(
+            game_state_id=game_state.id, player_id=p.id, status='pending').first()
+        if existing:
+            continue
+        reasons = []
+        morale = p.morale or 70
+        ca = p.current_ability or 0
+        if morale < 40:
+            reasons.append('unhappy')
+        if p.contract_end <= season_year + 1 and ca >= 120:
+            reasons.append('contract_expiring')
+        if morale < 55 and p.age <= 27 and ca >= 140:
+            reasons.append('ambition')
+        if reasons:
+            candidates.append((p, random.choice(reasons)))
+
+    if not candidates:
+        return
+
+    player, reason = random.choice(candidates)
+    reason_text = {
+        'unhappy': "is unhappy at the club and has requested to leave",
+        'contract_expiring': "has informed the club he will not renew and wants a move",
+        'ambition': "feels his ambitions exceed the club's current trajectory",
+    }.get(reason, "has requested a transfer")
+
+    req = TransferRequest(
+        game_state_id=game_state.id,
+        player_id=player.id,
+        reason=reason,
+        created_date=game_state.current_date,
+        status='pending',
+    )
+    db.session.add(req)
+    add_news(game_state,
+             f"{player.name} hands in transfer request",
+             f"{player.name} {reason_text}. Respond on the Transfers page to "
+             f"grant or deny his request.",
+             'transfer')
+    db.session.commit()
+
+
+def get_transfer_requests(game_state):
+    return (TransferRequest.query
+            .filter_by(game_state_id=game_state.id, status='pending')
+            .all())
+
+
+def grant_transfer_request(game_state, req_id):
+    """List the player; morale nudge upward for being heard."""
+    from game.season import add_news
+    req = TransferRequest.query.get(req_id)
+    if not req or req.game_state_id != game_state.id or req.status != 'pending':
+        return False, "Request not found."
+    player = Player.query.get(req.player_id)
+    if not player:
+        return False, "Player not found."
+    req.status = 'granted'
+    player.transfer_listed = True
+    player.morale = min(100, (player.morale or 70) + 5)
+    add_news(game_state,
+             f"{player.name} listed after transfer request",
+             f"Following {player.name}'s request, the club have placed him on the "
+             f"transfer list and will listen to offers.",
+             'transfer')
+    db.session.commit()
+    return True, f"{player.name} has been listed for transfer."
+
+
+def deny_transfer_request(game_state, req_id):
+    """Deny the request — morale hit for the player."""
+    from game.season import add_news
+    req = TransferRequest.query.get(req_id)
+    if not req or req.game_state_id != game_state.id or req.status != 'pending':
+        return False, "Request not found."
+    player = Player.query.get(req.player_id)
+    if not player:
+        return False, "Request not found."
+    req.status = 'denied'
+    player.morale = max(0, (player.morale or 70) - 12)
+    add_news(game_state,
+             f"{player.name}'s transfer request rejected",
+             f"The club has told {player.name} he is not for sale. He is unhappy "
+             f"about this and it may affect his performances.",
+             'transfer')
+    db.session.commit()
+    return True, f"{player.name}'s transfer request denied. His morale has taken a hit."
