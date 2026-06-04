@@ -31,6 +31,7 @@ from game import scouting as scouting_mod
 from game import commercial as commercial_mod
 from game import academy as academy_mod
 from game import press as press_mod
+from game import records as records_mod
 from game.morale import apply_match_morale
 from game.board import update_board_after_match
 
@@ -1328,6 +1329,16 @@ def stats():
                            my_stats=my_stats, club=gs.managed_club)
 
 
+@app.route('/records')
+@require_game
+def club_records():
+    gs = get_game_state()
+    recs = records_mod.get_club_records(gs)
+    awards = records_mod.get_season_awards(gs)
+    return render_template('records.html', records=recs, awards=awards,
+                           club=gs.managed_club, season=gs.current_season, gs=gs)
+
+
 # ---------------------------------------------------------------------------
 # Routes: season end
 # ---------------------------------------------------------------------------
@@ -1361,10 +1372,11 @@ def season_end():
                        else uefa_final.away_club)
 
     prize_money = commercial_mod.calculate_prize_money(position, league.level or 1) if position else 0
+    awards = records_mod.get_season_awards(gs)
     return render_template('season_end.html', table=table, mc=mc, position=position,
                            relegated=relegated, season=season, top_scorers=top_scorers,
                            board_met=board_met, cl_winner=cl_winner, uefa_winner=uefa_winner,
-                           gs=gs, prize_money=prize_money)
+                           gs=gs, prize_money=prize_money, awards=awards)
 
 
 @app.route('/season-end/advance', methods=['POST'])
@@ -1378,6 +1390,9 @@ def advance_season():
     mc = gs.managed_club
     position = next((i + 1 for i, s in enumerate(table) if s.club_id == mc.id), len(table))
     commercial_mod.pay_prize_money(gs, position, league.level or 1)
+
+    # Season awards news before rolling over
+    records_mod.post_season_awards_news(gs)
 
     transfers_mod.return_loaned_out(gs)   # return any players you loaned out
     season_mod.process_new_season(gs)

@@ -80,6 +80,49 @@
 </div>
 {% endif %}
 
+{% if awards %}
+<div class="panel" style="border-color:gold;">
+    <div class="panel-header" style="background:#1a1500;border-bottom:2px solid gold;">
+        Season Awards — {{ season.name }}
+    </div>
+    <div class="panel-body">
+        <div class="statbox">
+            {% if awards.pots %}
+            <div class="stat-item">
+                <div class="big" style="color:gold;font-size:14px;">{{ awards.pots.player.name if awards.pots.player else '—' }}</div>
+                <div class="lbl">🏆 Player of the Season
+                    {% if awards.pots.appearances %}
+                    · {{ "%.1f"|format(awards.pots.total_rating / 10.0 / awards.pots.appearances) }}/10
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+            {% if awards.top_scorer and awards.top_scorer.goals %}
+            <div class="stat-item">
+                <div class="big" style="color:var(--cm-green-light);">{{ awards.top_scorer.player.name if awards.top_scorer.player else '—' }}</div>
+                <div class="lbl">⚽ Top Scorer — {{ awards.top_scorer.goals }} goals</div>
+            </div>
+            {% endif %}
+            <div class="stat-item">
+                <div class="big" style="color:var(--cm-accent);">{{ awards.total_goals }}</div>
+                <div class="lbl">Goals Scored</div>
+            </div>
+            <div class="stat-item">
+                <div class="big" style="color:var(--cm-yellow);">{{ awards.clean_sheets }}</div>
+                <div class="lbl">Clean Sheets</div>
+            </div>
+        </div>
+        {% if awards.best_result %}
+        {% set r = awards.best_result %}
+        <div class="small" style="margin-top:8px;color:var(--cm-text-dim);">
+            Best result: <strong style="color:var(--cm-green-light);">{{ r.our }}–{{ r.their }}</strong>
+            vs {{ r.opp.name }} ({{ r.match.competition }})
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
 <div class="grid-2">
     <div class="panel">
         <div class="panel-header">Final Table</div>
@@ -133,6 +176,8 @@
         Review Squad ▶</a>
     <a href="{{ url_for('academy') }}" class="btn" style="padding:14px 20px;">
         Youth Academy</a>
+    <a href="{{ url_for('club_records') }}" class="btn" style="padding:14px 20px;">
+        Club Records</a>
     <form method="post" action="{{ url_for('advance_season') }}" style="display:inline;">
         <button class="btn" style="padding:14px 20px;">
             Skip Review &amp; Begin Next Season</button>

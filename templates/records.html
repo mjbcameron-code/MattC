@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+{% block title %}Club Records — {{ club.name }}{% endblock %}
+{% block content %}
+
+<div class="statbox mb">
+    <div class="stat-item">
+        <div class="big" style="color:var(--cm-accent);">{{ records.matches_played }}</div>
+        <div class="lbl">Matches Played</div>
+    </div>
+    {% if records.biggest_win %}
+    <div class="stat-item">
+        <div class="big" style="color:var(--cm-green-light);">
+            {{ records.biggest_win.our }}–{{ records.biggest_win.their }}</div>
+        <div class="lbl">Record Win</div>
+    </div>
+    {% endif %}
+    {% if records.highest_attendance %}
+    <div class="stat-item">
+        <div class="big">{{ "{:,}".format(records.highest_attendance.attendance) }}</div>
+        <div class="lbl">Record Attendance</div>
+    </div>
+    {% endif %}
+    {% if records.record_buy %}
+    <div class="stat-item">
+        <div class="big" style="color:var(--cm-accent);">{{ records.record_buy.fee | money }}</div>
+        <div class="lbl">Record Buy</div>
+    </div>
+    {% endif %}
+    {% if records.record_sale %}
+    <div class="stat-item">
+        <div class="big" style="color:var(--cm-green-light);">{{ records.record_sale.fee | money }}</div>
+        <div class="lbl">Record Sale</div>
+    </div>
+    {% endif %}
+</div>
+
+<div class="grid-2">
+
+{# ── Season Awards ──────────────────────────────────────────────────────── #}
+<div>
+<div class="panel">
+    <div class="panel-header" style="background:#0e1c2f;border-bottom:2px solid var(--cm-accent);">
+        This Season — {{ season.name }}
+    </div>
+    <div class="panel-body">
+        {% if awards.pots %}
+        {% set pots = awards.pots %}
+        <div style="background:var(--cm-panel-dark,#0d1520);border-left:3px solid gold;padding:12px 16px;border-radius:0 4px 4px 0;margin-bottom:16px;">
+            <div class="small muted" style="margin-bottom:4px;">🏆 Player of the Season</div>
+            <div style="font-size:1.15em;font-weight:bold;color:gold;">
+                {{ pots.player.name if pots.player else '—' }}</div>
+            <div class="small muted">
+                {{ pots.player.position if pots.player else '' }} ·
+                {{ pots.appearances }} apps ·
+                {% if pots.appearances %}{{ "%.1f"|format(pots.total_rating / 10.0 / pots.appearances) }}/10 avg{% endif %}
+                · {{ pots.goals }}g {{ pots.assists }}a
+            </div>
+        </div>
+        {% else %}
+        <div class="small muted mb">Player of the Season requires 5+ appearances (not yet reached).</div>
+        {% endif %}
+
+        <table style="width:100%;">
+            <tbody>
+            {% if awards.top_scorer and awards.top_scorer.goals %}
+            <tr>
+                <td class="muted small">⚽ Top Scorer</td>
+                <td style="font-weight:bold;">{{ awards.top_scorer.player.name if awards.top_scorer.player else '—' }}</td>
+                <td class="num" style="color:var(--cm-accent);font-weight:bold;">{{ awards.top_scorer.goals }}g</td>
+            </tr>
+            {% endif %}
+            {% if awards.top_assister and awards.top_assister.assists %}
+            <tr>
+                <td class="muted small">🎯 Top Assister</td>
+                <td>{{ awards.top_assister.player.name if awards.top_assister.player else '—' }}</td>
+                <td class="num" style="color:var(--cm-text-dim);">{{ awards.top_assister.assists }}a</td>
+            </tr>
+            {% endif %}
+            {% if awards.most_apps %}
+            <tr>
+                <td class="muted small">📋 Most Appearances</td>
+                <td>{{ awards.most_apps.player.name if awards.most_apps.player else '—' }}</td>
+                <td class="num">{{ awards.most_apps.appearances }}</td>
+            </tr>
+            {% endif %}
+            </tbody>
+        </table>
+
+        {% if awards.played_count %}
+        <div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--cm-border);">
+            <div class="grid-2 small" style="gap:6px;">
+                <div style="text-align:center;padding:8px;background:var(--cm-panel-dark,#0d1520);border-radius:4px;">
+                    <div style="font-size:1.4em;font-weight:bold;color:var(--cm-green-light);">{{ awards.wins }}</div>
+                    <div class="muted">Wins</div>
+                </div>
+                <div style="text-align:center;padding:8px;background:var(--cm-panel-dark,#0d1520);border-radius:4px;">
+                    <div style="font-size:1.4em;font-weight:bold;color:var(--cm-accent);">{{ awards.total_goals }}</div>
+                    <div class="muted">Goals Scored</div>
+                </div>
+                <div style="text-align:center;padding:8px;background:var(--cm-panel-dark,#0d1520);border-radius:4px;">
+                    <div style="font-size:1.4em;font-weight:bold;color:var(--cm-yellow);">{{ awards.clean_sheets }}</div>
+                    <div class="muted">Clean Sheets</div>
+                </div>
+                <div style="text-align:center;padding:8px;background:var(--cm-panel-dark,#0d1520);border-radius:4px;">
+                    <div style="font-size:1.4em;font-weight:bold;">{{ awards.played_count }}</div>
+                    <div class="muted">Played</div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if awards.best_result %}
+        {% set r = awards.best_result %}
+        <div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--cm-border);">
+            <div class="small muted" style="margin-bottom:6px;">Best Result</div>
+            <div style="font-weight:bold;font-size:1.05em;">
+                <span style="color:var(--cm-green-light);">{{ r.our }}–{{ r.their }}</span>
+                vs {{ r.opp.name }}
+                <span class="small muted">({{ r.match.competition }})</span>
+            </div>
+        </div>
+        {% endif %}
+        {% if awards.worst_result %}
+        {% set r = awards.worst_result %}
+        <div style="margin-top:8px;">
+            <div class="small muted" style="margin-bottom:6px;">Worst Result</div>
+            <div style="font-weight:bold;font-size:1.05em;">
+                <span style="color:var(--cm-red);">{{ r.our }}–{{ r.their }}</span>
+                vs {{ r.opp.name }}
+                <span class="small muted">({{ r.match.competition }})</span>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+</div>
+
+{# ── All-Time Records ───────────────────────────────────────────────────── #}
+<div>
+<div class="panel">
+    <div class="panel-header" style="background:#0a1520;border-bottom:2px solid var(--cm-border);">
+        All-Time Club Records
+    </div>
+    <div class="panel-body" style="padding:0;">
+        <table style="width:100%;">
+            <tbody>
+            {% if records.biggest_win %}
+            {% set r = records.biggest_win %}
+            <tr style="padding:10px;">
+                <td style="padding:10px 16px;" class="muted small">Biggest Win</td>
+                <td style="padding:10px 16px;">
+                    <span style="color:var(--cm-green-light);font-weight:bold;font-size:1.1em;">{{ r.our }}–{{ r.their }}</span>
+                    vs {{ r.opp.name if r.opp else '?' }}
+                </td>
+                <td style="padding:10px 16px;" class="small muted">{{ r.match.match_date }}</td>
+            </tr>
+            {% endif %}
+            {% if records.biggest_loss %}
+            {% set r = records.biggest_loss %}
+            <tr>
+                <td style="padding:10px 16px;" class="muted small">Heaviest Defeat</td>
+                <td style="padding:10px 16px;">
+                    <span style="color:var(--cm-red);font-weight:bold;font-size:1.1em;">{{ r.our }}–{{ r.their }}</span>
+                    vs {{ r.opp.name if r.opp else '?' }}
+                </td>
+                <td style="padding:10px 16px;" class="small muted">{{ r.match.match_date }}</td>
+            </tr>
+            {% endif %}
+            {% if records.highest_attendance %}
+            {% set a = records.highest_attendance %}
+            <tr>
+                <td style="padding:10px 16px;" class="muted small">Highest Attendance</td>
+                <td style="padding:10px 16px;">
+                    <span style="font-weight:bold;">{{ "{:,}".format(a.attendance) }}</span>
+                    vs {{ a.opp.name if a.opp else '?' }}
+                </td>
+                <td style="padding:10px 16px;" class="small muted">{{ a.match.match_date }}</td>
+            </tr>
+            {% endif %}
+            {% if records.record_buy and records.record_buy.player %}
+            {% set t = records.record_buy %}
+            <tr>
+                <td style="padding:10px 16px;" class="muted small">Record Buy</td>
+                <td style="padding:10px 16px;">
+                    {{ t.player.name }}
+                    <span class="small muted">from {{ t.from_club.name if t.from_club else 'Free' }}</span>
+                </td>
+                <td style="padding:10px 16px;" class="small" style="color:var(--cm-accent);">{{ t.fee | money }}</td>
+            </tr>
+            {% endif %}
+            {% if records.record_sale and records.record_sale.player %}
+            {% set t = records.record_sale %}
+            <tr>
+                <td style="padding:10px 16px;" class="muted small">Record Sale</td>
+                <td style="padding:10px 16px;">
+                    {{ t.player.name }}
+                    <span class="small muted">to {{ t.to_club.name if t.to_club else '?' }}</span>
+                </td>
+                <td style="padding:10px 16px;" class="small" style="color:var(--cm-green-light);">{{ t.fee | money }}</td>
+            </tr>
+            {% endif %}
+            {% if not records.biggest_win and not records.record_buy %}
+            <tr><td colspan="3" style="padding:20px;" class="muted center">
+                Records will fill as the season progresses.</td></tr>
+            {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if records.top_scorers_alltime %}
+<div class="panel">
+    <div class="panel-header">All-Time Top Scorers</div>
+    <div class="panel-body" style="padding:0;">
+        <table>
+            <thead><tr><th>#</th><th>Player</th><th>Pos</th>
+                <th class="num">Goals</th><th class="num">Apps</th></tr></thead>
+            <tbody>
+            {% for row in records.top_scorers_alltime %}
+            <tr {% if loop.index == 1 %}style="color:gold;"{% endif %}>
+                <td>{{ loop.index }}</td>
+                <td><strong>{{ row.player.name }}</strong></td>
+                <td><span class="badge">{{ row.player.position }}</span></td>
+                <td class="num"><strong>{{ row.goals }}</strong></td>
+                <td class="num muted">{{ row.apps }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+</div>
+</div>
+
+<div class="center mt" style="margin-top:16px;">
+    <a href="{{ url_for('stats') }}" class="btn" style="padding:8px 18px;">← League Stats</a>
+</div>
+
+{% endblock %}
