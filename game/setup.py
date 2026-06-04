@@ -130,7 +130,7 @@ def seed_database():
                 club_id=club.id,
                 wage=built['wage'],
                 value=built['value'],
-                contract_end=2004,
+                contract_end=2028,
                 squad_number=squad_number_counter[club.id],
                 current_ability=built['current_ability'],
                 potential_ability=built['potential_ability'],
@@ -232,7 +232,7 @@ def seed_managers():
             name=name, nationality=nat, age=age, reputation=rep,
             tactical_ability=tac, man_management=mm, determination=det,
             preferred_formation=fmt, preferred_style=style,
-            wage=wage, contract_end=2004, satisfaction=70,
+            wage=wage, contract_end=2028, satisfaction=70,
         )
         db.session.add(mgr)
         mgr_objects.append(mgr)
@@ -288,7 +288,7 @@ def new_game(manager_name, club_id):
     from game.scouting import seed_scouts, assign_starting_scouts
     seed_scouts()
 
-    season = Season(year=2001, name='2001/02')
+    season = Season(year=2025, name='2025/26')
     db.session.add(season)
     db.session.flush()
 
@@ -312,7 +312,7 @@ def new_game(manager_name, club_id):
 
     gs = GameState(
         managed_club_id=club_id,
-        current_date='2001-08-18',
+        current_date='2025-08-09',
         current_season_id=season.id,
         manager_name=manager_name,
         formation=initial_formation,

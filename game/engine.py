@@ -239,10 +239,12 @@ def simulate_match(home_club, away_club, season, match_obj, game_state=None):
         mgr = getattr(game_state.managed_club, 'head_coach', None)
         if mgr:
             ta = mgr.tactical_ability
-            ta_mult = 0.88 if ta <= 6 else (1.08 if ta >= 14 else (1.15 if ta >= 18 else 1.00))
+            # Fixed ordering (ta>=18 was unreachable in old code); narrower range so
+            # even a great manager gives only a 7% boost rather than 15%
+            ta_mult = 0.92 if ta <= 6 else (1.07 if ta >= 18 else (1.04 if ta >= 14 else 1.00))
             style = mgr.preferred_style or 'balanced'
         else:
-            ta_mult = 0.82  # no manager — leaderless penalty
+            ta_mult = 0.88  # no manager — modest leaderless penalty
             style = 'balanced'
 
         if home_club.id == mc_id:
@@ -260,7 +262,7 @@ def simulate_match(home_club, away_club, season, match_obj, game_state=None):
             elif style == 'defensive':
                 a_att *= 0.96; a_def *= 1.06
 
-    HOME_ADVANTAGE = 8  # raw boost to home attack
+    HOME_ADVANTAGE = 4  # real PL home advantage is modest (~55% pts at home)
 
     h_att_eff = h_att + HOME_ADVANTAGE
     a_att_eff = a_att
@@ -288,14 +290,13 @@ def simulate_match(home_club, away_club, season, match_obj, game_state=None):
     def score_str():
         return f"{home_club.short_name or home_club.name} {home_score}-{away_score} {away_club.short_name or away_club.name}"
 
-    # Chance probabilities per minute (base)
-    # ~0.15 chance per team per minute = 13.5 chances each over 90 mins
-    # ~30% of chances are shots → ~4 shots each
-    # ~35% of shots are goals → ~1.4 goals each (realistic)
-    base_h_chance = 0.13 + (h_att_eff - a_def) / 400
-    base_a_chance = 0.11 + (a_att_eff - h_def) / 400
-    base_h_chance = max(0.05, min(0.25, base_h_chance))
-    base_a_chance = max(0.04, min(0.22, base_a_chance))
+    # Calibrated for ~2.7 goals/game (PL 2024/25 average was 2.71)
+    # /320 sensitivity keeps strong vs weak differentials realistic without blowouts
+    base_h_chance = 0.175 + (h_att_eff - a_def) / 320
+    base_a_chance = 0.148 + (a_att_eff - h_def) / 320
+    base_h_chance = max(0.07, min(0.28, base_h_chance))
+    base_a_chance = max(0.06, min(0.25, base_a_chance))
+    shot_chance = 0.36  # share of possession events that become shots
 
     commentary_log.append({'minute': 1, 'text': pick('kick_off'), 'type': 'event'})
 
@@ -311,15 +312,14 @@ def simulate_match(home_club, away_club, season, match_obj, game_state=None):
             if not active_home or not active_away:
                 continue
             r = random.random()
-            shot_chance = 0.35
             if r < shot_chance:
                 home_shots += 1
                 scorer_cand = pick_scorer(active_home)
                 gk_cand = next((p for p in active_away if p.position == 'GK'), None)
                 gk_name = gk_cand.name.split()[-1] if gk_cand else 'keeper'
-                goal_prob = 0.30 + (scorer_cand.finishing - 10) / 60
+                goal_prob = 0.32 + (scorer_cand.finishing - 10) / 60
                 goal_prob -= (gk_cand.reflexes - 10) / 80 if gk_cand else 0
-                goal_prob = max(0.05, min(0.55, goal_prob))
+                goal_prob = max(0.06, min(0.56, goal_prob))
                 if random.random() < goal_prob:
                     home_shots_on += 1
                     home_score += 1
@@ -366,14 +366,14 @@ def simulate_match(home_club, away_club, season, match_obj, game_state=None):
             if not active_home or not active_away:
                 continue
             r = random.random()
-            if r < 0.35:
+            if r < shot_chance:
                 away_shots += 1
                 scorer_cand = pick_scorer(active_away)
                 gk_cand = next((p for p in active_home if p.position == 'GK'), None)
                 gk_name = gk_cand.name.split()[-1] if gk_cand else 'keeper'
-                goal_prob = 0.27 + (scorer_cand.finishing - 10) / 60
+                goal_prob = 0.30 + (scorer_cand.finishing - 10) / 60
                 goal_prob -= (gk_cand.reflexes - 10) / 80 if gk_cand else 0
-                goal_prob = max(0.04, min(0.50, goal_prob))
+                goal_prob = max(0.05, min(0.52, goal_prob))
                 if random.random() < goal_prob:
                     away_shots_on += 1
                     away_score += 1
