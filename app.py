@@ -13,7 +13,8 @@ from flask import (Flask, render_template, request, redirect, url_for,
 from game.models import (db, League, Club, Player, Season, Match, MatchEvent,
                          Standing, PlayerStat, Transfer, NewsItem, GameState,
                          Lineup, Suspension, Loan, Manager, OwnerDemand,
-                         ContractNegotiation, TransferBid, Scout, ScoutKnowledge)
+                         ContractNegotiation, TransferBid, Scout, ScoutKnowledge,
+                         Stadium, SponsorDeal)
 from game.setup import (seed_database, new_game, auto_pick_lineup,
                        database_is_seeded)
 from game import season as season_mod
@@ -26,6 +27,7 @@ from game import staff as staff_mod
 from game import demands as demands_mod
 from game import contracts as contracts_mod
 from game import scouting as scouting_mod
+from game import commercial as commercial_mod
 from game.morale import apply_match_morale
 from game.board import update_board_after_match
 
@@ -428,6 +430,84 @@ def scouting_shortlist(player_id):
     return redirect(request.referrer or url_for('scouting'))
 
 
+# ---------------------------------------------------------------------------
+# Routes: commercial
+
+@app.route('/commercial')
+@require_game
+def commercial():
+    gs = get_game_state()
+    summary = commercial_mod.get_summary(gs)
+    offers = commercial_mod.get_available_offers(gs)
+    return render_template('commercial.html', gs=gs, club=gs.managed_club,
+                           summary=summary, offers=offers,
+                           training_labels=commercial_mod.TRAINING_LABELS,
+                           training_costs=commercial_mod.TRAINING_UPGRADE_COST)
+
+
+@app.route('/commercial/tickets', methods=['POST'])
+@require_game
+def commercial_tickets():
+    gs = get_game_state()
+    try:
+        std = int(request.form.get('std_price', 25))
+        prem = int(request.form.get('premium_price', 45))
+    except ValueError:
+        flash('Invalid price values.', 'error')
+        return redirect(url_for('commercial'))
+    ok, msg = commercial_mod.set_ticket_prices(gs, std, prem)
+    flash(msg, 'success' if ok else 'error')
+    return redirect(url_for('commercial'))
+
+
+@app.route('/commercial/expand', methods=['POST'])
+@require_game
+def commercial_expand():
+    gs = get_game_state()
+    try:
+        seats = int(request.form.get('seats', 5000))
+    except ValueError:
+        seats = 5000
+    ok, msg = commercial_mod.start_expansion(gs, seats)
+    flash(msg, 'success' if ok else 'error')
+    return redirect(url_for('commercial'))
+
+
+@app.route('/commercial/quality', methods=['POST'])
+@require_game
+def commercial_quality():
+    gs = get_game_state()
+    ok, msg = commercial_mod.upgrade_quality(gs)
+    flash(msg, 'success' if ok else 'error')
+    return redirect(url_for('commercial'))
+
+
+@app.route('/commercial/training', methods=['POST'])
+@require_game
+def commercial_training():
+    gs = get_game_state()
+    ok, msg = commercial_mod.upgrade_training(gs)
+    flash(msg, 'success' if ok else 'error')
+    return redirect(url_for('commercial'))
+
+
+@app.route('/commercial/sponsor', methods=['POST'])
+@require_game
+def commercial_sponsor():
+    gs = get_game_state()
+    deal_type = request.form.get('deal_type', '')
+    company = request.form.get('company', '')
+    try:
+        value = int(request.form.get('annual_value', 0))
+        years = int(request.form.get('years', 3))
+    except ValueError:
+        flash('Invalid deal values.', 'error')
+        return redirect(url_for('commercial'))
+    ok, msg = commercial_mod.accept_sponsor(gs, deal_type, company, value, years)
+    flash(msg, 'success' if ok else 'error')
+    return redirect(url_for('commercial'))
+
+
 @app.route('/transfers/accept-counter/<int:bid_id>', methods=['POST'])
 @require_game
 def transfer_accept_counter(bid_id):
@@ -617,6 +697,18 @@ def play_match(match_id):
 
     # Scouting: progress assignments and region scouring
     scouting_mod.process_scouting(gs)
+
+    # Commercial: matchday revenue, fan mood, stadium expansion check
+    commercial_mod.calculate_matchday_revenue(gs, match)
+    if our_score > their_score:
+        commercial_mod.update_fan_happiness(gs, 'win')
+    elif our_score == their_score:
+        commercial_mod.update_fan_happiness(gs, 'draw')
+    elif their_score - our_score >= 3:
+        commercial_mod.update_fan_happiness(gs, 'heavy_loss')
+    else:
+        commercial_mod.update_fan_happiness(gs, 'loss')
+    commercial_mod.check_expansion_complete(gs)
 
     # Check if manager wants to resign after this result
     manager_resigned = staff_mod.check_manager_status(gs)
@@ -912,6 +1004,9 @@ def season_end():
 def advance_season():
     gs = get_game_state()
     season_mod.process_new_season(gs)
+    commercial_mod.process_season_sponsors(gs)
+    gs.season_revenue = 0   # reset annual counter
+    db.session.commit()
     flash(f'Welcome to season {gs.current_season.name}!', 'success')
     return redirect(url_for('dashboard'))
 
@@ -1005,16 +1100,28 @@ def _migrate_db():
     try:
         conn = db.engine.raw_connection()
         cursor = conn.cursor()
-        cursor.execute('PRAGMA table_info(players)')
-        cols = [row[1] for row in cursor.fetchall()]
-        migrations = [
-            ('agent_name', "ALTER TABLE players ADD COLUMN agent_name VARCHAR(100) DEFAULT ''"),
-            ('agent_aggression', 'ALTER TABLE players ADD COLUMN agent_aggression INTEGER DEFAULT 5'),
-            ('release_clause', 'ALTER TABLE players ADD COLUMN release_clause INTEGER'),
-        ]
-        for col, sql in migrations:
-            if col not in cols:
-                cursor.execute(sql)
+
+        def _add_missing(table, migrations):
+            cursor.execute(f'PRAGMA table_info({table})')
+            cols = {row[1] for row in cursor.fetchall()}
+            for col, sql in migrations:
+                if col not in cols:
+                    cursor.execute(sql)
+
+        _add_missing('players', [
+            ('agent_name',      "ALTER TABLE players ADD COLUMN agent_name VARCHAR(100) DEFAULT ''"),
+            ('agent_aggression','ALTER TABLE players ADD COLUMN agent_aggression INTEGER DEFAULT 5'),
+            ('release_clause',  'ALTER TABLE players ADD COLUMN release_clause INTEGER'),
+        ])
+        _add_missing('game_states', [
+            ('fan_happiness',       'ALTER TABLE game_states ADD COLUMN fan_happiness INTEGER DEFAULT 65'),
+            ('ticket_price_std',    'ALTER TABLE game_states ADD COLUMN ticket_price_std INTEGER DEFAULT 25'),
+            ('ticket_price_premium','ALTER TABLE game_states ADD COLUMN ticket_price_premium INTEGER DEFAULT 45'),
+            ('season_revenue',      'ALTER TABLE game_states ADD COLUMN season_revenue INTEGER DEFAULT 0'),
+        ])
+        _add_missing('clubs', [
+            ('training_level', 'ALTER TABLE clubs ADD COLUMN training_level INTEGER DEFAULT 2'),
+        ])
         conn.commit()
         conn.close()
     except Exception:
@@ -1025,12 +1132,10 @@ def bootstrap():
     with app.app_context():
         db.create_all()
         _migrate_db()
-        if not database_is_seeded():
-            try:
-                seed_database()
-                print('Database seeded with squad data.')
-            except Exception as e:
-                print(f'Seed skipped/failed: {e}')
+        try:
+            seed_database()
+        except Exception as e:
+            print(f'Seed skipped/failed: {e}')
 
 
 if __name__ == '__main__':

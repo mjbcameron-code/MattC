@@ -24,6 +24,7 @@ class Club(db.Model):
     wage_budget = db.Column(db.Integer, default=500000)
     primary_color = db.Column(db.String(7), default='#cc0000')
     secondary_color = db.Column(db.String(7), default='#ffffff')
+    training_level = db.Column(db.Integer, default=2)    # 1-5
     players = db.relationship('Player', backref='club', lazy=True)
 
 
@@ -308,6 +309,33 @@ class ScoutKnowledge(db.Model):
     player = db.relationship('Player', foreign_keys=[player_id])
 
 
+class Stadium(db.Model):
+    """Club stadium — capacity, quality, and expansion state."""
+    __tablename__ = 'stadiums'
+    id = db.Column(db.Integer, primary_key=True)
+    club_id = db.Column(db.Integer, db.ForeignKey('clubs.id'), unique=True)
+    name = db.Column(db.String(100), default='Home Ground')
+    capacity = db.Column(db.Integer, default=25000)
+    quality = db.Column(db.Integer, default=5)           # 1-10
+    expansion_in_progress = db.Column(db.Boolean, default=False)
+    expansion_seats = db.Column(db.Integer, nullable=True)
+    expansion_complete_date = db.Column(db.String(20), nullable=True)
+    club = db.relationship('Club', foreign_keys=[club_id],
+                           backref=db.backref('stadium', uselist=False))
+
+
+class SponsorDeal(db.Model):
+    """An active commercial sponsorship deal for the managed club."""
+    __tablename__ = 'sponsor_deals'
+    id = db.Column(db.Integer, primary_key=True)
+    game_state_id = db.Column(db.Integer, db.ForeignKey('game_states.id'))
+    deal_type = db.Column(db.String(30))     # shirt | kit_supplier | stadium_naming
+    company_name = db.Column(db.String(100))
+    annual_value = db.Column(db.Integer, default=0)
+    seasons_remaining = db.Column(db.Integer, default=3)
+    active = db.Column(db.Boolean, default=True)
+
+
 class OwnerDemand(db.Model):
     """A chairman directive that the DoF must fulfil within a deadline."""
     __tablename__ = 'owner_demands'
@@ -357,6 +385,10 @@ class GameState(db.Model):
     board_min_pos = db.Column(db.Integer, default=7)
     board_max_pos = db.Column(db.Integer, default=17)
     is_sacked = db.Column(db.Boolean, default=False)
+    fan_happiness = db.Column(db.Integer, default=65)        # 0-100
+    ticket_price_std = db.Column(db.Integer, default=25)     # £ per match
+    ticket_price_premium = db.Column(db.Integer, default=45) # £ per match
+    season_revenue = db.Column(db.Integer, default=0)        # matchday + commercial YTD
     managed_club = db.relationship('Club', foreign_keys=[managed_club_id])
     current_season = db.relationship('Season', foreign_keys=[current_season_id])
     news = db.relationship('NewsItem', backref='game_state', lazy=True,

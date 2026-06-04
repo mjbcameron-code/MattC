@@ -49,6 +49,10 @@ def seed_database():
         from game.scouting import seed_scouts
         if Scout.query.count() == 0:
             seed_scouts()
+        # Backfill stadiums for existing saves
+        from .models import Stadium
+        if Stadium.query.count() == 0:
+            _seed_stadiums_and_training()
         return
 
     from data.squads import CLUBS as PL_CLUBS
@@ -124,6 +128,33 @@ def seed_database():
     backfill_player_agents()
     from game.scouting import seed_scouts
     seed_scouts()
+    _seed_stadiums_and_training()
+
+
+def _seed_stadiums_and_training():
+    """Create stadiums and set training levels for all clubs."""
+    import random
+    from .models import Club, Stadium
+    for club in Club.query.all():
+        if not club.stadium:
+            rep = club.reputation or 50
+            if rep >= 80:
+                cap, qual = random.randint(40000, 65000), 8
+            elif rep >= 65:
+                cap, qual = random.randint(25000, 40000), 6
+            elif rep >= 50:
+                cap, qual = random.randint(18000, 28000), 5
+            elif rep >= 35:
+                cap, qual = random.randint(10000, 20000), 4
+            else:
+                cap, qual = random.randint(5000, 12000), 3
+            db.session.add(Stadium(club_id=club.id, capacity=cap, quality=qual,
+                                   name=f"{club.short_name} Ground"))
+        if not club.training_level:
+            rep = club.reputation or 50
+            club.training_level = (4 if rep >= 80 else 3 if rep >= 65
+                                   else 2 if rep >= 45 else 1)
+    db.session.commit()
 
 
 def seed_managers():
@@ -181,6 +212,8 @@ def new_game(manager_name, club_id):
     OwnerDemand.query.delete()
     ContractNegotiation.query.delete()
     TransferBid.query.delete()
+    from .models import Scout, ScoutKnowledge, SponsorDeal
+    SponsorDeal.query.delete()
     from .models import Scout, ScoutKnowledge
     ScoutKnowledge.query.delete()
     for sc in Scout.query.all():

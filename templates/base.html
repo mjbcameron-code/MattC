@@ -40,6 +40,11 @@
         <div class="conf-pill" title="Board confidence: {{ game_state.board_confidence }}%">
             Board: {{ game_state.board_confidence or 50 }}%
         </div>
+        {% set fh = game_state.fan_happiness or 65 %}
+        {% set fc = 'var(--cm-green-light)' if fh >= 65 else ('var(--cm-yellow)' if fh >= 40 else 'var(--cm-red)') %}
+        <div class="conf-pill" title="Fan happiness: {{ fh }}%" style="color:{{ fc }};">
+            Fans: {{ fh }}%
+        </div>
     </div>
 </header>
 
@@ -55,6 +60,7 @@
     <a href="{{ url_for('league_table') }}" class="{% block nav_table %}{% endblock %}">Table</a>
     <a href="{{ url_for('cup_fixtures') }}" class="{% block nav_cups %}{% endblock %}">Cups</a>
     <a href="{{ url_for('europe') }}" class="{% block nav_europe %}{% endblock %}">Europe</a>
+    <a href="{{ url_for('commercial') }}" class="{% block nav_commercial %}{% endblock %}">Commercial</a>
     <a href="{{ url_for('board') }}" class="{% block nav_board %}{% endblock %}">Board</a>
     <a href="{{ url_for('stats') }}" class="{% block nav_stats %}{% endblock %}">Stats</a>
     <a href="{{ url_for('news') }}" class="{% block nav_news %}{% endblock %} news-link">

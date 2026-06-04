@@ -1,0 +1,233 @@
+{% extends "base.html" %}
+{% block title %}Commercial — {{ club.name }}{% endblock %}
+{% block nav_commercial %}active{% endblock %}
+{% block content %}
+
+{% set st  = summary.stadium %}
+{% set fh  = summary.fan_happiness %}
+{% set fc  = summary.fan_color %}
+
+{# ── Finance overview ─────────────────────────────────────────────────────── #}
+<div class="statbox mb">
+    <div class="stat-item">
+        <div class="big" style="color:var(--cm-accent);">{{ summary.season_revenue | money }}</div>
+        <div class="lbl">Season Revenue (YTD)</div>
+    </div>
+    <div class="stat-item">
+        <div class="big">{{ summary.sponsor_annual | money }}</div>
+        <div class="lbl">Annual Sponsor Income</div>
+    </div>
+    <div class="stat-item">
+        <div class="big">{{ summary.proj_season_revenue | money }}</div>
+        <div class="lbl">Projected Season Total</div>
+    </div>
+    <div class="stat-item">
+        <div class="big" style="color:{{ fc }};">{{ fh }}%</div>
+        <div class="lbl">Fan Happiness — {{ summary.fan_mood }}</div>
+    </div>
+    <div class="stat-item">
+        {%- set c = st.capacity -%}
+        <div class="big">{% if c >= 1000 %}{{ "%.0fK"|format(c/1000) }}{% else %}{{ c }}{% endif %}</div>
+        <div class="lbl">Stadium Capacity</div>
+    </div>
+</div>
+
+<div class="grid-2">
+
+{# ── LEFT COLUMN ──────────────────────────────────────────────────────────── #}
+<div>
+
+{# Ticket pricing #}
+<div class="panel">
+    <div class="panel-header">Ticket Pricing</div>
+    <div class="panel-body">
+        <p class="small muted" style="margin-bottom:10px;">
+            Prices affect attendance and fan happiness. Large increases anger fans;
+            cuts are popular but reduce income. Current projected attendance:
+            <strong>{{ "{:,}".format(summary.proj_attendance) }}</strong> fans
+            (~£{{ summary.proj_match_revenue | money }} per home match).
+        </p>
+        <form method="post" action="{{ url_for('commercial_tickets') }}" class="flex" style="gap:10px;align-items:flex-end;flex-wrap:wrap;">
+            <div>
+                <label class="small muted">Standard (£ per match)</label>
+                <input type="number" name="std_price" value="{{ gs.ticket_price_std or 25 }}"
+                       min="5" max="100" step="1" style="width:80px;">
+            </div>
+            <div>
+                <label class="small muted">Premium (£ per match)</label>
+                <input type="number" name="premium_price" value="{{ gs.ticket_price_premium or 45 }}"
+                       min="10" max="200" step="1" style="width:80px;">
+            </div>
+            <button class="btn btn-sm btn-accent">Set Prices</button>
+        </form>
+        <p class="small muted mt">
+            Fan happiness affects fill rate (currently
+            <strong>{{ "%.0f"|format(summary.proj_attendance / st.capacity * 100) }}%</strong>
+            of capacity). Lowering prices or winning games increases attendance.
+        </p>
+    </div>
+</div>
+
+{# Sponsorship #}
+<div class="panel">
+    <div class="panel-header">Sponsorship</div>
+    <div class="panel-body">
+        {% if summary.active_sponsors %}
+        <h4 class="small muted mb">Active Deals</h4>
+        <table class="mb">
+            <thead><tr><th>Type</th><th>Partner</th><th class="num">Annual</th><th class="num">Seasons Left</th></tr></thead>
+            <tbody>
+            {% for d in summary.active_sponsors %}
+            <tr>
+                <td class="small">{% if d.deal_type == 'shirt' %}Shirt Sponsor{% elif d.deal_type == 'kit_supplier' %}Kit Supplier{% else %}Stadium Naming{% endif %}</td>
+                <td><strong>{{ d.company_name }}</strong></td>
+                <td class="num">{{ d.annual_value | money }}</td>
+                <td class="num">{{ d.seasons_remaining }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+
+        {% if offers %}
+        <h4 class="small muted mb">Available Offers</h4>
+        {% for o in offers %}
+        <div style="border:1px solid var(--cm-border);border-radius:4px;padding:10px;margin-bottom:8px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                <div>
+                    <strong>{{ o.company }}</strong>
+                    <span class="small muted" style="margin-left:6px;">{{ o.label }}</span>
+                </div>
+                <span style="color:var(--cm-accent);font-weight:bold;">{{ o.annual_value | money }}/yr × {{ o.years }} seasons</span>
+            </div>
+            <form method="post" action="{{ url_for('commercial_sponsor') }}" style="margin-top:8px;">
+                <input type="hidden" name="deal_type" value="{{ o.type }}">
+                <input type="hidden" name="company" value="{{ o.company }}">
+                <input type="hidden" name="annual_value" value="{{ o.annual_value }}">
+                <input type="hidden" name="years" value="{{ o.years }}">
+                <button class="btn btn-sm btn-accent">Sign Deal (£{{ o.annual_value | money }}/yr)</button>
+            </form>
+        </div>
+        {% endfor %}
+        {% elif not summary.active_sponsors %}
+        <p class="small muted">No sponsor offers available right now. Improve your club's reputation or stadium quality to attract better partners.</p>
+        {% else %}
+        <p class="small muted">All sponsorship categories are currently filled. Deals expire at season end.</p>
+        {% endif %}
+    </div>
+</div>
+
+</div>{# end left col #}
+
+{# ── RIGHT COLUMN ─────────────────────────────────────────────────────────── #}
+<div>
+
+{# Stadium #}
+<div class="panel">
+    <div class="panel-header">{{ st.name }}</div>
+    <div class="panel-body">
+        <div class="grid-2" style="gap:8px;margin-bottom:12px;">
+            <div style="text-align:center;padding:10px;background:var(--cm-panel-dark,#0d1520);border-radius:4px;">
+                <div style="font-size:1.8em;font-weight:bold;color:var(--cm-accent);">
+                    {% set c = st.capacity %}{% if c >= 1000 %}{{ "%.0f"|format(c/1000) }}K{% else %}{{ c }}{% endif %}</div>
+                <div class="small muted">Capacity</div>
+            </div>
+            <div style="text-align:center;padding:10px;background:var(--cm-panel-dark,#0d1520);border-radius:4px;">
+                <div style="font-size:1.8em;font-weight:bold;color:{% if st.quality >= 8 %}var(--cm-green-light){% elif st.quality >= 5 %}var(--cm-accent){% else %}var(--cm-yellow){% endif %};">
+                    {{ st.quality }}/10</div>
+                <div class="small muted">Facilities Quality</div>
+            </div>
+        </div>
+
+        {% if st.expansion_in_progress %}
+        <div style="background:#1a3a1a;border:1px solid #2e6b2e;border-radius:4px;padding:10px;margin-bottom:12px;">
+            <strong style="color:var(--cm-green-light);">🏗 Expansion in progress</strong><br>
+            <span class="small muted">+{{ "{:,}".format(st.expansion_seats) }} seats — completing {{ st.expansion_complete_date }}</span>
+        </div>
+        {% else %}
+        <h4 class="small muted" style="margin-bottom:6px;">Expand Capacity</h4>
+        <form method="post" action="{{ url_for('commercial_expand') }}" class="flex mb" style="gap:6px;align-items:flex-end;">
+            <div>
+                <label class="small muted">Extra seats</label>
+                <select name="seats">
+                    {% for n in [1000, 2000, 5000, 10000, 15000, 20000] %}
+                    <option value="{{ n }}">{{ "{:,}".format(n) }} seats (£{{ (n * summary.expand_cost_per_k // 1000) | money }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button class="btn btn-sm btn-accent">Start Construction</button>
+        </form>
+        <p class="small muted" style="margin-bottom:12px;">Takes 90 days. Cost: £{{ summary.expand_cost_per_k | money }} per 1,000 seats.</p>
+        {% endif %}
+
+        <h4 class="small muted" style="margin-bottom:6px;">Upgrade Facilities</h4>
+        {% if st.quality < 10 %}
+        <form method="post" action="{{ url_for('commercial_quality') }}">
+            <button class="btn btn-sm btn-accent">Improve Facilities to {{ st.quality + 1 }}/10
+                (£{{ summary.quality_upgrade_cost | money }})</button>
+        </form>
+        <p class="small muted mt">Better facilities raise fill rate and unlock stadium naming rights deals.</p>
+        {% else %}
+        <p class="small muted">Facilities are at the maximum level.</p>
+        {% endif %}
+    </div>
+</div>
+
+{# Training #}
+<div class="panel">
+    <div class="panel-header">Training Facilities</div>
+    <div class="panel-body">
+        <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
+            <div style="text-align:center;">
+                <div style="font-size:2em;font-weight:bold;color:{% if summary.training_level >= 4 %}var(--cm-green-light){% elif summary.training_level >= 3 %}var(--cm-accent){% else %}var(--cm-yellow){% endif %};">
+                    {{ summary.training_level }}/5</div>
+                <div class="small muted">Current Level</div>
+            </div>
+            <div>
+                <div style="font-weight:bold;font-size:1.1em;">{{ summary.training_label }}</div>
+                <div class="small muted" style="margin-top:4px;">
+                    {% if summary.training_level == 1 %}Basic equipment and pitches. Players develop slowly.
+                    {% elif summary.training_level == 2 %}Decent setup. Average player development.
+                    {% elif summary.training_level == 3 %}Good facilities. Players reach potential faster.
+                    {% elif summary.training_level == 4 %}Excellent coaching infrastructure. Near the best.
+                    {% else %}World-class facilities. Players flourish here.
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        {% for i in range(1, 6) %}
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+            <div style="width:20px;height:20px;border-radius:3px;
+                 background:{% if i <= summary.training_level %}var(--cm-accent){% else %}var(--cm-border){% endif %};"></div>
+            <span class="small {% if i == summary.training_level %}{% else %}muted{% endif %}">
+                Level {{ i }} — {{ training_labels[i] }}
+            </span>
+        </div>
+        {% endfor %}
+
+        <div class="mt">
+        {% if summary.training_level < 5 %}
+            {% set next_lvl = summary.training_level + 1 %}
+            <form method="post" action="{{ url_for('commercial_training') }}">
+                <button class="btn btn-sm btn-accent">
+                    Upgrade to Level {{ next_lvl }} — {{ training_labels[next_lvl] }}
+                    (£{{ summary.next_training_cost | money }})
+                </button>
+            </form>
+            <p class="small muted mt">Higher training levels accelerate player development and boost squad morale.</p>
+        {% else %}
+            <p class="small muted">Training facilities are already at the highest possible level.</p>
+        {% endif %}
+        </div>
+    </div>
+</div>
+
+</div>{# end right col #}
+</div>{# end grid-2 #}
+
+<p class="small muted">
+    Fan happiness affects matchday attendance. Results, ticket prices, signings, and stadium quality
+    all move the needle. An unhappy fanbase erodes board confidence over time.
+</p>
+{% endblock %}
