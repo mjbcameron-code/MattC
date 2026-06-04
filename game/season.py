@@ -26,8 +26,10 @@ def generate_fixtures(season, league):
     rounds = n - 1
     half = n // 2
 
-    # Start date: first Saturday of August 2001
-    start_date = date(2001, 8, 18)
+    # Start date: mid-August of the season's start year, rolled to a Saturday
+    year = season.year or 2001
+    aug_mid = date(year, 8, 18)
+    start_date = aug_mid + timedelta(days=(5 - aug_mid.weekday()) % 7)
 
     all_fixtures = []
     arr = club_ids[:]

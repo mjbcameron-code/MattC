@@ -16,26 +16,33 @@ from .models import db, Match, Club, League, NewsItem
 CL_GROUPS = ['CL Group A', 'CL Group B', 'CL Group C', 'CL Group D']
 
 CL_GROUP_DATES = [
-    '2001-09-11',
-    '2001-09-25',
-    '2001-10-16',
+    (9, 11),
+    (9, 25),
+    (10, 16),
 ]
 
 CL_KNOCKOUT = [
-    ('CL QF',    '2002-02-19'),
-    ('CL SF',    '2002-04-02'),
-    ('CL Final', '2002-05-14'),
+    ('CL QF',    2, 19),
+    ('CL SF',    4,  2),
+    ('CL Final', 5, 14),
 ]
 
 UEFA_ROUNDS = [
-    ('UEFA QF',    '2002-02-26'),
-    ('UEFA SF',    '2002-04-10'),
-    ('UEFA Final', '2002-05-08'),
+    ('UEFA QF',    2, 26),
+    ('UEFA SF',    4, 10),
+    ('UEFA Final', 5,  8),
 ]
 
 _CL_KO_NAMES  = [r[0] for r in CL_KNOCKOUT]
 _UEFA_NAMES   = [r[0] for r in UEFA_ROUNDS]
 _ALL_EURO     = CL_GROUPS + _CL_KO_NAMES + _UEFA_NAMES
+
+
+def _resolve_date(season, month, day):
+    """Resolve a (month, day) within a season to a 'YYYY-MM-DD' string.
+    Aug–Dec fall in the season's start year; Jan–Jul in the following year."""
+    year = season.year if month >= 7 else season.year + 1
+    return f"{year:04d}-{month:02d}-{day:02d}"
 
 
 # ---------------------------------------------------------------------------
@@ -94,7 +101,7 @@ def generate_champions_league(season, prev_standings=None):
     for g_idx, group in enumerate(groups):
         comp = CL_GROUPS[g_idx]
         for md_idx, pairs in enumerate(md_pairings):
-            date = CL_GROUP_DATES[md_idx]
+            date = _resolve_date(season, *CL_GROUP_DATES[md_idx])
             for h_i, a_i in pairs:
                 _make_match(season.id, group[h_i].id, group[a_i].id, date, comp)
 
@@ -133,7 +140,7 @@ def generate_uefa_cup(season, prev_standings=None):
         return
 
     random.shuffle(clubs)
-    date = UEFA_ROUNDS[0][1]
+    date = _resolve_date(season, UEFA_ROUNDS[0][1], UEFA_ROUNDS[0][2])
     for i in range(0, len(clubs), 2):
         _make_match(season.id, clubs[i].id, clubs[i + 1].id, date, 'UEFA QF')
 
@@ -219,7 +226,7 @@ def _advance_cl_groups(season, game_state=None):
         qualifiers.extend(r['club'] for r in standings[:2])
 
     random.shuffle(qualifiers)
-    date = CL_KNOCKOUT[0][1]
+    date = _resolve_date(season, CL_KNOCKOUT[0][1], CL_KNOCKOUT[0][2])
     for i in range(0, len(qualifiers), 2):
         _make_match(season.id, qualifiers[i].id,
                     qualifiers[i + 1].id, date, 'CL QF')
@@ -246,7 +253,8 @@ def _advance_cl_ko(season, completed, game_state=None):
             _winner_news(season, completed, 'Champions League', game_state)
         return
 
-    next_name, next_date = CL_KNOCKOUT[idx + 1]
+    next_name, nm, nd = CL_KNOCKOUT[idx + 1]
+    next_date = _resolve_date(season, nm, nd)
     if Match.query.filter_by(season_id=season.id,
                               competition=next_name).count():
         return
@@ -279,7 +287,8 @@ def _advance_uefa(season, completed, game_state=None):
             _winner_news(season, completed, 'UEFA Cup', game_state)
         return
 
-    next_name, next_date = UEFA_ROUNDS[idx + 1]
+    next_name, nm, nd = UEFA_ROUNDS[idx + 1]
+    next_date = _resolve_date(season, nm, nd)
     if Match.query.filter_by(season_id=season.id,
                               competition=next_name).count():
         return

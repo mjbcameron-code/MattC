@@ -399,7 +399,7 @@ class GameState(db.Model):
     __tablename__ = 'game_states'
     id = db.Column(db.Integer, primary_key=True)
     managed_club_id = db.Column(db.Integer, db.ForeignKey('clubs.id'))
-    current_date = db.Column(db.String(20), default='2001-08-18')
+    current_date = db.Column(db.String(20), default='2025-08-18')
     current_season_id = db.Column(db.Integer, db.ForeignKey('seasons.id'), nullable=True)
     manager_name = db.Column(db.String(100), default='Manager')
     formation = db.Column(db.String(10), default='4-4-2')

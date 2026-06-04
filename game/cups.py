@@ -13,22 +13,29 @@ from .models import db, Match, Club, Season, League, NewsItem
 # ---------------------------------------------------------------------------
 
 FA_CUP = [
-    ('FA Cup R3',    '2002-01-05'),
-    ('FA Cup R4',    '2002-01-26'),
-    ('FA Cup R5',    '2002-02-16'),
-    ('FA Cup QF',    '2002-03-09'),
-    ('FA Cup SF',    '2002-04-14'),
-    ('FA Cup Final', '2002-05-04'),
+    ('FA Cup R3',    1,  5),
+    ('FA Cup R4',    1, 26),
+    ('FA Cup R5',    2, 16),
+    ('FA Cup QF',    3,  9),
+    ('FA Cup SF',    4, 14),
+    ('FA Cup Final', 5,  4),
 ]
 
 LEAGUE_CUP = [
-    ('League Cup R2',    '2001-09-18'),
-    ('League Cup R3',    '2001-10-30'),
-    ('League Cup R4',    '2001-11-27'),
-    ('League Cup QF',    '2001-12-18'),
-    ('League Cup SF',    '2002-01-22'),
-    ('League Cup Final', '2002-02-24'),
+    ('League Cup R2',    9, 18),
+    ('League Cup R3',   10, 30),
+    ('League Cup R4',   11, 27),
+    ('League Cup QF',   12, 18),
+    ('League Cup SF',    1, 22),
+    ('League Cup Final', 2, 24),
 ]
+
+
+def _resolve_date(season, month, day):
+    """Resolve a (month, day) within a season to a 'YYYY-MM-DD' string.
+    Aug–Dec fall in the season's start year; Jan–Jul in the following year."""
+    year = season.year if month >= 7 else season.year + 1
+    return f"{year:04d}-{month:02d}-{day:02d}"
 
 LOWER_LEAGUE_NAMES = [
     'Norwich City', 'Preston North End', 'Wolverhampton Wanderers',
@@ -86,7 +93,8 @@ def generate_fa_cup(season):
     teams = clubs[:32]
     random.shuffle(teams)
     for i in range(0, 32, 2):
-        _make_match(season.id, teams[i].id, teams[i+1].id, FA_CUP[0][1], 'FA Cup R3')
+        _make_match(season.id, teams[i].id, teams[i+1].id,
+                    _resolve_date(season, FA_CUP[0][1], FA_CUP[0][2]), 'FA Cup R3')
     db.session.commit()
 
 
@@ -98,7 +106,8 @@ def generate_league_cup(season):
     if len(teams) % 2:
         teams.append(teams[0])
     for i in range(0, len(teams), 2):
-        _make_match(season.id, teams[i].id, teams[i+1].id, LEAGUE_CUP[0][1], 'League Cup R2')
+        _make_match(season.id, teams[i].id, teams[i+1].id,
+                    _resolve_date(season, LEAGUE_CUP[0][1], LEAGUE_CUP[0][2]), 'League Cup R2')
     db.session.commit()
 
 
@@ -136,7 +145,8 @@ def advance_round(season, completed_round, game_state=None):
             _news_winner(season, completed_round, game_state)
         return False
 
-    next_name, next_date = schedule[idx + 1]
+    next_name, next_month, next_day = schedule[idx + 1]
+    next_date = _resolve_date(season, next_month, next_day)
     if Match.query.filter_by(season_id=season.id, competition=next_name).count():
         return True  # already drawn
 
