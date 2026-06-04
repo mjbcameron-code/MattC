@@ -95,15 +95,20 @@ def seed_database():
     squad_number_counter = {}
     seen_player_names = set()
     for club_def in CLUBS:
+        rep = club_def.get('reputation', 50)
         club = Club(
             name=club_def['name'],
             short_name=club_def.get('short_name', club_def['name']),
             league_id=league_objs[club_def['league']].id,
-            reputation=club_def.get('reputation', 50),
+            reputation=rep,
             budget=club_def.get('budget', 5000000),
             wage_budget=club_def.get('wage_budget', 500000),
             primary_color=club_def.get('primary_color', '#cc0000'),
             secondary_color=club_def.get('secondary_color', '#ffffff'),
+            training_level=club_def.get('training_level',
+                           4 if rep >= 80 else 3 if rep >= 65 else 2 if rep >= 45 else 1),
+            academy_quality=club_def.get('academy_quality',
+                            4 if rep >= 80 else 3 if rep >= 65 else 2 if rep >= 45 else 1),
         )
         db.session.add(club)
         db.session.flush()
@@ -141,32 +146,64 @@ def seed_database():
     backfill_player_agents()
     from game.scouting import seed_scouts
     seed_scouts()
-    _seed_stadiums_and_training()
+    # Build stadium hints from squad definitions
+    _stadium_hints = {
+        cdef['name']: {
+            'capacity': cdef.get('stadium_capacity'),
+            'quality':  cdef.get('stadium_quality'),
+        }
+        for cdef in CLUBS
+    }
+    _seed_stadiums_and_training(stadium_hints=_stadium_hints)
 
 
-def _seed_stadiums_and_training():
-    """Create stadiums and set training levels for all clubs."""
+def _seed_stadiums_and_training(stadium_hints=None):
+    """Create stadiums and set training/academy levels for all clubs.
+    stadium_hints: dict of club_name → {'capacity': int, 'quality': int}
+    """
     import random
     from .models import Club, Stadium
+    hints = stadium_hints or {}
     for club in Club.query.all():
         if not club.stadium:
+            hint = hints.get(club.name, {})
             rep = club.reputation or 50
-            if rep >= 80:
-                cap, qual = random.randint(40000, 65000), 8
+            if hint.get('capacity'):
+                cap = hint['capacity']
+            elif rep >= 80:
+                cap = random.randint(40000, 65000)
             elif rep >= 65:
-                cap, qual = random.randint(25000, 40000), 6
+                cap = random.randint(25000, 40000)
             elif rep >= 50:
-                cap, qual = random.randint(18000, 28000), 5
+                cap = random.randint(18000, 28000)
             elif rep >= 35:
-                cap, qual = random.randint(10000, 20000), 4
+                cap = random.randint(10000, 20000)
             else:
-                cap, qual = random.randint(5000, 12000), 3
+                cap = random.randint(5000, 12000)
+
+            if hint.get('quality'):
+                qual = hint['quality']
+            elif rep >= 85:
+                qual = 9
+            elif rep >= 75:
+                qual = 7
+            elif rep >= 60:
+                qual = 5
+            elif rep >= 45:
+                qual = 4
+            else:
+                qual = 3
+
             db.session.add(Stadium(club_id=club.id, capacity=cap, quality=qual,
-                                   name=f"{club.short_name} Ground"))
+                                   name=f"{club.short_name} Stadium"))
         if not club.training_level:
             rep = club.reputation or 50
-            club.training_level = (4 if rep >= 80 else 3 if rep >= 65
-                                   else 2 if rep >= 45 else 1)
+            club.training_level = (5 if rep >= 85 else 4 if rep >= 75
+                                   else 3 if rep >= 60 else 2 if rep >= 45 else 1)
+        if not club.academy_quality:
+            rep = club.reputation or 50
+            club.academy_quality = (5 if rep >= 85 else 4 if rep >= 70
+                                    else 3 if rep >= 55 else 2 if rep >= 40 else 1)
     db.session.commit()
 
 
@@ -320,17 +357,24 @@ def new_game(manager_name, club_id):
 
 
 def _initial_wage_cap(club):
+    """Board wage cap in £/week, scaled to modern football economics."""
     rep = club.reputation or 50
-    if rep >= 85:
-        return 250_000
-    elif rep >= 75:
-        return 175_000
-    elif rep >= 65:
-        return 120_000
+    if rep >= 95:
+        return 750_000    # Man City / Real Madrid tier
+    elif rep >= 90:
+        return 500_000    # Man Utd / Liverpool / Arsenal tier
+    elif rep >= 85:
+        return 350_000    # Chelsea / Spurs tier
+    elif rep >= 80:
+        return 250_000    # Newcastle / Aston Villa tier
+    elif rep >= 70:
+        return 160_000    # West Ham / Everton tier
+    elif rep >= 60:
+        return 100_000    # Wolves / Forest / Leicester tier
     elif rep >= 50:
-        return 80_000
+        return 60_000
     elif rep >= 35:
-        return 50_000
+        return 40_000
     else:
         return 30_000
 
