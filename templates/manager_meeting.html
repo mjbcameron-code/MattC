@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Manager Meeting{% endblock %}
+{% block content %}
+
+<div class="panel" style="max-width:720px;margin:0 auto;">
+    <div class="panel-header" style="background:#0e1c2f;border-bottom:2px solid var(--cm-accent);font-size:15px;padding:14px 18px;">
+        Manager Meeting — {{ topic_data.title }}
+        <span class="small muted" style="float:right;font-weight:normal;">{{ meeting.scheduled_date }}</span>
+    </div>
+    <div class="panel-body" style="padding:24px;">
+
+        {% with msgs = get_flashed_messages(with_categories=true) %}
+        {% for cat, msg in msgs %}
+        <div class="flash flash-{{ 'success' if cat == 'success' else 'error' }}" style="margin-bottom:16px;">{{ msg }}</div>
+        {% endfor %}
+        {% endwith %}
+
+        {# Meeting header #}
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:20px;">
+            <div style="background:var(--cm-panel-dark,#0d1520);border-radius:50%;width:44px;height:44px;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;">🤝</div>
+            <div>
+                <div style="font-size:1.05em;font-weight:bold;color:var(--cm-text);">{{ mgr.name }}</div>
+                <div class="small muted">Head Coach · Rep {{ mgr.reputation }}/100 · Det {{ mgr.determination }}/20 · Tac {{ mgr.tactical_ability }}/20</div>
+            </div>
+        </div>
+
+        {# Manager's opening statement #}
+        <div style="background:var(--cm-panel-dark,#0d1520);border-left:3px solid var(--cm-accent);padding:14px 18px;border-radius:0 4px 4px 0;margin-bottom:8px;">
+            <div class="small muted" style="margin-bottom:6px;">{{ mgr.name }} says:</div>
+            <div style="font-size:1.05em;font-style:italic;color:var(--cm-text);">"{{ topic_data.opener }}"</div>
+        </div>
+
+        {# Satisfaction context #}
+        {% set sat = mgr.satisfaction or 70 %}
+        {% set sc = '#2e8b50' if sat >= 60 else ('#e8b13a' if sat >= 35 else '#d54a4a') %}
+        <div class="small muted" style="margin-bottom:20px;padding-left:4px;">
+            Current satisfaction with you:
+            <strong style="color:{{ sc }};">{{ sat }}%
+            — {% if sat >= 70 %}Happy{% elif sat >= 50 %}Content{% elif sat >= 30 %}Unsettled{% else %}Wants out{% endif %}</strong>
+        </div>
+
+        {# Response choices #}
+        <div class="small muted" style="margin-bottom:8px;">Your response:</div>
+        <form method="post">
+            <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px;">
+                {% for choice in topic_data.choices %}
+                <button type="submit" name="choice_key" value="{{ choice.key }}"
+                        class="btn"
+                        style="text-align:left;padding:14px 18px;line-height:1.4;
+                               border:1px solid var(--cm-border);background:var(--cm-panel,#111d2e);
+                               transition:border-color .15s,background .15s;"
+                        onmouseover="this.style.borderColor='var(--cm-accent)';this.style.background='#0d1a2b';"
+                        onmouseout="this.style.borderColor='var(--cm-border)';this.style.background='var(--cm-panel,#111d2e)';">
+                    "{{ choice.label }}"
+                </button>
+                {% endfor %}
+            </div>
+        </form>
+
+        {# Personality hint #}
+        <div style="background:#0a1520;border:1px solid var(--cm-border);border-radius:4px;padding:12px 16px;margin-bottom:16px;">
+            <div class="small muted" style="margin-bottom:6px;">Know your manager:</div>
+            <div class="small" style="line-height:1.7;">
+                {% if mgr.determination >= 15 %}
+                <div>⚠ <strong>Very stubborn</strong> — pushing hard lines will cost you more satisfaction than usual</div>
+                {% elif mgr.determination >= 12 %}
+                <div>• <strong>Strong-willed</strong> — confrontational choices carry extra risk</div>
+                {% endif %}
+                {% if mgr.tactical_ability >= 15 %}
+                <div>• <strong>Elite tactician</strong> — he takes tactical interference as a personal insult</div>
+                {% elif mgr.tactical_ability >= 12 %}
+                <div>• <strong>Tactically astute</strong> — respects those who don't interfere in his methods</div>
+                {% endif %}
+                {% if mgr.reputation >= 85 %}
+                <div>• <strong>High-profile name</strong> — expects to be treated with significant deference</div>
+                {% elif mgr.reputation >= 70 %}
+                <div>• <strong>Respected manager</strong> — backing down publicly matters to him</div>
+                {% endif %}
+                {% if mgr.man_management >= 15 %}
+                <div>✓ <strong>People person</strong> — responds especially well to collaborative, supportive approaches</div>
+                {% elif mgr.man_management >= 12 %}
+                <div>✓ <strong>Good communicator</strong> — appreciates being brought into decisions</div>
+                {% endif %}
+                {% if mgr.determination < 12 and mgr.reputation < 70 and mgr.tactical_ability < 12 and mgr.man_management < 12 %}
+                <div class="muted">An average personality profile — no strong tendencies to account for</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div style="border-top:1px solid var(--cm-border);padding-top:14px;">
+            <a href="{{ url_for('staff') }}" class="btn" style="padding:6px 14px;font-size:12px;">← Back to Staff</a>
+        </div>
+
+    </div>
+</div>
+
+{% endblock %}

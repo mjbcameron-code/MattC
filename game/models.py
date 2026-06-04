@@ -456,3 +456,16 @@ class TransferRequest(db.Model):
     created_date = db.Column(db.String(20))
     status = db.Column(db.String(20), default='pending')  # pending|granted|denied
     player = db.relationship('Player', foreign_keys=[player_id])
+
+
+class ManagerMeeting(db.Model):
+    """A scheduled DoF–Manager meeting requiring a response."""
+    __tablename__ = 'manager_meetings'
+    id = db.Column(db.Integer, primary_key=True)
+    game_state_id = db.Column(db.Integer, db.ForeignKey('game_states.id'))
+    manager_id = db.Column(db.Integer, db.ForeignKey('managers.id'))
+    topic = db.Column(db.String(30))      # form_review | tactics_freedom | transfer_targets | squad_philosophy | check_in | contract_talks
+    scheduled_date = db.Column(db.String(20))
+    status = db.Column(db.String(20), default='pending')   # pending | resolved
+    resolved_choice = db.Column(db.String(30), nullable=True)
+    manager = db.relationship('Manager', foreign_keys=[manager_id])

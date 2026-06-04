@@ -15,7 +15,7 @@ from game.models import (db, League, Club, Player, Season, Match, MatchEvent,
                          Lineup, Suspension, Loan, Manager, OwnerDemand,
                          ContractNegotiation, TransferBid, Scout, ScoutKnowledge,
                          Stadium, SponsorDeal, IncomingBid, TransferRequest,
-                         MatchRating)
+                         MatchRating, ManagerMeeting)
 from game.setup import (seed_database, new_game, auto_pick_lineup,
                        database_is_seeded)
 from game import season as season_mod
@@ -280,6 +280,7 @@ def staff():
     return render_template('staff.html',
                            head_coach=gs.managed_club.head_coach,
                            available=staff_mod.get_available_managers(),
+                           pending_meetings=staff_mod.get_pending_meetings(gs),
                            club=gs.managed_club, gs=gs)
 
 
@@ -319,6 +320,30 @@ def suggest_to_manager():
     ok, msg = staff_mod.suggest_to_manager(gs, topic, value)
     flash(msg, 'success' if ok else 'error')
     return redirect(url_for('staff'))
+
+
+@app.route('/staff/meeting/<int:meeting_id>', methods=['GET', 'POST'])
+@require_game
+def manager_meeting(meeting_id):
+    gs = get_game_state()
+    meeting = ManagerMeeting.query.get_or_404(meeting_id)
+    if meeting.game_state_id != gs.id:
+        return redirect(url_for('staff'))
+    if meeting.status != 'pending':
+        flash('That meeting has already been resolved.', 'error')
+        return redirect(url_for('staff'))
+
+    topic_data = staff_mod.MEETING_TOPICS.get(meeting.topic, {})
+
+    if request.method == 'POST':
+        choice_key = request.form.get('choice_key', '')
+        ok, msg = staff_mod.resolve_meeting(gs, meeting_id, choice_key)
+        flash(msg, 'success' if ok else 'error')
+        return redirect(url_for('staff'))
+
+    return render_template('manager_meeting.html',
+                           meeting=meeting, topic_data=topic_data,
+                           mgr=meeting.manager, gs=gs)
 
 
 # ---------------------------------------------------------------------------
@@ -957,6 +982,9 @@ def play_match(match_id):
     # Players pushing for transfers or contract talks
     transfers_mod.maybe_player_transfer_request(gs)
 
+    # Possibly schedule a DoF–Manager meeting
+    staff_mod.maybe_schedule_meeting(gs)
+
     # Check if manager wants to resign after this result
     manager_resigned = staff_mod.check_manager_status(gs)
 
@@ -1510,6 +1538,17 @@ def _migrate_db():
                 reason VARCHAR(100) DEFAULT 'unhappy',
                 created_date VARCHAR(20),
                 status VARCHAR(20) DEFAULT 'pending'
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS manager_meetings (
+                id INTEGER PRIMARY KEY,
+                game_state_id INTEGER REFERENCES game_states(id),
+                manager_id INTEGER REFERENCES managers(id),
+                topic VARCHAR(30),
+                scheduled_date VARCHAR(20),
+                status VARCHAR(20) DEFAULT 'pending',
+                resolved_choice VARCHAR(30)
             )
         """)
         conn.commit()

@@ -2,10 +2,102 @@
 Director of Football — staff management.
 
 Handles hiring/firing the head coach, manager satisfaction tracking,
-and generating manager transfer requests via the inbox.
+manager meetings, and generating manager transfer requests via the inbox.
 """
 from .models import db, Manager
 from .season import add_news
+
+
+# ---------------------------------------------------------------------------
+# Meeting topics
+# ---------------------------------------------------------------------------
+
+MEETING_TOPICS = {
+    'form_review': {
+        'title': 'Form Review',
+        'opener': "Results haven't been good enough recently. I need to know we're aligned on how to fix this.",
+        'choices': [
+            {'key': 'back_manager',    'label': "I back you completely — keep doing it your way",
+             'sat_delta': 4,  'board_delta': -1},
+            {'key': 'collaborate',     'label': "Let's look at it together and work out what's changed",
+             'sat_delta': 2,  'board_delta': 1},
+            {'key': 'reinforce',       'label': "We'll bring in reinforcements — I'll prioritise new signings",
+             'sat_delta': 1,  'board_delta': 2},
+            {'key': 'ultimatum',       'label': "Results must improve immediately — this cannot continue",
+             'sat_delta': -5, 'board_delta': 3,  '_note': 'det_rep_penalty'},
+        ],
+    },
+    'tactics_freedom': {
+        'title': 'Tactical Autonomy',
+        'opener': "I want to be sure I have the freedom to manage the team exactly how I see fit, without interference.",
+        'choices': [
+            {'key': 'full_freedom',    'label': "You have complete control — that's always been my position",
+             'sat_delta': 5,  'board_delta': -2},
+            {'key': 'guided_freedom',  'label': "You run the team — I'll only raise things if I see a real issue",
+             'sat_delta': 2,  'board_delta': 0},
+            {'key': 'club_first',      'label': "The club has a playing identity we all need to respect",
+             'sat_delta': -2, 'board_delta': 1,  '_note': 'tac_det_penalty'},
+            {'key': 'override',        'label': "I need you to follow my specific direction on tactics",
+             'sat_delta': -5, 'board_delta': 2,  '_note': 'tac_det_rep_penalty'},
+        ],
+    },
+    'transfer_targets': {
+        'title': 'Transfer Priorities',
+        'opener': "I want us to be aligned on who we're targeting this window. These are the positions I need covered.",
+        'choices': [
+            {'key': 'agree_priorities','label': "Agreed — I'll focus the budget on your priorities",
+             'sat_delta': 4,  'board_delta': 0},
+            {'key': 'joint_shortlist', 'label': "Let's build a joint shortlist and agree the top targets together",
+             'sat_delta': 3,  'board_delta': 1},
+            {'key': 'budget_limit',    'label': "We're constrained this window — I'll do the best I can",
+             'sat_delta': -1, 'board_delta': 0},
+            {'key': 'dof_leads',       'label': "The DoF leads on recruitment — I'll keep you informed",
+             'sat_delta': -2, 'board_delta': 1,  '_note': 'det_penalty'},
+        ],
+    },
+    'squad_philosophy': {
+        'title': 'Club Playing Identity',
+        'opener': "I need the recruitment to reflect how I want to play. I don't want players who don't fit my system.",
+        'choices': [
+            {'key': 'align_fully',     'label': "Your system drives all our recruitment decisions",
+             'sat_delta': 4,  'board_delta': -1},
+            {'key': 'middle_ground',   'label': "We'll balance your needs with the club's long-term vision",
+             'sat_delta': 2,  'board_delta': 1},
+            {'key': 'board_mandate',   'label': "The board have set playing values — we all work within them",
+             'sat_delta': -3, 'board_delta': 2,  '_note': 'det_penalty'},
+            {'key': 'dof_vision',      'label': "My vision for this club goes beyond any one manager's preferences",
+             'sat_delta': -4, 'board_delta': 1,  '_note': 'tac_rep_penalty'},
+        ],
+    },
+    'check_in': {
+        'title': 'Regular Check-in',
+        'opener': "I just want to touch base. How do you see things going at the club right now?",
+        'choices': [
+            {'key': 'positive_energy', 'label': "Really positive — I think we're building something special here",
+             'sat_delta': 3,  'board_delta': 0},
+            {'key': 'future_plans',    'label': "Good — and I want to talk about where we take the club next",
+             'sat_delta': 2,  'board_delta': 1},
+            {'key': 'raise_targets',   'label': "Solid progress, but I think we can aim even higher",
+             'sat_delta': 1,  'board_delta': 1},
+            {'key': 'formal_review',   'label': "It's been mixed. Let's be honest about what hasn't worked",
+             'sat_delta': -2, 'board_delta': 1,  '_note': 'rep_penalty'},
+        ],
+    },
+    'contract_talks': {
+        'title': 'Contract Discussion',
+        'opener': "My contract is coming up. I need to know where I stand with the club going forward.",
+        'choices': [
+            {'key': 'extend_warmly',   'label': "I want you here long-term — let's agree an extension now",
+             'sat_delta': 6,  'board_delta': 0},
+            {'key': 'conditional',     'label': "I'd like to extend, but it depends on how the season finishes",
+             'sat_delta': 1,  'board_delta': 1},
+            {'key': 'wait_and_see',    'label': "Let's revisit this properly at the end of the season",
+             'sat_delta': -2, 'board_delta': 0},
+            {'key': 'no_extension',    'label': "I'm not planning to extend your contract at this stage",
+             'sat_delta': -8, 'board_delta': 1,  '_note': 'det_rep_penalty'},
+        ],
+    },
+}
 
 
 def get_available_managers():
@@ -527,3 +619,253 @@ def _pos_group(pos):
     if pos in ('CM', 'RM', 'LM', 'AM'):
         return 'MID'
     return 'ATT'
+
+
+# ---------------------------------------------------------------------------
+# Manager meeting system
+# ---------------------------------------------------------------------------
+
+def _personality_mod(manager, topic, choice_key):
+    """Return a satisfaction modifier based on manager personality and choice."""
+    det = manager.determination or 10
+    tac = manager.tactical_ability or 10
+    man = manager.man_management or 10
+    rep = manager.reputation or 50
+    mod = 0
+
+    # High determination resists being challenged or overruled
+    if choice_key in ('ultimatum', 'override', 'dof_leads', 'board_mandate', 'dof_vision', 'no_extension'):
+        if det >= 15:
+            mod -= 3
+        elif det >= 12:
+            mod -= 1
+
+    # Tactical managers resist tactical interference
+    if topic == 'tactics_freedom' and choice_key in ('override', 'club_first'):
+        if tac >= 15:
+            mod -= 3
+        elif tac >= 12:
+            mod -= 1
+
+    # High-reputation managers expect deference
+    if choice_key in ('ultimatum', 'override', 'no_extension', 'dof_vision', 'formal_review'):
+        if rep >= 70:
+            mod -= 2
+        if rep >= 85:
+            mod -= 2
+
+    # Good man-managers respond well to collaborative, warm approaches
+    if choice_key in ('collaborate', 'back_manager', 'align_fully', 'extend_warmly',
+                      'positive_energy', 'joint_shortlist', 'agree_priorities'):
+        if man >= 15:
+            mod += 2
+        elif man >= 12:
+            mod += 1
+
+    return mod
+
+
+def _apply_note_penalty(manager, note):
+    """Return additional sat_delta penalty from the choice note field."""
+    det = manager.determination or 10
+    tac = manager.tactical_ability or 10
+    rep = manager.reputation or 50
+    penalty = 0
+    if note == 'det_rep_penalty':
+        if det >= 12:
+            penalty -= 1
+        if rep >= 70:
+            penalty -= 1
+    elif note == 'tac_det_penalty':
+        if tac >= 14:
+            penalty -= 1
+        if det >= 14:
+            penalty -= 1
+    elif note == 'tac_det_rep_penalty':
+        if tac >= 14:
+            penalty -= 2
+        if det >= 14:
+            penalty -= 1
+        if rep >= 70:
+            penalty -= 1
+    elif note == 'det_penalty':
+        if det >= 12:
+            penalty -= 1
+    elif note == 'tac_rep_penalty':
+        if tac >= 14:
+            penalty -= 1
+        if rep >= 70:
+            penalty -= 1
+    elif note == 'rep_penalty':
+        if rep >= 65:
+            penalty -= 1
+    return penalty
+
+
+def maybe_schedule_meeting(game_state):
+    """After each match, possibly schedule a DoF–Manager meeting."""
+    import random
+    mgr = game_state.managed_club.head_coach
+    if not mgr:
+        return
+
+    from .models import ManagerMeeting
+    # Only one pending meeting at a time
+    pending = ManagerMeeting.query.filter_by(
+        game_state_id=game_state.id, status='pending').first()
+    if pending:
+        return
+
+    # Cooldown: don't schedule if one resolved in last 21 days
+    last = (ManagerMeeting.query
+            .filter_by(game_state_id=game_state.id, status='resolved')
+            .order_by(ManagerMeeting.id.desc()).first())
+    if last and last.scheduled_date:
+        try:
+            from datetime import datetime
+            last_dt = datetime.strptime(last.scheduled_date, '%Y-%m-%d')
+            cur_dt = datetime.strptime(game_state.current_date, '%Y-%m-%d')
+            if (cur_dt - last_dt).days < 21:
+                return
+        except Exception:
+            pass
+
+    # Gather context
+    from .models import Match as _Match
+    recent = (_Match.query
+              .filter_by(season_id=game_state.current_season_id, played=True)
+              .filter(
+                  (_Match.home_club_id == game_state.managed_club_id) |
+                  (_Match.away_club_id == game_state.managed_club_id))
+              .order_by(_Match.id.desc()).limit(5).all())
+    losses = sum(1 for m in recent
+                 if _match_result_for(m, game_state.managed_club_id) == 'L')
+
+    season_year = game_state.current_season.year if game_state.current_season else 2025
+    contract_remaining = (mgr.contract_end or (season_year + 2)) - season_year
+
+    try:
+        from datetime import datetime as _dt
+        cur_month = _dt.strptime(game_state.current_date, '%Y-%m-%d').month
+    except Exception:
+        cur_month = 8
+
+    # Pick topic and trigger probability
+    topic = None
+    prob = 0.0
+
+    if losses >= 3:
+        topic = 'form_review'
+        prob = 0.65
+    elif contract_remaining <= 1:
+        topic = 'contract_talks'
+        prob = 0.50
+    elif cur_month in (1, 7, 8):
+        topic = 'transfer_targets'
+        prob = 0.38
+    else:
+        topic = random.choices(
+            ['check_in', 'tactics_freedom', 'squad_philosophy', 'check_in'],
+            weights=[35, 25, 22, 18])[0]
+        prob = 0.15
+
+    if random.random() >= prob:
+        return
+
+    meeting = ManagerMeeting(
+        game_state_id=game_state.id,
+        manager_id=mgr.id,
+        topic=topic,
+        scheduled_date=game_state.current_date,
+        status='pending',
+    )
+    db.session.add(meeting)
+    db.session.commit()
+
+    title = MEETING_TOPICS[topic]['title']
+    add_news(game_state,
+             f"{mgr.name} has requested a meeting — {title}",
+             f"{mgr.name} has asked for a meeting to discuss {title.lower()}. "
+             f"Head to the Staff page to respond.",
+             'staff')
+
+
+def get_pending_meetings(game_state):
+    from .models import ManagerMeeting
+    return ManagerMeeting.query.filter_by(
+        game_state_id=game_state.id, status='pending'
+    ).order_by(ManagerMeeting.id).all()
+
+
+def resolve_meeting(game_state, meeting_id, choice_key):
+    """Apply consequences of the DoF's chosen response to a manager meeting."""
+    from .models import ManagerMeeting
+    meeting = ManagerMeeting.query.get(meeting_id)
+    if not meeting or meeting.status != 'pending':
+        return False, "Meeting not found or already resolved."
+
+    mgr = game_state.managed_club.head_coach
+    if not mgr:
+        meeting.status = 'resolved'
+        db.session.commit()
+        return False, "No head coach."
+
+    topic_data = MEETING_TOPICS.get(meeting.topic)
+    if not topic_data:
+        return False, "Unknown meeting topic."
+
+    choice = next((c for c in topic_data['choices'] if c['key'] == choice_key), None)
+    if not choice:
+        return False, "Invalid choice."
+
+    # Base deltas + personality modifier + note penalty
+    sat_delta = (choice['sat_delta']
+                 + _personality_mod(mgr, meeting.topic, choice_key)
+                 + _apply_note_penalty(mgr, choice.get('_note')))
+    board_delta = choice['board_delta']
+
+    update_manager_satisfaction(game_state, 'meeting', sat_delta)
+    game_state.board_confidence = max(0, min(100,
+        (game_state.board_confidence or 50) + board_delta))
+
+    meeting.status = 'resolved'
+    meeting.resolved_choice = choice_key
+    db.session.commit()
+
+    # Post news reflecting the tone
+    _post_meeting_news(game_state, mgr, meeting.topic, sat_delta, topic_data['title'])
+
+    outcome = ('went well' if sat_delta >= 3
+               else 'was constructive' if sat_delta >= 0
+               else 'created some tension' if sat_delta >= -3
+               else 'did not go well')
+    return True, f"Meeting {outcome}."
+
+
+def _post_meeting_news(game_state, mgr, topic, sat_delta, title):
+    if sat_delta >= 4:
+        mood, detail = "left satisfied", f"aligned with the DoF's approach"
+    elif sat_delta >= 1:
+        mood, detail = "seemed content", "appreciated the conversation"
+    elif sat_delta >= -1:
+        mood, detail = "was measured", "acknowledged the DoF's position"
+    elif sat_delta >= -4:
+        mood, detail = "was not entirely happy", "has reservations about the direction"
+    else:
+        mood, detail = "left unhappy", "and the DoF are pulling in different directions"
+
+    add_news(game_state,
+             f"Meeting with {mgr.name} ({title}) — he {mood}",
+             f"{mgr.name} {detail}.", 'staff')
+
+
+def _match_result_for(match, club_id):
+    if match.home_club_id == club_id:
+        our, their = match.home_score or 0, match.away_score or 0
+    else:
+        our, their = match.away_score or 0, match.home_score or 0
+    if our > their:
+        return 'W'
+    if our == their:
+        return 'D'
+    return 'L'
