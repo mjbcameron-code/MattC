@@ -219,15 +219,17 @@ def _backfill_academy_quality():
 
 
 def seed_managers():
-    """Create the manager pool and assign the best to PL clubs by reputation."""
+    """Create the manager pool and assign managers to PL clubs by name."""
     from data.managers import MANAGERS as MANAGER_DATA
 
     Manager.query.delete()
     db.session.flush()
 
     mgr_objects = []
+    club_assignments = {}  # club_name → Manager object
     for m in MANAGER_DATA:
-        name, nat, age, rep, tac, mm, det, fmt, style, wage = m
+        name, nat, age, rep, tac, mm, det, fmt, style, wage = m[:10]
+        club_name = m[10] if len(m) > 10 else None
         mgr = Manager(
             name=name, nationality=nat, age=age, reputation=rep,
             tactical_ability=tac, man_management=mm, determination=det,
@@ -236,19 +238,31 @@ def seed_managers():
         )
         db.session.add(mgr)
         mgr_objects.append(mgr)
+        if club_name:
+            club_assignments[club_name] = mgr
     db.session.flush()
 
-    # Assign top-reputation managers to PL clubs, matched by club reputation
+    # Assign managers to clubs by name first, then fill any gaps by reputation
+    clubs_assigned = set()
+    for club_name, mgr in club_assignments.items():
+        club = Club.query.filter_by(name=club_name).first()
+        if club:
+            mgr.club_id = club.id
+            clubs_assigned.add(club.id)
+
+    # Fill any PL clubs that didn't get a named manager (fallback)
     pl_league = League.query.filter_by(name='Premier League').first()
     if pl_league:
-        pl_clubs = sorted(
-            Club.query.filter_by(league_id=pl_league.id).all(),
-            key=lambda c: c.reputation, reverse=True,
+        unassigned_clubs = [
+            c for c in Club.query.filter_by(league_id=pl_league.id).all()
+            if c.id not in clubs_assigned
+        ]
+        free_mgrs = sorted(
+            [m for m in mgr_objects if m.club_id is None],
+            key=lambda m: m.reputation, reverse=True,
         )
-        sorted_mgrs = sorted(mgr_objects, key=lambda m: m.reputation, reverse=True)
-        for i, club in enumerate(pl_clubs):
-            if i < len(sorted_mgrs):
-                sorted_mgrs[i].club_id = club.id
+        for club, mgr in zip(unassigned_clubs, free_mgrs):
+            mgr.club_id = club.id
 
     db.session.commit()
 
