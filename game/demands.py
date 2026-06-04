@@ -20,22 +20,16 @@ def maybe_generate_demand(game_state):
         return
 
     from .models import Player
+    # Board directives concern the club's overall health — finances and
+    # housekeeping. Squad/position requests come from the head coach, not here.
     demand_type = random.choices(
-        ['sign_position', 'sell_listed', 'keep_wage_bill'],
-        weights=[45, 35, 20])[0]
+        ['sell_listed', 'keep_wage_bill'],
+        weights=[50, 50])[0]
 
     current = datetime.strptime(game_state.current_date, '%Y-%m-%d')
     deadline = (current + timedelta(days=56)).strftime('%Y-%m-%d')
 
-    if demand_type == 'sign_position':
-        # Weighted toward positions a typical squad needs most
-        pos = random.choices(['GK', 'CB', 'CM', 'ST', 'ST', 'CM', 'RB'],
-                             weights=[8, 18, 22, 30, 30, 22, 10])[0]
-        description = (f"The board have identified {pos} as a priority area. "
-                       f"Sign a {pos} before {deadline} to address the gap.")
-        target = pos
-
-    elif demand_type == 'sell_listed':
+    if demand_type == 'sell_listed':
         listed = Player.query.filter_by(
             club_id=game_state.managed_club_id, transfer_listed=True).count()
         if listed == 0:

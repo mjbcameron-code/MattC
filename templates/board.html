@@ -16,11 +16,8 @@
                     {{ position }}{% if total_teams %}/{{ total_teams }}{% endif %}
                     &nbsp;
                     <span class="small muted">
-                        (target: {% if gs.board_min_pos == gs.board_max_pos %}
-                            {{ gs.board_min_pos }}
-                        {% else %}
-                            {{ gs.board_min_pos }}–{{ gs.board_max_pos }}
-                        {% endif %})
+                        (aim for {{ gs.board_min_pos }}{% if gs.board_min_pos == 1 %}st{% elif gs.board_min_pos == 2 %}nd{% elif gs.board_min_pos == 3 %}rd{% else %}th{% endif %};
+                        acceptable down to {{ gs.board_max_pos }}th)
                     </span>
                 </p>
             </div>
@@ -87,8 +84,11 @@
 {% endif %}
 
 <p class="small muted">
-    Confidence adjusts after each league match: win +5, draw ±0, loss −6.
-    Your position versus the board's target also applies a bonus or penalty.
-    Falling below 5% results in the sack.
+    Board confidence is driven mainly by your league standing relative to the
+    objective. Stay within the acceptable range and the board remain content,
+    even through the odd bad result. Drop well below it for a sustained spell and
+    confidence will fall — the board expect the Director of Football to respond by
+    backing or changing the head coach and reshaping the squad. Only a prolonged
+    collapse far below target risks the sack.
 </p>
 {% endblock %}

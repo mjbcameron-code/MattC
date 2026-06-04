@@ -838,6 +838,9 @@ def play_match(match_id):
         commercial_mod.update_fan_happiness(gs, 'loss')
     commercial_mod.check_expansion_complete(gs)
 
+    # Ongoing head-coach feedback to the DoF (occasional)
+    staff_mod.maybe_coach_feedback(gs)
+
     # Check if manager wants to resign after this result
     manager_resigned = staff_mod.check_manager_status(gs)
 

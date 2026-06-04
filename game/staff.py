@@ -162,40 +162,132 @@ def check_manager_status(game_state):
 
 def generate_manager_request(game_state):
     """
-    If the squad is thin at a position, post an inbox message from the manager
-    requesting reinforcements. Called at the start of each transfer window.
+    Window briefing from the head coach to the DoF: the positions he wants
+    strengthened, the players he'd move on, and — when he spots one — a specific
+    target he'd like you to pursue. Called at the start of each transfer window.
     """
-    from .models import Player
     mgr = game_state.managed_club.head_coach
     if not mgr:
         return
 
-    players = Player.query.filter_by(
-        club_id=game_state.managed_club_id, is_injured=False).all()
+    needs = _position_needs(game_state)
+    unwanted = _unwanted_candidates(game_state, limit=2)
 
-    pos_count = {}
-    for p in players:
-        pg = _pos_group(p.position)
-        pos_count[pg] = pos_count.get(pg, 0) + 1
-
-    needs = []
-    if pos_count.get('GK', 0) < 2:
-        needs.append('a backup goalkeeper')
-    if pos_count.get('DEF', 0) < 4:
-        needs.append('defensive cover')
-    if pos_count.get('MID', 0) < 4:
-        needs.append('midfield reinforcements')
-    if pos_count.get('ATT', 0) < 2:
-        needs.append('a striker')
-
+    # Build the body in the coach's voice
+    lines = []
     if needs:
-        need_str = ' and '.join(needs[:2])
-        add_news(game_state,
-                 f"{mgr.name}: Transfer request — {needs[0]}",
-                 f"Head coach {mgr.name} has contacted the Director of Football "
-                 f"ahead of the transfer window. '{need_str.capitalize()} is a "
-                 f"priority. Without reinforcements I cannot guarantee we hit "
-                 f"the board's targets this season.'", 'staff')
+        need_labels = [_need_label(pos) for pos in needs[:2]]
+        lines.append(f"Top of my list is {' and '.join(need_labels)}.")
+    if unwanted:
+        names = ', '.join(p.name for p in unwanted)
+        if len(unwanted) == 1:
+            lines.append(f"I also think it's time we moved {names} on — "
+                         f"he's not in my plans and his place could free up wages.")
+        else:
+            lines.append(f"I'd also look to move on {names}; they're surplus to "
+                         f"my plans and clogging the wage bill.")
+
+    # Occasionally the coach names a concrete target in a position of need
+    target = None
+    if needs:
+        target = _suggest_target(game_state, needs[0])
+        if target:
+            lines.append(f"If you can get it done, {target.name} at "
+                         f"{target.club.name} is exactly the {target.position} I "
+                         f"want — go and get him.")
+
+    if not lines:
+        lines.append("I'm happy with the depth we have. Let's keep the group "
+                     "together and only act if the right opportunity comes up.")
+
+    headline_need = _need_label(needs[0]) if needs else "squad plans"
+    add_news(game_state,
+             f"{mgr.name}: transfer-window plans — {headline_need}",
+             f"Head coach {mgr.name} has set out what he wants this window. "
+             + ' '.join(f"'{l}'" for l in lines), 'staff')
+
+
+# Light-touch ongoing personality. Fired occasionally from the match loop so the
+# coach keeps talking to the DoF between windows.
+COACH_FEEDBACK_CHANCE = 0.09
+
+
+def maybe_coach_feedback(game_state):
+    """Occasionally post a piece of head-coach feedback to the inbox."""
+    import random
+    mgr = game_state.managed_club.head_coach
+    if not mgr:
+        return
+    if random.random() > COACH_FEEDBACK_CHANCE:
+        return
+
+    # Don't pile feedback on top of feedback
+    from .models import NewsItem
+    recent = (NewsItem.query
+              .filter_by(game_state_id=game_state.id, category='staff')
+              .order_by(NewsItem.id.desc()).first())
+    if recent and _is_recent_coach_note(game_state, recent):
+        return
+
+    options = ['praise', 'unwanted', 'target', 'position', 'mood']
+    weights = [22, 22, 18, 20, 18]
+    choice = random.choices(options, weights=weights)[0]
+
+    if choice == 'praise':
+        p = _standout_player(game_state)
+        if not p:
+            return
+        add_news(game_state, f"{mgr.name} full of praise for {p.name}",
+                 f"'{p.name} has been outstanding for me. Whatever happens this "
+                 f"window, I don't want to lose him — tie him down if you can.' "
+                 f"The head coach clearly rates the {p.position}.", 'staff')
+
+    elif choice == 'unwanted':
+        cands = _unwanted_candidates(game_state, limit=1)
+        if not cands:
+            return
+        p = cands[0]
+        add_news(game_state, f"{mgr.name} wants {p.name} moved on",
+                 f"'I'll be honest — {p.name} isn't part of how I want to play. "
+                 f"I'd have no complaints if you found him a move. It would free up "
+                 f"a squad place and some wages.' One for the Director of Football "
+                 f"to weigh up.", 'staff')
+
+    elif choice == 'target':
+        needs = _position_needs(game_state) or [_thinnest_group(game_state)]
+        target = _suggest_target(game_state, needs[0]) if needs and needs[0] else None
+        if not target:
+            return
+        add_news(game_state, f"{mgr.name} flags {target.name} as a target",
+                 f"'I've been watching {target.name} at {target.club.name}. "
+                 f"He's the kind of {target.position} who'd improve us straight "
+                 f"away. See what it would take.' The coach is leaving the deal "
+                 f"to you.", 'staff')
+
+    elif choice == 'position':
+        needs = _position_needs(game_state)
+        if not needs:
+            return
+        label = _need_label(needs[0])
+        add_news(game_state, f"{mgr.name} reiterates need for {label}",
+                 f"'I keep coming back to it — we are light for {label}. If we "
+                 f"pick up an injury there we'll be exposed. I'd like the Director "
+                 f"of Football to prioritise it.'", 'staff')
+
+    else:  # mood
+        sat = mgr.satisfaction or 70
+        if sat >= 70:
+            add_news(game_state, f"{mgr.name} happy with the working relationship",
+                     f"'The Director of Football and I are pulling in the same "
+                     f"direction. That's how a club should be run.' A settled mood "
+                     f"in the dugout.", 'staff')
+        elif sat < 45:
+            add_news(game_state, f"{mgr.name} hints at frustration",
+                     f"'I'd like to feel more backed. We all know where this squad "
+                     f"needs work.' The head coach wants more support in the market.",
+                     'staff')
+        else:
+            return
 
 
 def suggest_to_manager(game_state, topic, value=None):
@@ -279,6 +371,142 @@ def suggest_to_manager(game_state, topic, value=None):
                  f"advice. '{excuse}' Repeatedly overruling the coach risks "
                  f"the relationship.", 'staff')
         return False, f"{mgr.name} declined: '{excuse}'"
+
+
+def _need_label(pos):
+    return {
+        'GK': 'a goalkeeper',
+        'DEF': 'defensive reinforcements',
+        'CB': 'a centre-back',
+        'RB': 'a right-back',
+        'LB': 'a left-back',
+        'MID': 'a midfielder',
+        'CM': 'a central midfielder',
+        'AM': 'a creative midfielder',
+        'ATT': 'a striker',
+        'ST': 'a striker',
+    }.get(pos, f'a {pos}')
+
+
+def _position_needs(game_state):
+    """Return a list of position-group codes the squad is light in (most-needed first)."""
+    from .models import Player
+    players = Player.query.filter_by(
+        club_id=game_state.managed_club_id, is_youth=False).all()
+    pos_count = {}
+    for p in players:
+        pg = _pos_group(p.position)
+        pos_count[pg] = pos_count.get(pg, 0) + 1
+    # (group, minimum healthy depth)
+    thresholds = [('GK', 2), ('DEF', 6), ('MID', 6), ('ATT', 3)]
+    needs = [(g, mn - pos_count.get(g, 0)) for g, mn in thresholds
+             if pos_count.get(g, 0) < mn]
+    needs.sort(key=lambda x: x[1], reverse=True)   # biggest shortfall first
+    return [g for g, _ in needs]
+
+
+def _thinnest_group(game_state):
+    """The single most under-strength group, or None if the squad is balanced."""
+    needs = _position_needs(game_state)
+    return needs[0] if needs else None
+
+
+def _unwanted_candidates(game_state, limit=2):
+    """Fringe squad players the coach would happily move on.
+
+    Picks the lowest-rated senior outfield players that sit outside the squad's
+    core depth — preferring older ones — without recommending anyone who is
+    clearly a key man.
+    """
+    from .models import Player
+    players = [p for p in Player.query.filter_by(
+        club_id=game_state.managed_club_id, is_youth=False).all()]
+    if len(players) <= 16:
+        return []   # squad too thin to be shedding players
+    abilities = sorted((p.current_ability or 0) for p in players)
+    # "core" = strongest 14; only consider players below that core for the chop
+    core_cut = abilities[-14] if len(abilities) >= 14 else abilities[0]
+    fringe = [p for p in players if (p.current_ability or 0) < core_cut
+              and not p.transfer_listed]
+    # Prefer the least useful: low ability, then older
+    fringe.sort(key=lambda p: ((p.current_ability or 0), -(p.age or 0)))
+    return fringe[:limit]
+
+
+def _standout_player(game_state):
+    """A player the coach would single out for praise (best available senior)."""
+    from .models import Player
+    players = [p for p in Player.query.filter_by(
+        club_id=game_state.managed_club_id, is_youth=False, is_injured=False).all()]
+    if not players:
+        return None
+    players.sort(key=lambda p: ((p.current_ability or 0), (p.morale or 0)),
+                 reverse=True)
+    return players[0]
+
+
+def _suggest_target(game_state, position_group):
+    """Find a realistic transfer target at another club in a needed position.
+
+    Aims for someone who would improve the squad without being unattainable:
+    ability around the club's current top end, never wildly beyond it.
+    """
+    import random
+    from .models import Player, Club
+    if not position_group:
+        return None
+    positions = _group_positions(position_group)
+
+    mc = game_state.managed_club
+    squad = [p for p in Player.query.filter_by(
+        club_id=mc.id, is_youth=False).all()]
+    top_ca = max((p.current_ability or 0) for p in squad) if squad else 120
+    avg_ca = (sum((p.current_ability or 0) for p in squad) / len(squad)) if squad else 100
+    ceiling = int(top_ca + 8)
+    floor   = int(avg_ca)
+
+    candidates = (Player.query
+                  .join(Club, Player.club_id == Club.id)
+                  .filter(Player.club_id != mc.id,
+                          Player.is_youth == False,
+                          Player.position.in_(positions),
+                          Player.current_ability >= floor,
+                          Player.current_ability <= ceiling)
+                  .order_by(Player.current_ability.desc())
+                  .limit(20).all())
+    if not candidates:
+        return None
+    return random.choice(candidates[:10])
+
+
+def _group_positions(group):
+    return {
+        'GK':  ['GK'],
+        'DEF': ['CB', 'RB', 'LB'],
+        'CB':  ['CB'],
+        'RB':  ['RB'],
+        'LB':  ['LB'],
+        'MID': ['CM', 'RM', 'LM', 'AM'],
+        'CM':  ['CM'],
+        'AM':  ['AM'],
+        'ATT': ['ST'],
+        'ST':  ['ST'],
+    }.get(group, [group])
+
+
+def _is_recent_coach_note(game_state, news_item):
+    """True if the most recent staff note is a coach feedback note within ~10 days."""
+    try:
+        from datetime import datetime
+        cur = datetime.strptime(game_state.current_date, '%Y-%m-%d')
+        # NewsItem stores a date string; if absent, treat as recent to be safe
+        nd = getattr(news_item, 'date', None)
+        if not nd:
+            return False
+        then = datetime.strptime(nd, '%Y-%m-%d')
+        return (cur - then).days < 10
+    except Exception:
+        return False
 
 
 def _release_manager(manager):
