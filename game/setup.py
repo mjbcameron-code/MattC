@@ -53,6 +53,19 @@ def seed_database():
         from .models import Stadium
         if Stadium.query.count() == 0:
             _seed_stadiums_and_training()
+        # Backfill academy_quality for clubs that don't have it
+        from .models import Club as _Club
+        if _Club.query.filter(_Club.academy_quality == None).first():
+            _backfill_academy_quality()
+        # Backfill youth squad and wage cap for existing game states
+        from .models import GameState as _GS, Player as _P
+        for _gs in _GS.query.all():
+            if _P.query.filter_by(club_id=_gs.managed_club_id, is_youth=True).count() == 0:
+                from game.academy import seed_youth_for_new_game
+                seed_youth_for_new_game(_gs)
+            if not _gs.wage_cap_weekly:
+                _gs.wage_cap_weekly = _initial_wage_cap(_gs.managed_club)
+        db.session.commit()
         return
 
     from data.squads import CLUBS as PL_CLUBS
@@ -154,6 +167,17 @@ def _seed_stadiums_and_training():
             rep = club.reputation or 50
             club.training_level = (4 if rep >= 80 else 3 if rep >= 65
                                    else 2 if rep >= 45 else 1)
+    db.session.commit()
+
+
+def _backfill_academy_quality():
+    """Set academy_quality for clubs that pre-date the column."""
+    from .models import Club as _Club
+    for club in _Club.query.all():
+        if not club.academy_quality:
+            rep = club.reputation or 50
+            club.academy_quality = (4 if rep >= 80 else 3 if rep >= 65
+                                    else 2 if rep >= 45 else 1)
     db.session.commit()
 
 
@@ -282,8 +306,33 @@ def new_game(manager_name, club_id):
 
     assign_starting_scouts(club_id, 2)
 
+    # Seed youth academy
+    from game.academy import seed_youth_for_new_game, _backfill_academy_quality_club
+    _backfill_academy_quality_club(club)
+    seed_youth_for_new_game(gs)
+
+    # Set initial wage cap based on club reputation
+    gs.wage_cap_weekly = _initial_wage_cap(club)
+
     auto_pick_lineup(gs)
+    db.session.commit()
     return gs
+
+
+def _initial_wage_cap(club):
+    rep = club.reputation or 50
+    if rep >= 85:
+        return 250_000
+    elif rep >= 75:
+        return 175_000
+    elif rep >= 65:
+        return 120_000
+    elif rep >= 50:
+        return 80_000
+    elif rep >= 35:
+        return 50_000
+    else:
+        return 30_000
 
 
 def auto_pick_lineup(game_state, formation=None):

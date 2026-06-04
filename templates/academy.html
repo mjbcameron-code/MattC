@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}Youth Academy — {{ gs.managed_club.name }}{% endblock %}
+{% block content %}
+
+{# ── Academy header ─────────────────────────────────────────────────────── #}
+<div class="statbox mb">
+    <div class="stat-item">
+        <div class="big" style="color:var(--cm-accent);">{{ youth | length }}</div>
+        <div class="lbl">Youth Players</div>
+    </div>
+    <div class="stat-item">
+        <div class="big" style="color:{% if aq >= 4 %}var(--cm-green-light){% elif aq >= 3 %}var(--cm-accent){% else %}var(--cm-yellow){% endif %};">
+            {{ aq }}/5</div>
+        <div class="lbl">Academy Quality — {{ academy_labels[aq] }}</div>
+    </div>
+    <div class="stat-item">
+        <div class="big">{{ youth | selectattr('age', 'ge', 17) | list | length }}</div>
+        <div class="lbl">Eligible for Promotion (17+)</div>
+    </div>
+    <div class="stat-item">
+        <div class="big muted">{{ youth | selectattr('potential_ability', 'ge', 65) | list | length }}</div>
+        <div class="lbl">High Potential (PA 65+)</div>
+    </div>
+</div>
+
+<div class="grid-2">
+
+{# ── Youth Squad ─────────────────────────────────────────────────────────── #}
+<div>
+<div class="panel">
+    <div class="panel-header">Youth Squad</div>
+    <div class="panel-body" style="padding:0;">
+    {% if youth %}
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Pos</th>
+                <th class="num">Age</th>
+                <th class="num">CA</th>
+                <th class="num">PA</th>
+                <th>Coach</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for p in youth %}
+        {% set rec = recs[p.id] %}
+        <tr>
+            <td><strong>{{ p.name }}</strong></td>
+            <td><span class="badge">{{ p.position }}</span></td>
+            <td class="num">{{ p.age }}</td>
+            <td class="num">{{ p.current_ability }}</td>
+            <td class="num" style="color:{% if p.potential_ability >= 70 %}var(--cm-green-light){% elif p.potential_ability >= 50 %}var(--cm-accent){% else %}var(--cm-text-dim){% endif %};">
+                {{ p.potential_ability }}</td>
+            <td class="small">
+                {% if rec == 'promote' %}
+                    <span style="color:var(--cm-green-light);">▲ Promote</span>
+                {% elif rec == 'release' %}
+                    <span style="color:var(--cm-red);">✕ Release</span>
+                {% else %}
+                    <span class="muted">— Watch</span>
+                {% endif %}
+            </td>
+            <td style="white-space:nowrap;">
+                {% if p.age >= 17 %}
+                <form method="post" action="{{ url_for('academy_promote', player_id=p.id) }}" style="display:inline;">
+                    <button class="btn btn-sm btn-accent">Promote</button>
+                </form>
+                {% endif %}
+                <form method="post" action="{{ url_for('academy_release', player_id=p.id) }}" style="display:inline;"
+                      onsubmit="return confirm('Release {{ p.name }}?');">
+                    <button class="btn btn-sm" style="background:var(--cm-red);color:#fff;">Release</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div style="padding:20px;" class="small muted">
+        No youth players currently in the academy. The annual intake arrives at the start of each new season.
+    </div>
+    {% endif %}
+    </div>
+</div>
+</div>
+
+{# ── Right column ─────────────────────────────────────────────────────────── #}
+<div>
+
+{# Academy Quality #}
+<div class="panel">
+    <div class="panel-header">Academy Quality</div>
+    <div class="panel-body">
+        <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
+            <div style="text-align:center;">
+                <div style="font-size:2em;font-weight:bold;color:{% if aq >= 4 %}var(--cm-green-light){% elif aq >= 3 %}var(--cm-accent){% else %}var(--cm-yellow){% endif %};">
+                    {{ aq }}/5</div>
+                <div class="small muted">Level</div>
+            </div>
+            <div>
+                <div style="font-weight:bold;font-size:1.1em;">{{ academy_labels[aq] }}</div>
+                <div class="small muted" style="margin-top:4px;">
+                    {% if aq == 1 %}Minimal facilities. Very few promising players emerge.
+                    {% elif aq == 2 %}Basic setup. Occasional talent spotted locally.
+                    {% elif aq == 3 %}Decent academy. Regular decent intakes, some gems.
+                    {% elif aq == 4 %}Top-class facilities. Consistent high-quality intakes.
+                    {% else %}Premier academy. Among the best in the country.
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        {% for i in range(1, 6) %}
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+            <div style="width:20px;height:20px;border-radius:3px;
+                 background:{% if i <= aq %}var(--cm-accent){% else %}var(--cm-border){% endif %};"></div>
+            <span class="small {% if i == aq %}{% else %}muted{% endif %}">
+                Level {{ i }} — {{ academy_labels[i] }}
+            </span>
+        </div>
+        {% endfor %}
+
+        <div class="mt">
+        {% if aq < 5 %}
+            {% set next_lvl = aq + 1 %}
+            <form method="post" action="{{ url_for('academy_upgrade') }}">
+                <button class="btn btn-sm btn-accent">
+                    Upgrade to {{ academy_labels[next_lvl] }}
+                    (£{{ upgrade_cost | money }})
+                </button>
+            </form>
+            <p class="small muted mt">Higher quality means better intake size and higher potential ceilings.</p>
+        {% else %}
+            <p class="small muted">Academy is at maximum quality.</p>
+        {% endif %}
+        </div>
+    </div>
+</div>
+
+{# How it works #}
+<div class="panel">
+    <div class="panel-header">How The Academy Works</div>
+    <div class="panel-body">
+        <p class="small muted" style="margin-bottom:8px;">
+            Each new season, <strong>{{ 3 + (gs.managed_club.academy_quality or 2) }}–{{ 5 + (gs.managed_club.academy_quality or 2) }} youngsters</strong>
+            join the academy, aged 15–17.
+        </p>
+        <p class="small muted" style="margin-bottom:8px;">
+            Players at 17+ can be <strong>promoted</strong> to the first-team squad.
+            Those unlikely to develop are best <strong>released</strong> to free space for the next intake.
+        </p>
+        <p class="small muted" style="margin-bottom:8px;">
+            Youth players develop slowly (CA improves 0–2 points per season) until they reach
+            their potential. Better <strong>training facilities</strong> accelerate this.
+        </p>
+        <p class="small muted">
+            Players still in the academy at 19 with an expired contract will leave automatically.
+            Use the <a href="{{ url_for('contracts') }}" class="a-link">Contracts</a> page to offer extensions.
+        </p>
+    </div>
+</div>
+
+</div>{# end right col #}
+</div>{# end grid-2 #}
+{% endblock %}

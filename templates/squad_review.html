@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}Squad Review — {{ season.name }}{% endblock %}
+{% block content %}
+
+<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:16px;">
+    <div>
+        <h2 style="margin:0;font-size:1.4em;">End of Season Squad Review</h2>
+        <p class="small muted" style="margin:4px 0 0;">Season {{ season.name }} — decide who stays, who goes, and who to offer to.</p>
+    </div>
+    <div style="display:flex;gap:8px;">
+        <a href="{{ url_for('academy') }}" class="btn btn-sm">Youth Academy</a>
+        <form method="post" action="{{ url_for('advance_season') }}">
+            <button class="btn btn-sm btn-accent">Advance to New Season ▶</button>
+        </form>
+    </div>
+</div>
+
+{# ── Wage summary ────────────────────────────────────────────────────────── #}
+<div class="statbox mb">
+    <div class="stat-item">
+        <div class="big" style="color:{% if over_cap is defined and wage_cap > 0 and wage_bill > wage_cap %}var(--cm-red){% else %}var(--cm-accent){% endif %};">
+            £{{ wage_bill | money }}<span class="small muted">/wk</span></div>
+        <div class="lbl">Current Wage Bill</div>
+    </div>
+    {% if wage_cap > 0 %}
+    <div class="stat-item">
+        <div class="big">£{{ wage_cap | money }}<span class="small muted">/wk</span></div>
+        <div class="lbl">Board Wage Cap</div>
+    </div>
+    {% endif %}
+    <div class="stat-item">
+        <div class="big">£{{ (wage_bill * 52) | money }}</div>
+        <div class="lbl">Annual Wage Cost</div>
+    </div>
+    <div class="stat-item">
+        <div class="big" style="color:var(--cm-red);">{{ expiring | length }}</div>
+        <div class="lbl">Contracts Expiring</div>
+    </div>
+    <div class="stat-item">
+        <div class="big" style="color:var(--cm-yellow);">{{ watch | length }}</div>
+        <div class="lbl">Expiring Next Season</div>
+    </div>
+</div>
+
+{% if wage_cap > 0 and wage_bill > wage_cap %}
+<div class="flash flash-error" style="margin-bottom:12px;">
+    ⚠ Wage bill exceeds board cap by £{{ (wage_bill - wage_cap) | money }}/week.
+    The board expect you to reduce costs before the new season.
+</div>
+{% endif %}
+
+{# Macro for a player row #}
+{% macro player_row(p, show_release=false) %}
+{% set ps = stats_map.get(p.id) %}
+{% set apps = ps.appearances if ps else 0 %}
+{% set goals = ps.goals if ps else 0 %}
+{% set rec_key, rec_text = coach_rec(p) %}
+<tr>
+    <td>
+        <a href="{{ url_for('player_detail', player_id=p.id) }}" class="a-link">
+            <strong>{{ p.name }}</strong>
+        </a>
+        {% if p.transfer_listed %}<span class="small" style="color:var(--cm-yellow);margin-left:4px;">Listed</span>{% endif %}
+    </td>
+    <td><span class="badge">{{ p.position }}</span></td>
+    <td class="num">{{ p.age }}</td>
+    <td class="num">{{ p.contract_end }}</td>
+    <td class="num">£{{ p.wage | money }}/wk</td>
+    <td class="num">{{ apps }}</td>
+    <td class="num">{{ goals }}</td>
+    <td class="small" style="color:{%
+        if rec_key == 'keep' %}var(--cm-green-light){%
+        elif rec_key == 'sell' or rec_key == 'release' %}var(--cm-red){%
+        elif rec_key == 'loan' %}var(--cm-yellow){%
+        else %}var(--cm-text-dim){% endif %};">
+        {{ rec_text }}
+    </td>
+    <td style="white-space:nowrap;">
+        {% if not p.transfer_listed %}
+        <form method="post" action="{{ url_for('squad_review_action') }}" style="display:inline;">
+            <input type="hidden" name="action" value="list">
+            <input type="hidden" name="player_id" value="{{ p.id }}">
+            <button class="btn btn-sm" style="background:var(--cm-yellow);color:#000;">List</button>
+        </form>
+        {% else %}
+        <form method="post" action="{{ url_for('squad_review_action') }}" style="display:inline;">
+            <input type="hidden" name="action" value="unlist">
+            <input type="hidden" name="player_id" value="{{ p.id }}">
+            <button class="btn btn-sm">Unlist</button>
+        </form>
+        {% endif %}
+        {% if show_release %}
+        <form method="post" action="{{ url_for('squad_review_action') }}" style="display:inline;"
+              onsubmit="return confirm('Release {{ p.name }} on a free transfer?');">
+            <input type="hidden" name="action" value="release">
+            <input type="hidden" name="player_id" value="{{ p.id }}">
+            <button class="btn btn-sm" style="background:var(--cm-red);color:#fff;">Release</button>
+        </form>
+        {% endif %}
+        <a href="{{ url_for('contracts') }}#player-{{ p.id }}" class="btn btn-sm btn-accent">Renew</a>
+    </td>
+</tr>
+{% endmacro %}
+
+{# ── Expiring contracts ────────────────────────────────────────────────────── #}
+{% if expiring %}
+<div class="panel mb">
+    <div class="panel-header" style="background:var(--cm-red);color:#fff;">
+        ⚠ Contracts Expiring This Season ({{ expiring | length }})
+    </div>
+    <div class="panel-body" style="padding:0;">
+        <table>
+            <thead>
+                <tr><th>Player</th><th>Pos</th><th class="num">Age</th><th class="num">Exp</th>
+                <th class="num">Wage</th><th class="num">Apps</th><th class="num">Gls</th>
+                <th>Coach View</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+                {% for p in expiring %}{{ player_row(p, show_release=true) }}{% endfor %}
+            </tbody>
+        </table>
+        <p class="small muted" style="padding:8px 12px;">
+            These players will leave on a free transfer unless you offer a renewal via <a href="{{ url_for('contracts') }}" class="a-link">Contracts</a>.
+        </p>
+    </div>
+</div>
+{% endif %}
+
+{# ── Watch list ────────────────────────────────────────────────────────────── #}
+{% if watch %}
+<div class="panel mb">
+    <div class="panel-header" style="background:var(--cm-yellow);color:#000;">
+        Contracts Expiring Next Season ({{ watch | length }})
+    </div>
+    <div class="panel-body" style="padding:0;">
+        <table>
+            <thead>
+                <tr><th>Player</th><th>Pos</th><th class="num">Age</th><th class="num">Exp</th>
+                <th class="num">Wage</th><th class="num">Apps</th><th class="num">Gls</th>
+                <th>Coach View</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+                {% for p in watch %}{{ player_row(p) }}{% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{# ── Secure contracts ──────────────────────────────────────────────────────── #}
+{% if secure %}
+<div class="panel">
+    <div class="panel-header">Squad — Contracted ({{ secure | length }})</div>
+    <div class="panel-body" style="padding:0;">
+        <table>
+            <thead>
+                <tr><th>Player</th><th>Pos</th><th class="num">Age</th><th class="num">Exp</th>
+                <th class="num">Wage</th><th class="num">Apps</th><th class="num">Gls</th>
+                <th>Coach View</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+                {% for p in secure %}{{ player_row(p) }}{% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<div style="margin-top:16px;display:flex;justify-content:flex-end;">
+    <form method="post" action="{{ url_for('advance_season') }}">
+        <button class="btn btn-accent" style="font-size:1.1em;padding:10px 24px;">
+            Complete Review &amp; Start {{ new_year }}/{{ (new_year + 1) | string | slice(2) | join }}  ▶
+        </button>
+    </form>
+</div>
+
+{% endblock %}

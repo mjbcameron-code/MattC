@@ -349,6 +349,20 @@ def process_new_season(game_state):
 
     game_state.current_season_id = new_season.id
     game_state.current_date = f"{new_year}-08-18"
+
+    # ---- Youth academy ----
+    from game.academy import age_youth_players, generate_intake
+    age_youth_players(game_state)
+    generate_intake(game_state)
+
+    # ---- Update wage cap for new season ----
+    from game import commercial as _comm
+    proj_rev = _comm.get_summary(game_state).get('proj_season_revenue', 0)
+    game_state.wage_cap_weekly = max(
+        game_state.wage_cap_weekly or 0,
+        int(proj_rev * 0.6 / 52),
+    )
+
     db.session.commit()
 
     # ---- News ----

@@ -28,6 +28,7 @@ from game import demands as demands_mod
 from game import contracts as contracts_mod
 from game import scouting as scouting_mod
 from game import commercial as commercial_mod
+from game import academy as academy_mod
 from game.morale import apply_match_morale
 from game.board import update_board_after_match
 
@@ -506,6 +507,133 @@ def commercial_sponsor():
     ok, msg = commercial_mod.accept_sponsor(gs, deal_type, company, value, years)
     flash(msg, 'success' if ok else 'error')
     return redirect(url_for('commercial'))
+
+
+# ---------------------------------------------------------------------------
+# Routes: Youth Academy
+# ---------------------------------------------------------------------------
+
+@app.route('/academy')
+@require_game
+def academy():
+    gs = get_game_state()
+    youth = academy_mod.get_youth_squad(gs)
+    aq = gs.managed_club.academy_quality or 2
+    upgrade_cost = academy_mod.ACADEMY_UPGRADE_COST.get(aq)
+    recs = {p.id: academy_mod.get_coach_youth_recommendation(gs, p) for p in youth}
+    return render_template('academy.html', gs=gs, youth=youth,
+                           aq=aq, upgrade_cost=upgrade_cost,
+                           academy_labels=academy_mod.ACADEMY_LABELS, recs=recs)
+
+
+@app.route('/academy/promote/<int:player_id>', methods=['POST'])
+@require_game
+def academy_promote(player_id):
+    gs = get_game_state()
+    ok, msg = academy_mod.promote_to_first_team(gs, player_id)
+    flash(msg, 'success' if ok else 'error')
+    return redirect(url_for('academy'))
+
+
+@app.route('/academy/release/<int:player_id>', methods=['POST'])
+@require_game
+def academy_release(player_id):
+    gs = get_game_state()
+    ok, msg = academy_mod.release_youth(gs, player_id)
+    flash(msg, 'success' if ok else 'error')
+    return redirect(url_for('academy'))
+
+
+@app.route('/academy/upgrade', methods=['POST'])
+@require_game
+def academy_upgrade():
+    gs = get_game_state()
+    ok, msg = academy_mod.upgrade_academy(gs)
+    flash(msg, 'success' if ok else 'error')
+    return redirect(url_for('academy'))
+
+
+# ---------------------------------------------------------------------------
+# Routes: Squad Review (end of season)
+# ---------------------------------------------------------------------------
+
+@app.route('/squad-review')
+@require_game
+def squad_review():
+    gs = get_game_state()
+    season = gs.current_season
+    mc = gs.managed_club
+    mgr = mc.head_coach
+
+    players = (Player.query
+               .filter_by(club_id=mc.id, is_youth=False)
+               .order_by(Player.position, Player.current_ability.desc())
+               .all())
+
+    # Gather season stats
+    stats_map = {}
+    for ps in PlayerStat.query.filter_by(season_id=season.id, club_id=mc.id).all():
+        stats_map[ps.player_id] = ps
+
+    # Coach recommendation per player
+    def coach_rec(p):
+        ps = stats_map.get(p.id)
+        apps = ps.appearances if ps else 0
+        if apps >= 25:
+            return ('keep', 'Regular starter — keep')
+        if apps >= 12:
+            return ('neutral', 'Useful squad member')
+        if p.age <= 21:
+            return ('loan', 'Young — consider a loan')
+        if p.age >= 32:
+            return ('sell', 'Ageing — consider selling')
+        return ('sell', 'Low minutes — sell or release')
+
+    new_year = season.year + 1
+    expiring = [p for p in players if p.contract_end <= new_year]
+    watch    = [p for p in players if new_year < p.contract_end <= new_year + 1]
+    secure   = [p for p in players if p.contract_end > new_year + 1]
+
+    from game.commercial import get_wage_bill
+    wage_bill = get_wage_bill(mc)
+    wage_cap = gs.wage_cap_weekly or 0
+
+    return render_template('squad_review.html',
+                           gs=gs, season=season, mc=mc, mgr=mgr,
+                           expiring=expiring, watch=watch, secure=secure,
+                           stats_map=stats_map, coach_rec=coach_rec,
+                           new_year=new_year,
+                           wage_bill=wage_bill, wage_cap=wage_cap)
+
+
+@app.route('/squad-review/action', methods=['POST'])
+@require_game
+def squad_review_action():
+    gs = get_game_state()
+    action = request.form.get('action')
+    player_id = int(request.form.get('player_id', 0))
+    p = Player.query.get(player_id)
+    if not p or p.club_id != gs.managed_club_id:
+        flash('Player not found.', 'error')
+        return redirect(url_for('squad_review'))
+
+    if action == 'list':
+        p.transfer_listed = True
+        db.session.commit()
+        flash(f'{p.name} listed for transfer.', 'success')
+    elif action == 'unlist':
+        p.transfer_listed = False
+        db.session.commit()
+        flash(f'{p.name} removed from transfer list.', 'success')
+    elif action == 'release':
+        if p.contract_end <= gs.current_season.year + 1:
+            name = p.name
+            p.club_id = None
+            db.session.commit()
+            flash(f'{name} released on a free transfer.', 'success')
+        else:
+            flash('Can only release players whose contracts are expiring.', 'error')
+    return redirect(url_for('squad_review'))
 
 
 @app.route('/transfers/accept-counter/<int:bid_id>', methods=['POST'])
@@ -1118,9 +1246,11 @@ def _migrate_db():
             ('ticket_price_std',    'ALTER TABLE game_states ADD COLUMN ticket_price_std INTEGER DEFAULT 25'),
             ('ticket_price_premium','ALTER TABLE game_states ADD COLUMN ticket_price_premium INTEGER DEFAULT 45'),
             ('season_revenue',      'ALTER TABLE game_states ADD COLUMN season_revenue INTEGER DEFAULT 0'),
+            ('wage_cap_weekly',     'ALTER TABLE game_states ADD COLUMN wage_cap_weekly INTEGER DEFAULT 0'),
         ])
         _add_missing('clubs', [
-            ('training_level', 'ALTER TABLE clubs ADD COLUMN training_level INTEGER DEFAULT 2'),
+            ('training_level',  'ALTER TABLE clubs ADD COLUMN training_level INTEGER DEFAULT 2'),
+            ('academy_quality', 'ALTER TABLE clubs ADD COLUMN academy_quality INTEGER DEFAULT 2'),
         ])
         conn.commit()
         conn.close()

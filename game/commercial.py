@@ -318,6 +318,8 @@ def get_summary(game_state):
     att = int(stadium.capacity * fill)
     proj_match = (int(att * 0.88) * (game_state.ticket_price_std or 25) +
                   int(att * 0.12) * (game_state.ticket_price_premium or 45)) // 100
+    wage_bill = get_wage_bill(game_state.managed_club)
+    wage_cap = game_state.wage_cap_weekly or 0
     return {
         'stadium': stadium,
         'active_sponsors': active,
@@ -334,4 +336,16 @@ def get_summary(game_state):
         'proj_season_revenue': proj_match * 19 + sponsor_annual,
         'expand_cost_per_k': STADIUM_COST_PER_SEAT * 1000,
         'quality_upgrade_cost': STADIUM_QUALITY_COST,
+        'wage_bill_weekly': wage_bill,
+        'wage_cap_weekly': wage_cap,
+        'wage_bill_annual': wage_bill * 52,
+        'over_cap': wage_cap > 0 and wage_bill > wage_cap,
     }
+
+
+def get_wage_bill(club):
+    """Total weekly wage bill for all senior players at the club."""
+    return sum(
+        p.wage for p in club.players
+        if not p.is_youth and p.wage
+    )

@@ -25,6 +25,7 @@ class Club(db.Model):
     primary_color = db.Column(db.String(7), default='#cc0000')
     secondary_color = db.Column(db.String(7), default='#ffffff')
     training_level = db.Column(db.Integer, default=2)    # 1-5
+    academy_quality = db.Column(db.Integer, default=2)   # 1-5
     players = db.relationship('Player', backref='club', lazy=True)
 
 
@@ -389,6 +390,7 @@ class GameState(db.Model):
     ticket_price_std = db.Column(db.Integer, default=25)     # £ per match
     ticket_price_premium = db.Column(db.Integer, default=45) # £ per match
     season_revenue = db.Column(db.Integer, default=0)        # matchday + commercial YTD
+    wage_cap_weekly = db.Column(db.Integer, default=0)       # board-set max weekly wage bill
     managed_club = db.relationship('Club', foreign_keys=[managed_club_id])
     current_season = db.relationship('Season', foreign_keys=[current_season_id])
     news = db.relationship('NewsItem', backref='game_state', lazy=True,

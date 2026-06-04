@@ -32,6 +32,50 @@
     </div>
 </div>
 
+{# ── Wage structure ────────────────────────────────────────────────────────── #}
+{% set wb = summary.wage_bill_weekly %}
+{% set wc = summary.wage_cap_weekly %}
+{% set over = summary.over_cap %}
+<div class="panel mb">
+    <div class="panel-header" style="{% if over %}background:var(--cm-red);color:#fff;{% endif %}">
+        Wage Structure{% if over %} — Over Board Cap{% endif %}
+    </div>
+    <div class="panel-body">
+        <div class="grid-2" style="gap:8px;margin-bottom:10px;">
+            <div style="text-align:center;padding:10px;background:var(--cm-panel-dark,#0d1520);border-radius:4px;">
+                <div style="font-size:1.6em;font-weight:bold;color:{% if over %}var(--cm-red){% else %}var(--cm-accent){% endif %};">
+                    £{{ wb | money }}/wk</div>
+                <div class="small muted">Current Weekly Wage Bill</div>
+                <div class="small muted">£{{ summary.wage_bill_annual | money }} per year</div>
+            </div>
+            <div style="text-align:center;padding:10px;background:var(--cm-panel-dark,#0d1520);border-radius:4px;">
+                {% if wc > 0 %}
+                {%- set pct = (wb / wc * 100) | int -%}
+                <div style="font-size:1.6em;font-weight:bold;color:{% if pct > 100 %}var(--cm-red){% elif pct > 85 %}var(--cm-yellow){% else %}var(--cm-green-light){% endif %};">
+                    {{ pct }}%</div>
+                <div class="small muted">of Board Cap (£{{ wc | money }}/wk)</div>
+                {% if over %}
+                <div class="small" style="color:var(--cm-red);">£{{ (wb - wc) | money }}/wk over cap</div>
+                {% endif %}
+                {% else %}
+                <div style="font-size:1.2em;font-weight:bold;color:var(--cm-text-dim);">No Cap Set</div>
+                <div class="small muted">Board have not set a wage limit yet</div>
+                {% endif %}
+            </div>
+        </div>
+        {% if over %}
+        <p class="small muted">The board expect the wage bill to come down. Use the
+            <a href="{{ url_for('squad_review') }}" class="a-link">Squad Review</a> to release or sell
+            high earners, or let expiring contracts lapse.</p>
+        {% else %}
+        <p class="small muted">
+            Wage band guidance: players with CA 1–40 should earn ≤ £2K/wk; CA 41–60 ≤ £6K/wk;
+            CA 61–80 ≤ £15K/wk; CA 81+ commands £20K+/wk.
+        </p>
+        {% endif %}
+    </div>
+</div>
+
 <div class="grid-2">
 
 {# ── LEFT COLUMN ──────────────────────────────────────────────────────────── #}
