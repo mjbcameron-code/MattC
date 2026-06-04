@@ -18,17 +18,40 @@
                     <td>{{ player.club.name if player.club else 'Free Agent' }}</td></tr>
                 <tr><td class="muted">Squad No.</td><td>{{ player.squad_number or '-' }}</td></tr>
                 <tr><td class="muted">Overall Rating</td>
-                    <td><span class="rating r-good">{{ player.overall_rating() }}</span></td></tr>
+                    <td>
+                    {% if managed or tier == 3 %}
+                        <span class="rating r-good">{{ player.overall_rating() }}</span>
+                    {% elif tier >= 1 %}
+                        <span class="muted">~{{ "%.1f"|format(cur_star) }}★ estimated</span>
+                    {% else %}
+                        <span class="muted">Unknown — not scouted</span>
+                    {% endif %}
+                    </td></tr>
                 <tr><td class="muted">Value</td><td>{{ value | money }}</td></tr>
+                {% if managed or tier >= 2 %}
                 <tr><td class="muted">Wage</td><td>{{ player.wage | money }} p/w</td></tr>
                 <tr><td class="muted">Contract until</td><td>{{ player.contract_end }}</td></tr>
+                {% endif %}
+                {% if managed %}
                 <tr><td class="muted">Morale</td><td>{{ player.morale }}%</td></tr>
                 <tr><td class="muted">Condition</td><td>{{ player.condition }}%</td></tr>
+                {% endif %}
                 <tr><td class="muted">Status</td>
                     <td>{% if player.is_injured %}<span class="injured-icon">Injured ({{ player.injury_weeks }}w)</span>
                         {% else %}Fit{% endif %}
                         {% if player.is_youth %} · <span style="color:var(--cm-green-light);">Academy</span>{% endif %}
                         {% if on_loan %} · <span style="color:var(--cm-blue);">On Loan</span>{% endif %}</td></tr>
+                {% if player.release_clause %}
+                <tr><td class="muted">Release Clause</td>
+                    <td style="color:var(--cm-yellow);">{{ player.release_clause | money }}</td></tr>
+                {% endif %}
+                {% if player.agent_name %}
+                <tr><td class="muted">Agent</td>
+                    <td class="small">{{ player.agent_name }}
+                    {% if player.agent_aggression %}
+                        <span class="muted">(aggression {{ player.agent_aggression }}/10)</span>
+                    {% endif %}</td></tr>
+                {% endif %}
             </table>
 
             {% if stats %}
@@ -41,8 +64,11 @@
 
             <div class="mt flex" style="flex-wrap:wrap;gap:6px;">
                 {% if managed %}
-                    <form method="post" action="{{ url_for('contract_offer', player_id=player.id) }}">
-                        <button class="btn btn-sm btn-accent">Offer Contract</button></form>
+                    <form method="post" action="{{ url_for('contracts_offer', player_id=player.id) }}" class="flex" style="gap:4px;align-items:flex-end;">
+                        <input type="number" name="wage" step="500" value="{{ (player.wage * 1.1) | int }}" style="width:90px;" title="Wage offer £/wk">
+                        <select name="years"><option value="2">2yr</option><option value="3" selected>3yr</option><option value="4">4yr</option></select>
+                        <button class="btn btn-sm btn-accent">Offer Contract</button>
+                    </form>
                     {% if not player.transfer_listed and not on_loan %}
                     <form method="post" action="{{ url_for('transfer_list', player_id=player.id) }}">
                         <button class="btn btn-sm">List for Transfer</button></form>
@@ -62,11 +88,18 @@
                     <form method="post" action="{{ url_for('transfer_loan', player_id=player.id) }}">
                         <button class="btn btn-sm" style="background:var(--cm-blue);">Request Loan</button>
                     </form>
+                    <form method="post" action="{{ url_for('scouting_shortlist', player_id=player.id) }}">
+                        <button class="btn btn-sm" style="background:#2a3a2a;">
+                            {% if know and know.shortlisted %}★ Shortlisted{% else %}☆ Shortlist{% endif %}
+                        </button>
+                    </form>
                 {% endif %}
             </div>
         </div>
     </div>
 
+    {# ── Right panel: attributes or scouting report ── #}
+    {% if managed or tier == 3 %}
     <div class="panel">
         <div class="panel-header">Attributes</div>
         <div class="panel-body">
@@ -104,6 +137,114 @@
             </div>
         </div>
     </div>
+
+    {% else %}
+    {# Scouting report panel for unscouted / partially scouted players #}
+    <div class="panel">
+        <div class="panel-header">Scouting Report</div>
+        <div class="panel-body">
+
+        {% if tier == 0 %}
+            <p style="color:var(--cm-text-dim);">This player has not been scouted.
+                Assign one of your scouts to begin building a report and unlock
+                their attributes.</p>
+            {% if idle_scouts %}
+            <form method="post" action="{{ url_for('scouting_assign_player') }}" class="flex mt" style="gap:6px;align-items:flex-end;">
+                <input type="hidden" name="player_id" value="{{ player.id }}">
+                <div>
+                    <label class="small muted">Scout</label>
+                    <select name="scout_id">
+                        {% for s in idle_scouts %}
+                        <option value="{{ s.id }}">{{ s.name }} ({{ s.region }}, ability {{ s.judging_ability }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button class="btn btn-sm btn-accent">Assign Scout</button>
+            </form>
+            {% else %}
+            <p class="small muted mt">No idle scouts available — recall a scout from another
+                assignment or hire from the <a href="{{ url_for('scouting') }}" style="color:var(--cm-accent);">Scouting</a> page.</p>
+            {% endif %}
+
+        {% elif tier == 1 %}
+            <p class="small muted">Early scouting in progress. Very limited information available.</p>
+            <div class="statbox mt mb">
+                <div class="stat-item">
+                    <div class="big" style="color:var(--cm-accent);">~{{ cur_star | int }}–{{ (cur_star + 1) | int }}★</div>
+                    <div class="lbl">Estimated Ability</div>
+                </div>
+                <div class="stat-item">
+                    <div class="big" style="color:var(--cm-text-dim);">?★</div>
+                    <div class="lbl">Potential Unknown</div>
+                </div>
+            </div>
+            <p class="small muted">Scouting progress</p>
+            <div class="conf-bar-bg"><div class="conf-bar-fill"
+                 style="width:{{ know.knowledge if know else 0 }}%;background:var(--cm-blue);"></div></div>
+            <p class="small muted mt">{{ know.knowledge if know else 0 }}% complete</p>
+            {% if idle_scouts and not (know and know.complete) %}
+            <form method="post" action="{{ url_for('scouting_assign_player') }}" class="flex mt" style="gap:6px;align-items:flex-end;">
+                <input type="hidden" name="player_id" value="{{ player.id }}">
+                <div><label class="small muted">Scout</label>
+                    <select name="scout_id">
+                        {% for s in idle_scouts %}
+                        <option value="{{ s.id }}">{{ s.name }} (ability {{ s.judging_ability }})</option>
+                        {% endfor %}
+                    </select></div>
+                <button class="btn btn-sm btn-accent">Continue Scouting</button>
+            </form>
+            {% endif %}
+
+        {% elif tier == 2 %}
+            <p class="small muted">Scouting in progress — report nearing completion.</p>
+            {% if know and know.ca_low %}
+            <div class="statbox mt mb">
+                <div class="stat-item">
+                    <div class="big" style="color:var(--cm-accent);">{{ "%.1f"|format([know.ca_low / 40 * 2 / 2, 0.5] | max) }}–{{ "%.1f"|format([know.ca_high / 40 * 2 / 2, 5.0] | min) }}★</div>
+                    <div class="lbl">Ability Range</div>
+                </div>
+                <div class="stat-item">
+                    <div class="big" style="color:var(--cm-blue);">{{ "%.1f"|format([know.pa_low / 40 * 2 / 2, 0.5] | max) }}–{{ "%.1f"|format([know.pa_high / 40 * 2 / 2, 5.0] | min) }}★</div>
+                    <div class="lbl">Potential Range</div>
+                </div>
+            </div>
+            {% else %}
+            <div class="statbox mt mb">
+                <div class="stat-item">
+                    <div class="big" style="color:var(--cm-accent);">~{{ "%.1f"|format(cur_star) }}★</div>
+                    <div class="lbl">Est. Ability</div>
+                </div>
+                <div class="stat-item">
+                    <div class="big" style="color:var(--cm-blue);">~{{ "%.1f"|format(pot_star) }}★</div>
+                    <div class="lbl">Est. Potential</div>
+                </div>
+            </div>
+            {% endif %}
+            <p class="small muted">Scouting progress</p>
+            <div class="conf-bar-bg"><div class="conf-bar-fill"
+                 style="width:{{ know.knowledge if know else 0 }}%;background:var(--cm-accent);"></div></div>
+            <p class="small muted mt">{{ know.knowledge if know else 0 }}% — full report coming soon</p>
+            {% if know and know.recommendation %}
+            <p class="small mt" style="font-style:italic;color:var(--cm-text-dim);">{{ know.recommendation }}</p>
+            {% endif %}
+            {% if idle_scouts %}
+            <form method="post" action="{{ url_for('scouting_assign_player') }}" class="flex mt" style="gap:6px;align-items:flex-end;">
+                <input type="hidden" name="player_id" value="{{ player.id }}">
+                <div><label class="small muted">Scout</label>
+                    <select name="scout_id">
+                        {% for s in idle_scouts %}
+                        <option value="{{ s.id }}">{{ s.name }} (ability {{ s.judging_ability }})</option>
+                        {% endfor %}
+                    </select></div>
+                <button class="btn btn-sm btn-accent">Assign Scout</button>
+            </form>
+            {% endif %}
+        {% endif %}
+
+        </div>
+    </div>
+    {% endif %}
 </div>
 <a href="{{ url_for('squad') }}" class="btn btn-sm">← Back to Squad</a>
 {% endblock %}
+

@@ -13,7 +13,7 @@ from flask import (Flask, render_template, request, redirect, url_for,
 from game.models import (db, League, Club, Player, Season, Match, MatchEvent,
                          Standing, PlayerStat, Transfer, NewsItem, GameState,
                          Lineup, Suspension, Loan, Manager, OwnerDemand,
-                         ContractNegotiation, TransferBid)
+                         ContractNegotiation, TransferBid, Scout, ScoutKnowledge)
 from game.setup import (seed_database, new_game, auto_pick_lineup,
                        database_is_seeded)
 from game import season as season_mod
@@ -25,6 +25,7 @@ from game import europe as europe_mod
 from game import staff as staff_mod
 from game import demands as demands_mod
 from game import contracts as contracts_mod
+from game import scouting as scouting_mod
 from game.morale import apply_match_morale
 from game.board import update_board_after_match
 
@@ -216,9 +217,20 @@ def player_detail(player_id):
     value = transfers_mod.get_transfer_value(player)
     on_loan = transfers_mod.is_on_loan_to(
         player.id, gs.managed_club_id, gs.current_season_id)
+    managed = player.club_id == gs.managed_club_id
+    if managed:
+        know, tier = None, 3
+    else:
+        know = scouting_mod.get_knowledge(gs, player.id)
+        tier = scouting_mod.knowledge_tier(know.knowledge if know else 0)
+    idle_scouts = scouting_mod.get_idle_club_scouts(gs) if not managed else []
+    cur_star = scouting_mod.stars(player.current_ability)
+    pot_star = scouting_mod.stars(player.potential_ability)
     return render_template('player.html', player=player, stats=stats,
-                           value=value, managed=player.club_id == gs.managed_club_id,
-                           on_loan=on_loan)
+                           value=value, managed=managed,
+                           on_loan=on_loan, know=know, tier=tier,
+                           idle_scouts=idle_scouts, cur_star=cur_star,
+                           pot_star=pot_star)
 
 
 # ---------------------------------------------------------------------------
@@ -341,6 +353,79 @@ def contracts_decline(neg_id):
     ok, msg = contracts_mod.dof_walk_away(gs, neg_id)
     flash(msg, 'success' if ok else 'error')
     return redirect(url_for('contracts'))
+
+
+# ---------------------------------------------------------------------------
+# Routes: scouting
+# ---------------------------------------------------------------------------
+
+@app.route('/scouting')
+@require_game
+def scouting():
+    gs = get_game_state()
+    return render_template('scouting.html', gs=gs, club=gs.managed_club,
+                           club_scouts=scouting_mod.get_club_scouts(gs),
+                           available=scouting_mod.get_available_scouts(),
+                           shortlist=scouting_mod.get_shortlist(gs),
+                           regions=scouting_mod.REGIONS,
+                           stars=scouting_mod.stars,
+                           tier_fn=scouting_mod.knowledge_tier)
+
+
+@app.route('/scouting/hire/<int:scout_id>', methods=['POST'])
+@require_game
+def scouting_hire(scout_id):
+    gs = get_game_state()
+    ok, msg = scouting_mod.hire_scout(gs, scout_id)
+    flash(msg, 'success' if ok else 'error')
+    return redirect(url_for('scouting'))
+
+
+@app.route('/scouting/fire/<int:scout_id>', methods=['POST'])
+@require_game
+def scouting_fire(scout_id):
+    gs = get_game_state()
+    ok, msg = scouting_mod.fire_scout(gs, scout_id)
+    flash(msg, 'success' if ok else 'error')
+    return redirect(url_for('scouting'))
+
+
+@app.route('/scouting/assign-region', methods=['POST'])
+@require_game
+def scouting_assign_region():
+    gs = get_game_state()
+    ok, msg = scouting_mod.assign_scout_to_region(
+        gs, int(request.form['scout_id']), request.form.get('region', ''))
+    flash(msg, 'success' if ok else 'error')
+    return redirect(url_for('scouting'))
+
+
+@app.route('/scouting/assign-player', methods=['POST'])
+@require_game
+def scouting_assign_player():
+    gs = get_game_state()
+    ok, msg = scouting_mod.assign_scout_to_player(
+        gs, int(request.form['scout_id']), int(request.form['player_id']))
+    flash(msg, 'success' if ok else 'error')
+    return redirect(request.referrer or url_for('scouting'))
+
+
+@app.route('/scouting/unassign/<int:scout_id>', methods=['POST'])
+@require_game
+def scouting_unassign(scout_id):
+    gs = get_game_state()
+    ok, msg = scouting_mod.unassign_scout(gs, scout_id)
+    flash(msg, 'success' if ok else 'error')
+    return redirect(url_for('scouting'))
+
+
+@app.route('/scouting/shortlist/<int:player_id>', methods=['POST'])
+@require_game
+def scouting_shortlist(player_id):
+    gs = get_game_state()
+    ok, msg = scouting_mod.toggle_shortlist(gs, player_id)
+    flash(msg, 'success' if ok else 'error')
+    return redirect(request.referrer or url_for('scouting'))
 
 
 @app.route('/transfers/accept-counter/<int:bid_id>', methods=['POST'])
@@ -529,6 +614,9 @@ def play_match(match_id):
     # Contract negotiations: agent approaches and expiry checks
     contracts_mod.maybe_agent_approach(gs)
     contracts_mod.expire_old_negotiations(gs)
+
+    # Scouting: progress assignments and region scouring
+    scouting_mod.process_scouting(gs)
 
     # Check if manager wants to resign after this result
     manager_resigned = staff_mod.check_manager_status(gs)

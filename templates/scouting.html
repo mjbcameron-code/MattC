@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+{% block title %}Scouting — {{ club.name }}{% endblock %}
+{% block nav_scouting %}active{% endblock %}
+{% block content %}
+
+{% macro av(v, top=20) %}{% if v >= top * 0.75 %}av-high{% elif v >= top * 0.5 %}av-mid{% else %}av-low{% endif %}{% endmacro %}
+{% macro star_bar(n) %}
+    {%- set full = n | int -%}
+    {%- set half = 1 if (n - full) >= 0.5 else 0 -%}
+    {%- for i in range(full) %}★{% endfor -%}
+    {%- if half %}½{% endif -%}
+{%- endmacro %}
+
+{# ── Your scouting team ────────────────────────────────────── #}
+<div class="panel">
+    <div class="panel-header">Scouting Team ({{ club_scouts | length }})</div>
+    {% if club_scouts %}
+    <div class="panel-body" style="padding:0;">
+        <table>
+            <thead><tr>
+                <th>Name</th><th>Nat</th><th class="num">Age</th>
+                <th>Region</th>
+                <th class="num">Ability</th><th class="num">Potential</th>
+                <th class="num">Wage</th>
+                <th>Assignment</th>
+                <th>Actions</th>
+            </tr></thead>
+            <tbody>
+            {% for s in club_scouts %}
+            <tr>
+                <td><strong>{{ s.name }}</strong></td>
+                <td class="small">{{ s.nationality }}</td>
+                <td class="num">{{ s.age }}</td>
+                <td><span class="small muted">{{ s.region }}</span></td>
+                <td class="num"><span class="attr-val {{ av(s.judging_ability) }}">{{ s.judging_ability }}</span></td>
+                <td class="num"><span class="attr-val {{ av(s.judging_potential) }}">{{ s.judging_potential }}</span></td>
+                <td class="num small">{{ s.wage | money }}/wk</td>
+                <td class="small">
+                    {% if s.assignment_player %}
+                        <span style="color:var(--cm-accent);">Scouting {{ s.assignment_player.name }}</span>
+                    {% elif s.assignment_region %}
+                        <span style="color:var(--cm-blue);">Scouring {{ s.assignment_region }}</span>
+                    {% else %}
+                        <span class="muted">Idle</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <div class="flex" style="gap:4px;flex-wrap:wrap;align-items:flex-end;">
+                        {# Region assignment #}
+                        <form method="post" action="{{ url_for('scouting_assign_region') }}" class="flex" style="gap:3px;align-items:flex-end;">
+                            <input type="hidden" name="scout_id" value="{{ s.id }}">
+                            <select name="region" style="font-size:11px;padding:2px 4px;">
+                                {% for r in regions %}
+                                <option value="{{ r }}" {% if s.assignment_region == r %}selected{% endif %}>{{ r }}</option>
+                                {% endfor %}
+                            </select>
+                            <button class="btn btn-sm" style="padding:2px 6px;font-size:11px;">Scout Region</button>
+                        </form>
+                        {% if s.assignment_player_id or s.assignment_region %}
+                        <form method="post" action="{{ url_for('scouting_unassign', scout_id=s.id) }}">
+                            <button class="btn btn-sm" style="padding:2px 6px;font-size:11px;">Recall</button>
+                        </form>
+                        {% endif %}
+                        <form method="post" action="{{ url_for('scouting_fire', scout_id=s.id) }}"
+                              onsubmit="return confirm('Release {{ s.name }}?');">
+                            <button class="btn btn-sm btn-danger" style="padding:2px 6px;font-size:11px;">Release</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="panel-body muted center">
+        No scouts employed. Hire from the available list below to begin building a network.
+    </div>
+    {% endif %}
+</div>
+
+{# ── Shortlist ─────────────────────────────────────────────── #}
+{% if shortlist %}
+<div class="panel">
+    <div class="panel-header">Shortlist ({{ shortlist | length }})</div>
+    <div class="panel-body" style="padding:0;">
+        <table>
+            <thead><tr>
+                <th>Player</th><th>Pos</th><th class="num">Age</th>
+                <th>Club</th><th>Knowledge</th>
+                <th>Estimate</th><th>Recommendation</th><th></th>
+            </tr></thead>
+            <tbody>
+            {% for k in shortlist %}
+            {% set p = k.player %}
+            <tr class="clickable" onclick="location.href='{{ url_for('player_detail', player_id=p.id) }}'">
+                <td>
+                    <strong>{{ p.name }}</strong>
+                    {% if k.complete %}<span style="color:var(--cm-green-light);font-size:11px;"> ✓ Full report</span>{% endif %}
+                </td>
+                <td><span class="pos pos-{{ p.position }}">{{ p.position }}</span></td>
+                <td class="num">{{ p.age }}</td>
+                <td class="small">{{ p.club.short_name if p.club else 'Free Agent' }}</td>
+                <td style="min-width:100px;">
+                    <div class="conf-bar-bg" style="margin:2px 0;">
+                        <div class="conf-bar-fill" style="width:{{ k.knowledge }}%;
+                             background:{% if k.complete %}var(--cm-green-light){% elif k.knowledge >= 60 %}var(--cm-accent){% else %}var(--cm-blue){% endif %};"></div>
+                    </div>
+                    <span class="small muted">{{ k.knowledge }}%</span>
+                </td>
+                <td class="small">
+                    {% if k.complete and k.ca_low %}
+                        {% set lo = (k.ca_low / 40 * 2) | round | int / 2 %}
+                        {% set hi = (k.ca_high / 40 * 2) | round | int / 2 %}
+                        <span style="color:var(--cm-accent);">{{ "%.1f"|format([lo,0.5]|max) }}–{{ "%.1f"|format([hi,5.0]|min) }}★</span>
+                    {% elif k.knowledge > 0 %}
+                        <span class="muted small">Partial</span>
+                    {% else %}
+                        <span class="muted small">Unknown</span>
+                    {% endif %}
+                </td>
+                <td class="small muted" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                    {% if k.recommendation %}{{ k.recommendation }}{% endif %}
+                </td>
+                <td onclick="event.stopPropagation();">
+                    <form method="post" action="{{ url_for('scouting_shortlist', player_id=p.id) }}">
+                        <button class="btn btn-sm btn-danger" style="padding:2px 6px;font-size:11px;">Remove</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{# ── Available scouts ──────────────────────────────────────── #}
+<div class="panel">
+    <div class="panel-header">Available Scouts ({{ available | length }})</div>
+    {% if available %}
+    <div class="panel-body" style="padding:0;">
+        <table>
+            <thead><tr>
+                <th>Name</th><th>Nat</th><th class="num">Age</th>
+                <th>Region</th>
+                <th class="num">Ability</th><th class="num">Potential</th>
+                <th class="num">Wage</th><th></th>
+            </tr></thead>
+            <tbody>
+            {% for s in available %}
+            <tr>
+                <td><strong>{{ s.name }}</strong></td>
+                <td class="small">{{ s.nationality }}</td>
+                <td class="num">{{ s.age }}</td>
+                <td class="small">{{ s.region }}</td>
+                <td class="num"><span class="attr-val {{ av(s.judging_ability) }}">{{ s.judging_ability }}</span></td>
+                <td class="num"><span class="attr-val {{ av(s.judging_potential) }}">{{ s.judging_potential }}</span></td>
+                <td class="num small">{{ s.wage | money }}/wk</td>
+                <td>
+                    <form method="post" action="{{ url_for('scouting_hire', scout_id=s.id) }}">
+                        <button class="btn btn-sm btn-accent">Hire</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="panel-body muted center">No scouts currently available.</div>
+    {% endif %}
+</div>
+
+<p class="small muted">
+    Scouts assigned to a <strong>region</strong> periodically flag promising players and add them to
+    your shortlist. Assign a scout to a <strong>specific player</strong> (from their profile) for a
+    full report — better scouts give tighter ability/potential estimates. A completed report
+    automatically frees the scout for a new assignment.
+</p>
+{% endblock %}
