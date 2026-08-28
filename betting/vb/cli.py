@@ -167,6 +167,90 @@ def _wrap(text: str, width: int) -> list[str]:
     return textwrap.wrap(text, width) or [""]
 
 
+def cmd_prices(args) -> int:
+    """Fair prices for a day's fixtures, for when no price feed is available.
+
+    Some leagues have no odds feed at all, and sometimes a feed is simply
+    unreachable. The model still has an opinion, so this prints what we make
+    each market — and, more usefully, the price you would need to be offered
+    before backing it.
+
+    The required price carries a deliberate margin. Every other route through
+    this system blends the model with the market before staking anything,
+    because the market is the better forecaster and the bets we like are
+    exactly the ones where our own error flatters us. With no market to blend
+    against, that correction has to come from somewhere, so the model's
+    probability is shaded and a value margin added on top.
+    """
+    from datetime import datetime, timedelta
+
+    from .models.fixture import ModelBank, build_fixture
+
+    shade = float(args.shade)
+    margin = float(args.margin)
+    day = args.date or (datetime.now() + timedelta(days=1)).date().isoformat()
+
+    with session(args.db) as conn:
+        sql = ("SELECT * FROM matches WHERE match_date = ?"
+               + (" AND league_code IN (%s)" % ",".join("?" * len(_leagues(args)))
+                  if args.leagues else ""))
+        params = [day] + (_leagues(args) if args.leagues else [])
+        rows = conn.execute(sql + " ORDER BY league_code, kickoff", params).fetchall()
+        if not rows:
+            print(f"No fixtures loaded for {day}.")
+            return 1
+
+        bank = ModelBank(conn, as_of=datetime.fromisoformat(day + "T00:00:00"))
+        print(f"\n{BOLD}Fair prices — {day}{RESET}")
+        print(f"{DIM}Model probability shaded by {shade:.0%}, then {margin:.0%} of value "
+              f"required. Back only at the 'need' price or bigger.{RESET}")
+        current = None
+        for row in rows:
+            fixture = build_fixture(conn, row, bank, with_players=False,
+                                    with_signals=not args.quiet)
+            if fixture is None:
+                continue
+            if row["league_code"] != current:
+                current = row["league_code"]
+                print(f"\n{BOLD}{load_leagues()[current].name}{RESET}")
+            quality = _rating_quality(bank, fixture)
+            print(f"\n  {BOLD}{fixture.label}{RESET}  {fixture.kickoff[11:16]}"
+                  f"   xG {fixture.probs.lam_home:.2f} – {fixture.probs.lam_away:.2f}"
+                  + (f"   {DIM}{quality}{RESET}" if quality else ""))
+            print(f"    {'market':34}{'model':>8}{'fair':>8}{'need':>8}")
+            for label, market, selection, line in (
+                (fixture.home, "h2h", "home", None),
+                ("Draw", "h2h", "draw", None),
+                (fixture.away, "h2h", "away", None),
+                ("Over 2.5 goals", "totals", "over", 2.5),
+                ("Under 2.5 goals", "totals", "under", 2.5),
+                ("Both teams to score", "btts", "yes", None),
+                (f"{fixture.home} or draw", "double_chance", "1x", None),
+                (f"{fixture.away} or draw", "double_chance", "x2", None),
+            ):
+                probability = fixture.probability(market, selection, line)
+                if not probability:
+                    continue
+                fair = 1 / probability
+                need = fair / shade * (1 + margin)
+                print(f"    {label[:33]:34}{probability:>7.1%}{fair:>8.2f}{need:>8.2f}")
+            if not args.quiet and fixture.signals:
+                for signal in sorted(fixture.signals, key=lambda x: -x.strength)[:3]:
+                    print(f"    {DIM}· {signal.text}{RESET}")
+    return 0
+
+
+def _rating_quality(bank, fixture) -> str:
+    """Flag a fixture whose rating had to be carried up from another division."""
+    notes = []
+    for side, team_id in (("home", fixture.home_id), ("away", fixture.away_id)):
+        _, _, source = bank.rating(fixture.league_code, team_id)
+        if source != fixture.league_code:
+            name = fixture.home if side == "home" else fixture.away
+            notes.append(f"{name} rated from {source}")
+    return "; ".join(notes)
+
+
 def cmd_settle(args) -> int:
     with session(args.db) as conn:
         counts = settle.settle_bets(conn)
@@ -404,6 +488,15 @@ def build_parser() -> argparse.ArgumentParser:
     tips.add_argument("--record", action="store_true", help="write them to the ledger")
     tips.add_argument("--no-outrights", action="store_true")
     tips.add_argument("--json", action="store_true")
+
+    prices = add("prices", cmd_prices, "fair prices for a day's fixtures (no odds needed)")
+    prices.add_argument("--date", help="YYYY-MM-DD, default tomorrow")
+    prices.add_argument("--leagues")
+    prices.add_argument("--shade", type=float, default=0.92,
+                        help="shade model probabilities by this, for over-confidence")
+    prices.add_argument("--margin", type=float, default=0.10,
+                        help="value required on top of the shaded price")
+    prices.add_argument("--quiet", action="store_true", help="hide the reasoning")
 
     add("settle", cmd_settle, "grade everything whose result is in")
 

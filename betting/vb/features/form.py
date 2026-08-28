@@ -60,6 +60,17 @@ class TeamForm:
     corners_for: float
     corners_against: float
     cards_for: float
+    xg_matches: int = 0            # how many of those games had usable xG
+
+    @property
+    def has_xg(self) -> bool:
+        """True only when most of the run has an xG figure behind it.
+
+        Some feeds carry goals and nothing else. Without shots there is no xG
+        and no proxy for it, and a "goals versus xG" signal computed against a
+        zero is worse than no signal at all.
+        """
+        return self.played > 0 and self.xg_matches >= max(3, self.played - 1)
 
     @property
     def points_per_game(self) -> float:
@@ -104,7 +115,7 @@ def recent_form(
 
     points = goals_for = goals_against = clean = failed = 0
     xg_for = xg_against = corners_for = corners_against = cards = 0.0
-    btts = over25 = 0
+    btts = over25 = xg_matches = 0
     results: list[str] = []
     for r in rows:
         home = r["home_id"] == team_id
@@ -128,6 +139,7 @@ def recent_form(
         if home_xg is not None and away_xg is not None:
             xg_for += home_xg if home else away_xg
             xg_against += away_xg if home else home_xg
+            xg_matches += 1
         corners_for += (r["hc"] if home else r["ac"]) or 0
         corners_against += (r["ac"] if home else r["hc"]) or 0
         cards += (r["hy"] if home else r["ay"]) or 0
@@ -140,7 +152,7 @@ def recent_form(
         btts_rate=btts / played, over25_rate=over25 / played,
         clean_sheets=clean, failed_to_score=failed,
         corners_for=corners_for / played, corners_against=corners_against / played,
-        cards_for=cards / played,
+        cards_for=cards / played, xg_matches=xg_matches,
     )
 
 
@@ -237,7 +249,10 @@ def build_signals(
                 ))
 
     # --- xG versus results --------------------------------------------------
+    # Only where the league actually has the shot data to compute it.
     for side, form in (("home", home), ("away", away)):
+        if not form.has_xg:
+            continue
         gap = form.finishing_gap
         if form.played >= 5 and gap <= -2.0:
             signals.append(Signal(
@@ -265,7 +280,7 @@ def build_signals(
             ))
 
     home_xgd, away_xgd = home.xg_diff_per_game, away.xg_diff_per_game
-    if abs(home_xgd - away_xgd) > 0.6:
+    if home.has_xg and away.has_xg and abs(home_xgd - away_xgd) > 0.6:
         better, worse = (home, away) if home_xgd > away_xgd else (away, home)
         side = "home" if better is home else "away"
         signals.append(Signal(

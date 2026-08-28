@@ -129,6 +129,41 @@ leagues:
     understat: La_liga
     enabled: true
 
+  # ---- Second tiers, carried for ratings only -----------------------------
+  # A promoted club has no record in its new division. These are loaded so its
+  # rating can be carried up from where it actually played, shifted by the gap
+  # between the two leagues (see league_strength in settings.yaml). They are
+  # not tipped: set enabled to true if you want to bet them.
+  - code: D2
+    name: 2. Bundesliga
+    country: Germany
+    tier: 2
+    football_data: D2
+    odds_api: soccer_germany_bundesliga2
+    understat: null
+    openfootball: de.2
+    enabled: false
+
+  - code: I2
+    name: Serie B
+    country: Italy
+    tier: 2
+    football_data: I2
+    odds_api: soccer_italy_serie_b
+    understat: null
+    openfootball: it.2
+    enabled: false
+
+  - code: SP2
+    name: La Liga 2
+    country: Spain
+    tier: 2
+    football_data: SP2
+    odds_api: soccer_spain_segunda_division
+    understat: null
+    openfootball: es.2
+    enabled: false
+
   # ---- UEFA --------------------------------------------------------------
   # football-data.co.uk carries no European club competition file, so these
   # run off openfootball fixtures + live odds, and team ratings are borrowed

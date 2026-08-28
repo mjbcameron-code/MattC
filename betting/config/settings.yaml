@@ -76,6 +76,9 @@ model:
   # Half-weight is reached at this many matches per club. A promoted side eight
   # games into a season gets half the say of one thirty games in.
   confidence_k: 8.0
+  # Matches in a new division before a promoted club is judged on that record
+  # alone rather than on what it did in the division below.
+  promoted_blend_matches: 10
   # Shrinkage of a team's rating toward the league mean when it has few games.
   shrinkage_matches: 10
   # How much a team's strength is moved by missing players. A squad reported as
@@ -104,6 +107,9 @@ league_strength:
   SC1: -0.62
   SC2: -0.74
   SC3: -0.84
+  D2: -0.34
+  I2: -0.36
+  SP2: -0.34
 
 markets:
   goal_lines: [0.5, 1.5, 2.5, 3.5, 4.5]

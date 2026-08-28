@@ -20,7 +20,8 @@ BASE = "https://raw.githubusercontent.com/openfootball/football.json/master"
 # league code -> openfootball file stem
 FILE_STEMS = {
     "E0": "en.1", "E1": "en.2", "E2": "en.3", "E3": "en.4",
-    "D1": "de.1", "I1": "it.1", "SP1": "es.1",
+    "D1": "de.1", "D2": "de.2", "I1": "it.1", "I2": "it.2",
+    "SP1": "es.1", "SP2": "es.2",
     "UCL": "cl", "UEL": "el",
 }
 
@@ -39,22 +40,49 @@ def url_for(league_code: str, season: str) -> str:
     return f"{BASE}/{season_dir(season)}/{stem}.json"
 
 
+def _matches_in(data) -> list[dict]:
+    """Pull the match list out of whichever shape the file uses."""
+    if isinstance(data, list):
+        return data
+    if not isinstance(data, dict):
+        return []
+    if isinstance(data.get("matches"), list):
+        return data["matches"]
+    matches: list[dict] = []
+    for round_ in data.get("rounds", []) or []:
+        matches.extend(round_.get("matches", []) or [])
+    return matches
+
+
+def _score(match: dict) -> tuple[list, list]:
+    """Return (full time, half time) goals.
+
+    The feed is inconsistent: most entries carry ``{"ft": [1, 0], "ht": [...]}``
+    but a fair number use a bare ``[1, 0]`` instead, and an unplayed fixture has
+    no score at all. All three shapes appear in the same file.
+    """
+    score = match.get("score")
+    if isinstance(score, list):
+        return (score, [])
+    if isinstance(score, dict):
+        return (score.get("ft") or [], score.get("ht") or [])
+    return ([], [])
+
+
 def load_json_text(conn: sqlite3.Connection, league_code: str, season: str, text: str) -> int:
     data = json.loads(text)
     count = 0
-    for match in data.get("matches", []):
+    for match in _matches_in(data):
         date = match.get("date")
-        if not date:
+        if not date or not match.get("team1") or not match.get("team2"):
             continue
-        kickoff = f"{date}T{match.get('time', '19:00')}:00" if len(match.get("time", "")) == 5 \
-            else f"{date}T19:00:00"
-        score = match.get("score") or {}
-        ft = score.get("ft") or []
+        time = match.get("time") or ""
+        kickoff = f"{date}T{time}:00" if len(time) == 5 else f"{date}T19:00:00"
+        ft, ht = _score(match)
         stats = {"source": "openfootball", "stage": match.get("round")}
-        if len(ft) == 2:
+        if len(ft) == 2 and all(x is not None for x in ft):
             stats["fthg"], stats["ftag"] = int(ft[0]), int(ft[1])
-        ht = score.get("ht") or []
-        if len(ht) == 2:
+        if len(ht) == 2 and all(x is not None for x in ht):
             stats["hthg"], stats["htag"] = int(ht[0]), int(ht[1])
         upsert_match(
             conn, league_code, season, kickoff,

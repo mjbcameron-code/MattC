@@ -41,6 +41,24 @@ def _strip_accents(text: str) -> str:
     )
 
 
+# Suffixes that are pure furniture on the way in. "AFC Bournemouth" keeps its
+# prefix; "Liverpool FC" and "Hull City AFC" lose their tails.
+_TRAILING_NOISE = (" FC", " AFC", " CF", " F.C.", " A.F.C.")
+
+
+def tidy_name(name: str) -> str:
+    """The name as it should be displayed, not as the feed happened to spell it."""
+    cleaned = " ".join((name or "").split())
+    changed = True
+    while changed:
+        changed = False
+        for suffix in _TRAILING_NOISE:
+            if cleaned.upper().endswith(suffix.upper()) and len(cleaned) > len(suffix) + 2:
+                cleaned = cleaned[: -len(suffix)].strip()
+                changed = True
+    return cleaned or name
+
+
 def normalise(name: str) -> str:
     """Aggressive normalisation used only for fuzzy matching, never for display."""
     text = _strip_accents(name).lower()
@@ -189,7 +207,7 @@ def resolve_team(
 
     cur = conn.execute(
         "INSERT INTO teams (name, country, league_code) VALUES (?,?,?)",
-        (canonical, country, league_code),
+        (tidy_name(canonical), country, league_code),
     )
     team_id = int(cur.lastrowid)
     _link_alias(conn, key, team_id, source)

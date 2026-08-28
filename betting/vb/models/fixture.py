@@ -13,6 +13,7 @@ neutral-ish footing (the home edge in Europe is real but smaller).
 
 from __future__ import annotations
 
+import math
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -71,6 +72,63 @@ class ModelBank:
 
     def league_strength(self, league_code: str) -> float:
         return float((self.settings.get("league_strength", {}) or {}).get(league_code, 0.0))
+
+    def rating(self, league_code: str, team_id: int) -> tuple[float, float, str]:
+        """Attack and defence for a club, carried up a division where needed.
+
+        A promoted side has no record in its new league, and rating it as
+        league-average is badly wrong — a promoted side is usually well below
+        average. So its rating is taken from the division it actually played in
+        and shifted by the gap between the two (the `league_strength` priors),
+        then blended back toward its new-league form as that accumulates.
+
+        Returns (attack, defence, source league).
+        """
+        model = self.ratings(league_code)
+        seen = model.matches_per_team.get(team_id, 0) if model else 0
+        home_attack = model.attack.get(team_id, 0.0) if model else 0.0
+        home_defence = model.defence.get(team_id, 0.0) if model else 0.0
+        if seen >= self._settled_matches:
+            return home_attack, home_defence, league_code
+
+        borrowed = self._borrow(league_code, team_id)
+        if borrowed is None:
+            return home_attack, home_defence, league_code
+        other_attack, other_defence, other_league = borrowed
+
+        # Weight the new division's evidence in as it arrives.
+        weight = seen / (seen + self._settled_matches)
+        return (
+            weight * home_attack + (1 - weight) * other_attack,
+            weight * home_defence + (1 - weight) * other_defence,
+            league_code if weight > 0.5 else other_league,
+        )
+
+    def _borrow(self, league_code: str, team_id: int):
+        """Find this club's rating in whichever league it has actually played in."""
+        rows = self.conn.execute(
+            "SELECT league_code, COUNT(*) AS n FROM matches "
+            "WHERE (home_id = ? OR away_id = ?) AND status = 'played' "
+            "AND league_code != ? GROUP BY league_code ORDER BY n DESC",
+            (team_id, team_id, league_code),
+        ).fetchall()
+        shift_to = self.league_strength(league_code)
+        for row in rows:
+            if row["n"] < self._settled_matches:
+                continue
+            other = self.ratings(row["league_code"])
+            if other is None or team_id not in other.attack:
+                continue
+            shift = self.league_strength(row["league_code"]) - shift_to
+            return (other.attack[team_id] + shift,
+                    other.defence[team_id] + shift,
+                    row["league_code"])
+        return None
+
+    @property
+    def _settled_matches(self) -> int:
+        """Matches in the new division before its own record is trusted outright."""
+        return int(self.settings.get("model.promoted_blend_matches", 10))
 
 
 @dataclass
@@ -169,7 +227,11 @@ def build_fixture(
         model = bank.ratings(league_code)
         if model is None:
             return None
-        lam_home, lam_away = model.expected_goals(home_id, away_id)
+        home_attack, home_defence, _ = bank.rating(league_code, home_id)
+        away_attack, away_defence, _ = bank.rating(league_code, away_id)
+        lam_home = math.exp(model.base + home_attack - away_defence + model.home_adv)
+        lam_away = math.exp(model.base + away_attack - home_defence)
+        lam_home, lam_away = max(0.15, lam_home), max(0.15, lam_away)
         rho, rating_league, neutral = model.rho, league_code, False
 
     # --- team news moves the expectation ------------------------------------
@@ -218,8 +280,6 @@ def build_fixture(
         ratings_model = bank.ratings(rating_league)
         league_goals = 1.4
         if ratings_model is not None:
-            import math
-
             league_goals = math.exp(ratings_model.base)
         card_league = (card_model.league_home + card_model.league_away) / 2 if card_model else 2.0
         for side, team_id in (("home", home_id), ("away", away_id)):
@@ -249,8 +309,6 @@ def _uefa_rates(conn: sqlite3.Connection, bank: ModelBank, home_id: int,
     The two ratings live on different scales, so each is shifted by its
     league's strength prior before they are compared.
     """
-    import math
-
     home_league = bank.home_league(home_id, "E0")
     away_league = bank.home_league(away_id, "E0")
     home_model = bank.ratings(home_league)
