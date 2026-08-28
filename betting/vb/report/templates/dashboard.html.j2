@@ -1,0 +1,591 @@
+{# ---------------------------------------------------------------------------
+   Design notes
+   Colour  paper #F2F3F7 / card #FFF / ink #161A23 / rule #DDE1EA,
+           coupon blue #2A4FCB as the single accent; profit #0B6B45 and
+           loss #E0654A are semantic and never used as decoration. Dark mode
+           re-steps all of them rather than inverting.
+   Type    Archivo for the furniture, Source Serif 4 for the write-ups (they
+           are editorial copy and deserve a reading face), JetBrains Mono for
+           every figure so the columns line up.
+   Layout  One column, summary before detail: stat strip, points curve, the
+           week's tips, then the full ledger and the diagnostics underneath.
+   Colour is never the only signal for profit and loss — the sign is always
+   printed and the breakdown bars sit either side of a zero axis.
+--------------------------------------------------------------------------- #}
+<title>{{ title }}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+:root {
+  --paper: #F2F3F7;
+  --card: #FFFFFF;
+  --card-sunk: #FAFBFD;
+  --ink: #161A23;
+  --ink-2: #3A4152;
+  --muted: #5C6377;
+  --rule: #DDE1EA;
+  --rule-soft: #EBEEF4;
+  --accent: #2A4FCB;
+  --accent-soft: #E7EBFB;
+  --profit: #0B6B45;
+  --profit-soft: #E3F0EA;
+  --loss: #E0654A;
+  --loss-soft: #FCEAE5;
+  /* The headline tile is a dark "board" in BOTH themes — a deliberate constant,
+     which is why it gets its own tokens rather than borrowing --ink as a
+     background (that inverts in dark mode and renders white on white). */
+  --hero-bg: #161A23;
+  --hero-fg: #FFFFFF;
+  --hero-muted: rgba(255, 255, 255, .62);
+  --hero-up: #7BE0AE;
+  --hero-down: #FFB79E;
+  --shadow: 0 1px 2px rgba(22, 26, 35, .06), 0 8px 24px rgba(22, 26, 35, .05);
+  --radius: 10px;
+  --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0E1017;
+    --card: #161A24;
+    --card-sunk: #12151E;
+    --ink: #E9ECF3;
+    --ink-2: #C2C8D6;
+    --muted: #8F97AA;
+    --rule: #242A38;
+    --rule-soft: #1C212C;
+    --accent: #8AA0FF;
+    --accent-soft: #1D2440;
+    --profit: #2E9E74;
+    --profit-soft: #12271F;
+    --loss: #FFA98C;
+    --loss-soft: #2C1C18;
+    --hero-bg: #1D2331;
+    --hero-fg: #FFFFFF;
+    --hero-muted: rgba(255, 255, 255, .66);
+    --hero-up: #7BE0AE;
+    --hero-down: #FFB79E;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"] {
+  --hero-bg: #1D2331;
+  --hero-fg: #FFFFFF;
+  --hero-muted: rgba(255, 255, 255, .66);
+  --hero-up: #7BE0AE;
+  --hero-down: #FFB79E;
+  --paper: #0E1017;
+  --card: #161A24;
+  --card-sunk: #12151E;
+  --ink: #E9ECF3;
+  --ink-2: #C2C8D6;
+  --muted: #8F97AA;
+  --rule: #242A38;
+  --rule-soft: #1C212C;
+  --accent: #8AA0FF;
+  --accent-soft: #1D2440;
+  --profit: #2E9E74;
+  --profit-soft: #12271F;
+  --loss: #FFA98C;
+  --loss-soft: #2C1C18;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1080px; margin: 0 auto; padding: 32px 20px 72px; }
+h1, h2, h3 { text-wrap: balance; margin: 0; letter-spacing: -0.015em; }
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+
+.eyebrow {
+  font-size: 11px; font-weight: 600; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--muted);
+}
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+/* ---- masthead ---------------------------------------------------------- */
+.masthead { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end;
+  justify-content: space-between; padding-bottom: 18px;
+  border-bottom: 2px solid var(--ink); }
+.masthead h1 { font-size: clamp(30px, 5vw, 44px); font-weight: 700; line-height: 1.02; }
+.masthead .sub { color: var(--muted); font-size: 13px; margin-top: 6px; }
+.notice {
+  margin: 20px 0 0; padding: 12px 14px; border-radius: var(--radius);
+  background: var(--loss-soft); border: 1px solid var(--loss);
+  color: var(--ink); font-size: 13px;
+}
+.notice strong { color: var(--loss); }
+
+/* ---- stat strip -------------------------------------------------------- */
+.stats { display: grid; gap: 12px; margin-top: 26px;
+  grid-template-columns: repeat(6, minmax(0, 1fr)); }
+@media (max-width: 900px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.stat { background: var(--card); border: 1px solid var(--rule);
+  border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow); }
+.stat .v { font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: 24px; font-weight: 700; letter-spacing: -0.02em; margin-top: 4px; }
+.stat .note { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.stat.hero { grid-column: span 2; background: var(--hero-bg); border-color: var(--hero-bg); }
+.stat.hero .eyebrow { color: var(--hero-muted); }
+.stat.hero .v { font-size: 42px; color: var(--hero-fg); }
+.stat.hero .note { color: var(--hero-muted); }
+.stat.hero.up .v { color: var(--hero-up); }
+.stat.hero.down .v { color: var(--hero-down); }
+.up { color: var(--profit); }
+.down { color: var(--loss); }
+
+/* ---- panels ------------------------------------------------------------ */
+.panel { background: var(--card); border: 1px solid var(--rule);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  margin-top: 26px; overflow: hidden; }
+.panel > header { display: flex; align-items: baseline; justify-content: space-between;
+  gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--rule-soft); }
+.panel > header h2 { font-size: 16px; font-weight: 600; }
+.panel > header .hint { font-size: 12px; color: var(--muted); }
+.panel .body { padding: 18px; }
+
+/* ---- chart ------------------------------------------------------------- */
+#curve { display: block; width: 100%; height: 260px; touch-action: none; }
+.chart-empty { padding: 40px 18px; text-align: center; color: var(--muted); font-size: 14px; }
+.tip-tag { position: absolute; pointer-events: none; background: var(--hero-bg);
+  color: var(--hero-fg); font-family: var(--mono); font-size: 11px; padding: 6px 8px;
+  border-radius: 6px; white-space: nowrap; opacity: 0; transition: opacity .1s; }
+.chart-holder { position: relative; padding: 8px 6px 4px; }
+
+/* ---- tips -------------------------------------------------------------- */
+.tips { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.tip { background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius);
+  padding: 16px 18px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 8px; }
+.tip.botw { grid-column: 1 / -1; border-color: var(--accent); border-width: 1px;
+  box-shadow: var(--shadow), inset 4px 0 0 var(--accent); padding-left: 24px; }
+.tip h3 { font-size: 17px; font-weight: 600; line-height: 1.3; }
+.tip.botw h3 { font-size: 21px; }
+.tip .meta { display: flex; flex-wrap: wrap; gap: 8px 14px; font-size: 12px; color: var(--muted); }
+.tip .prose { font-family: var(--serif); font-size: 15.5px; line-height: 1.62;
+  color: var(--ink-2); max-width: 66ch; }
+.tip .terms { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+.pill { font-family: var(--mono); font-size: 12px; padding: 3px 8px; border-radius: 999px;
+  border: 1px solid var(--rule); background: var(--card-sunk); color: var(--ink-2); }
+.pill.stake { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.stars { font-size: 13px; letter-spacing: .08em; color: var(--accent); }
+.legs { margin: 0; padding-left: 18px; font-size: 13px; color: var(--ink-2); }
+.legs li { margin: 2px 0; }
+
+/* ---- tables ------------------------------------------------------------ */
+.scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+th { text-align: left; font-size: 11px; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--muted); font-weight: 600; padding: 10px 12px; border-bottom: 1px solid var(--rule);
+  white-space: nowrap; }
+td { padding: 10px 12px; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+td.sel { min-width: 240px; max-width: 380px; }
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover { background: var(--card-sunk); }
+td.n, th.n { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums;
+  white-space: nowrap; }
+.ref { font-family: var(--mono); font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px;
+  border-radius: 999px; border: 1px solid var(--rule); white-space: nowrap; }
+.badge.won { color: var(--profit); border-color: var(--profit); background: var(--profit-soft); }
+.badge.lost { color: var(--loss); border-color: var(--loss); background: var(--loss-soft); }
+.badge.pending { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.badge.void { color: var(--muted); }
+details.why summary { cursor: pointer; font-size: 12px; color: var(--muted); margin-top: 4px; }
+details.why p { font-family: var(--serif); font-size: 14px; color: var(--ink-2);
+  margin: 6px 0 0; max-width: 62ch; }
+
+/* ---- breakdown bars ---------------------------------------------------- */
+.grid3 { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+.bars { display: flex; flex-direction: column; gap: 8px; }
+.bar-row { display: grid; grid-template-columns: 96px 1fr 74px; gap: 10px; align-items: center;
+  font-size: 13px; }
+.bar-track { position: relative; height: 16px; background: var(--card-sunk);
+  border-radius: 3px; overflow: hidden; }
+.bar-zero { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--rule); }
+.bar-fill { position: absolute; top: 2px; bottom: 2px; border-radius: 2px; }
+.bar-fill.pos { background: var(--profit); }
+.bar-fill.neg { background: var(--loss); }
+.bar-row .name { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+
+.foot { margin-top: 34px; padding-top: 16px; border-top: 1px solid var(--rule);
+  font-size: 12px; color: var(--muted); max-width: 70ch; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+@media (max-width: 900px) { .stat.hero { grid-column: 1 / -1; } }
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <div>
+      <div class="eyebrow">{{ tipster }} · Season {{ season }}</div>
+      <h1>{{ title }}</h1>
+      <div class="sub">Value bets, staked in points, tracked to the last penny of a loser.</div>
+    </div>
+    <div class="sub num">Updated {{ generated }}</div>
+  </header>
+
+  {% if synthetic %}
+  <p class="notice"><strong>Demonstration data.</strong> Every result, statistic and
+  price on this page was generated by <span class="num">vb.sample</span> from a random
+  model. The clubs are real; nothing else here is. Point the tool at live feeds
+  (<span class="num">vb update</span>) before reading anything into these numbers.</p>
+  {% endif %}
+
+  {# ---- summary ------------------------------------------------------- #}
+  <section class="stats">
+    <div class="stat hero {{ 'up' if summary.pnl > 0 else 'down' if summary.pnl < 0 else '' }}">
+      <div class="eyebrow">Season points</div>
+      <div class="v">{{ summary.pnl | pts }}</div>
+      <div class="note">{{ summary.settled }} bets settled · {{ '%.2f' % summary.staked }} pts staked</div>
+    </div>
+    <div class="stat">
+      <div class="eyebrow">Return on stake</div>
+      <div class="v {{ 'up' if summary.roi > 0 else 'down' if summary.roi < 0 else '' }}">{{ summary.roi | signed_pct }}</div>
+      <div class="note">{{ '%+.3f' % summary.yield_per_bet }} pts per bet</div>
+    </div>
+    <div class="stat">
+      <div class="eyebrow">Strike rate</div>
+      <div class="v">{{ summary.strike_rate | pct }}</div>
+      <div class="note">{{ summary.won }}W · {{ summary.lost }}L · {{ summary.void }}V</div>
+    </div>
+    <div class="stat">
+      <div class="eyebrow">Closing line value</div>
+      <div class="v {{ 'up' if summary.clv_average > 0 else 'down' if summary.clv_average < 0 else '' }}">{{ summary.clv_average | signed_pct }}</div>
+      <div class="note">Beat the close {{ summary.clv_beat_rate | pct }} of {{ summary.clv_measured }} bets</div>
+    </div>
+    <div class="stat">
+      <div class="eyebrow">Average price</div>
+      <div class="v">{{ '%.2f' % summary.average_odds }}</div>
+      <div class="note">Average edge {{ summary.average_edge | pct }}</div>
+    </div>
+  </section>
+
+  {# ---- points curve --------------------------------------------------- #}
+  <section class="panel">
+    <header>
+      <h2>Running points, settled bets in order</h2>
+      <span class="hint">Hover for the total after any bet</span>
+    </header>
+    {% if curve %}
+    <div class="chart-holder">
+      <svg id="curve" role="img" aria-label="Cumulative profit and loss in points across the season"></svg>
+      <div class="tip-tag" id="curve-tip"></div>
+    </div>
+    {% else %}
+    <p class="chart-empty">No settled bets yet — the curve starts with the first result.</p>
+    {% endif %}
+  </section>
+
+  {# ---- this week's tips ----------------------------------------------- #}
+  {% if tips %}
+  <section style="margin-top:30px">
+    <header style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:14px">
+      <h2 style="font-size:20px;font-weight:700">This week's card</h2>
+      <span class="hint" style="font-size:12px;color:var(--muted)">
+        {{ tips | length }} bets · {{ '%.2f' % (tips | sum(attribute='stake')) }} pts advised</span>
+    </header>
+    <div class="tips">
+      {% for tip in tips %}
+      <article class="tip {{ 'botw' if tip.is_botw }}">
+        <div class="eyebrow">{{ tip.league }} · {{ tip.date }}{% if tip.fixture %} · {{ tip.fixture }}{% endif %}</div>
+        <h3>{{ tip.headline }}</h3>
+        <div class="meta">
+          <span class="stars" title="{{ tip.confidence }} out of 5">{{ tip.stars }}</span>
+          <span>{{ tip.market }}</span>
+          {% if tip.book %}<span>{{ tip.book }}</span>{% endif %}
+        </div>
+        <div class="terms">
+          <span class="pill stake">{{ tip.stake }} pt{{ 's' if tip.stake != 1 }}</span>
+          <span class="pill">{% if tip.target_price %}Target {{ '%.2f' % tip.target_price }}+{% else %}{{ '%.2f' % tip.price }}{% endif %}</span>
+          <span class="pill">Edge {{ tip.edge | pct }}</span>
+        </div>
+        <p class="prose">{{ tip.body }}</p>
+        {% if tip.legs %}
+        <ul class="legs">
+          {% for leg in tip.legs %}
+          {# Only name the fixture when it differs from the card's own — a bet
+             builder's legs are all the same match. And a builder leg carries our
+             price, not one you can take, so it is labelled as such. #}
+          <li>{{ leg.selection }}{% if leg.fixture and leg.fixture != tip.fixture %} — <span class="num">{{ leg.fixture }}</span>{% endif %}
+            {% if leg.price %}
+              <span class="num">{% if tip.kind == 'builder' %}(we make it {{ '%.2f' % leg.price }}){% else %}@ {{ '%.2f' % leg.price }}{% endif %}</span>
+            {% endif %}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  {# ---- the ledger ----------------------------------------------------- #}
+  <section class="panel">
+    <header>
+      <h2>The ledger</h2>
+      <span class="hint">{{ bets | length }} bets, newest first · {{ summary.pending }} still open</span>
+    </header>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Ref</th><th>Date</th><th>Selection</th><th>League</th>
+            <th class="n">Price</th><th class="n">Stake</th><th>Result</th>
+            <th class="n">± pts</th><th class="n">Running</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for bet in bets %}
+          <tr>
+            <td class="ref">{{ bet.ref }}</td>
+            <td class="num" style="white-space:nowrap">{{ bet.date }}</td>
+            <td class="sel">
+              <strong>{{ bet.selection }}</strong>
+              <div style="font-size:12px;color:var(--muted)">{{ bet.market }}{% if bet.book %} · {{ bet.book }}{% endif %}</div>
+              {% if bet.reasoning %}
+              <details class="why"><summary>Why it was tipped</summary><p>{{ bet.reasoning }}</p></details>
+              {% endif %}
+            </td>
+            <td style="white-space:nowrap">{{ bet.league }}</td>
+            <td class="n">{{ '%.2f' % bet.price }}</td>
+            <td class="n">{{ '%.2f' % bet.stake }}</td>
+            <td><span class="badge {{ bet.status if bet.status in ['won','lost','pending','void'] else ('won' if 'won' in bet.status else 'lost') }}">{{ bet.status_label }}</span></td>
+            <td class="n {{ 'up' if bet.pnl and bet.pnl > 0 else 'down' if bet.pnl and bet.pnl < 0 else '' }}">{{ bet.pnl | pts }}</td>
+            <td class="n">{% if bet.running is not none %}{{ '%+.2f' % bet.running }}{% else %}—{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {# ---- breakdowns ------------------------------------------------------ #}
+  <div class="grid3" style="margin-top:26px">
+    {% for group, label in [(by_league, 'By competition'), (by_market, 'By market'), (by_type, 'By bet type')] %}
+    <section class="panel" style="margin-top:0">
+      <header><h2>{{ label }}</h2><span class="hint">points</span></header>
+      <div class="body">
+        {% if group %}
+        {% set span = (group | map(attribute='pnl') | map('abs') | max) or 1 %}
+        <div class="bars">
+          {% for row in group %}
+          <div class="bar-row">
+            <span class="name" title="{{ row.name }}">{{ row.name }}</span>
+            <span class="bar-track">
+              <span class="bar-zero" style="left:50%"></span>
+              <span class="bar-fill {{ 'pos' if row.pnl >= 0 else 'neg' }}"
+                    style="{% if row.pnl >= 0 %}left:50%;width:{{ (row.pnl / span * 49) | round(2) }}%{% else %}right:50%;width:{{ (-row.pnl / span * 49) | round(2) }}%{% endif %}"></span>
+            </span>
+            <span class="n num {{ 'up' if row.pnl > 0 else 'down' if row.pnl < 0 else '' }}"
+                  style="text-align:right">{{ '%+.2f' % row.pnl }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p style="color:var(--muted);font-size:13px;margin:0">Nothing settled yet.</p>
+        {% endif %}
+      </div>
+    </section>
+    {% endfor %}
+  </div>
+
+  {# ---- diagnostics ----------------------------------------------------- #}
+  <section class="panel">
+    <header>
+      <h2>Is the model honest?</h2>
+      <span class="hint">The numbers that matter before the profit does</span>
+    </header>
+    <div class="body">
+      <p style="font-family:var(--serif);color:var(--ink-2);max-width:66ch;margin:0 0 16px">
+        Over a few hundred bets, profit is mostly luck. These two checks are not.
+        Calibration asks whether things called 60% happen 60% of the time; the
+        expected-versus-actual line asks whether the edge the model claims is
+        turning into points. If calibration drifts, the model needs fixing before
+        another bet is placed.
+      </p>
+      <div class="grid3">
+        <div>
+          <div class="eyebrow" style="margin-bottom:8px">Calibration</div>
+          <div class="scroll">
+            <table>
+              <thead><tr><th>Model said</th><th class="n">Bets</th><th class="n">Predicted</th><th class="n">Actual</th></tr></thead>
+              <tbody>
+                {% for row in calibration %}
+                <tr>
+                  <td class="num">{{ row.range }}</td>
+                  <td class="n">{{ row.bets }}</td>
+                  <td class="n">{{ row.predicted | pct }}</td>
+                  <td class="n {{ 'up' if row.actual >= row.predicted else 'down' }}">{{ row.actual | pct }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" style="color:var(--muted)">Not enough settled bets yet.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div>
+          <div class="eyebrow" style="margin-bottom:8px">Expected against actual</div>
+          <table>
+            <tbody>
+              <tr><td>Edge the model claimed</td><td class="n">{{ '%+.2f' % summary.expected_pnl }} pts</td></tr>
+              <tr><td>Points actually won</td><td class="n {{ 'up' if summary.pnl > 0 else 'down' }}">{{ summary.pnl | pts }} pts</td></tr>
+              <tr><td>Shortfall</td><td class="n">{{ '%+.2f' % (summary.pnl - summary.expected_pnl) }} pts</td></tr>
+              <tr><td>Best winning run</td><td class="n">{{ summary.best_run }}</td></tr>
+              <tr><td>Worst losing run</td><td class="n">{{ summary.worst_run }}</td></tr>
+              <tr><td>Largest drawdown</td><td class="n">{{ '%.2f' % summary.max_drawdown }} pts</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <div class="eyebrow" style="margin-bottom:8px">By month</div>
+          <table>
+            <tbody>
+              {% for row in by_month %}
+              <tr><td class="num">{{ row.name }}</td><td class="n">{{ row.bets }}</td>
+                  <td class="n {{ 'up' if row.pnl > 0 else 'down' if row.pnl < 0 else '' }}">{{ '%+.2f' % row.pnl }}</td></tr>
+              {% else %}
+              <tr><td style="color:var(--muted)">No settled months yet.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <p class="foot">
+    Stakes are points, never money: one point is one unit of whatever you choose a
+    unit to be. Prices are the best available at the time of writing and move
+    quickly. Betting is a leisure activity with a negative expected return for
+    almost everyone who does it — bet only what you can afford to lose, and if it
+    stops being fun, stop. GambleAware: 0808 8020 133.
+  </p>
+</div>
+
+<script>
+(function () {
+  const data = {{ curve_json | safe }};
+  const svg = document.getElementById("curve");
+  if (!svg || !data.length) return;
+  const tag = document.getElementById("curve-tip");
+  const NS = "http://www.w3.org/2000/svg";
+  const pad = { t: 16, r: 16, b: 26, l: 44 };
+
+  function css(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  function draw() {
+    const w = svg.clientWidth || 800;
+    const h = svg.clientHeight || 260;
+    svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+    // Snap the scale to round numbers — an axis labelled +17 and -6 reads as
+    // an accident, and points are counted in whole units.
+    const niceStep = (range, target) => {
+      const raw = range / target;
+      const mag = Math.pow(10, Math.floor(Math.log10(raw || 1)));
+      const norm = raw / mag;
+      return (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10) * mag;
+    };
+    const values = data.map(d => d.p);
+    let lo = Math.min(0, ...values), hi = Math.max(0, ...values);
+    if (hi - lo < 1) { hi += 1; lo -= 1; }
+    const step = niceStep((hi - lo) * 1.2, 4);
+    lo = Math.floor(lo / step) * step - (Math.abs(lo % step) < 1e-9 ? step : 0);
+    hi = Math.ceil(hi / step) * step;
+    const x = i => pad.l + (i / Math.max(1, data.length - 1)) * (w - pad.l - pad.r);
+    const y = v => pad.t + (1 - (v - lo) / (hi - lo)) * (h - pad.t - pad.b);
+
+    const add = (name, attrs, parent) => {
+      const el = document.createElementNS(NS, name);
+      for (const k in attrs) el.setAttribute(k, attrs[k]);
+      (parent || svg).appendChild(el);
+      return el;
+    };
+
+    // recessive gridlines with a stronger zero line
+    for (let v = lo; v <= hi + 1e-9; v += step) {
+      add("line", { x1: pad.l, x2: w - pad.r, y1: y(v), y2: y(v),
+        stroke: css("--rule-soft"), "stroke-width": 1 });
+      const label = add("text", { x: pad.l - 8, y: y(v) + 4, "text-anchor": "end",
+        fill: css("--muted"), "font-size": 11, "font-family": "JetBrains Mono, monospace" });
+      label.textContent = (v > 0 ? "+" : "") + v.toFixed(0);
+    }
+    add("line", { x1: pad.l, x2: w - pad.r, y1: y(0), y2: y(0),
+      stroke: css("--rule"), "stroke-width": 1.5, "stroke-dasharray": "3 3" });
+
+    const last = values[values.length - 1];
+    const colour = last >= 0 ? css("--profit") : css("--loss");
+
+    let line = "", area = `M ${x(0)} ${y(0)}`;
+    data.forEach((d, i) => {
+      line += (i ? " L " : "M ") + x(i) + " " + y(d.p);
+      area += ` L ${x(i)} ${y(d.p)}`;
+    });
+    area += ` L ${x(data.length - 1)} ${y(0)} Z`;
+
+    const gradient = add("linearGradient", { id: "fill", x1: 0, y1: 0, x2: 0, y2: 1 },
+      add("defs", {}));
+    add("stop", { offset: "0%", "stop-color": colour, "stop-opacity": 0.22 }, gradient);
+    add("stop", { offset: "100%", "stop-color": colour, "stop-opacity": 0.02 }, gradient);
+    add("path", { d: area, fill: "url(#fill)" });
+    add("path", { d: line, fill: "none", stroke: colour, "stroke-width": 2,
+      "stroke-linejoin": "round", "stroke-linecap": "round" });
+
+    // emphasised endpoint, direct-labelled
+    add("circle", { cx: x(data.length - 1), cy: y(last), r: 4.5, fill: colour,
+      stroke: css("--card"), "stroke-width": 2 });
+    const end = add("text", { x: x(data.length - 1) - 8, y: y(last) - 12,
+      "text-anchor": "end", fill: colour, "font-size": 12, "font-weight": 700,
+      "font-family": "JetBrains Mono, monospace" });
+    end.textContent = (last >= 0 ? "+" : "") + last.toFixed(2) + " pts";
+
+    const cross = add("line", { x1: 0, x2: 0, y1: pad.t, y2: h - pad.b,
+      stroke: css("--muted"), "stroke-width": 1, opacity: 0 });
+    const dot = add("circle", { r: 4, fill: colour, stroke: css("--card"),
+      "stroke-width": 2, opacity: 0 });
+
+    svg.onpointermove = event => {
+      const rect = svg.getBoundingClientRect();
+      const px = (event.clientX - rect.left) * (w / rect.width);
+      let i = Math.round(((px - pad.l) / (w - pad.l - pad.r)) * (data.length - 1));
+      i = Math.max(0, Math.min(data.length - 1, i));
+      cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i));
+      cross.setAttribute("opacity", 0.35);
+      dot.setAttribute("cx", x(i)); dot.setAttribute("cy", y(data[i].p));
+      dot.setAttribute("opacity", 1);
+      tag.textContent = `${data[i].d} · ${data[i].p >= 0 ? "+" : ""}${data[i].p.toFixed(2)} pts`;
+      tag.style.opacity = 1;
+      const holder = svg.parentElement.getBoundingClientRect();
+      const left = rect.left - holder.left + (x(i) * rect.width / w);
+      tag.style.left = Math.min(holder.width - tag.offsetWidth - 4,
+                                Math.max(0, left - tag.offsetWidth / 2)) + "px";
+      tag.style.top = (rect.top - holder.top + (y(data[i].p) * rect.height / h) - 34) + "px";
+    };
+    svg.onpointerleave = () => {
+      cross.setAttribute("opacity", 0);
+      dot.setAttribute("opacity", 0);
+      tag.style.opacity = 0;
+    };
+  }
+
+  draw();
+  let timer;
+  addEventListener("resize", () => { clearTimeout(timer); timer = setTimeout(draw, 120); });
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+})();
+</script>

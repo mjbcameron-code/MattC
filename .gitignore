@@ -10,3 +10,10 @@ venv/
 /tmp/
 *.log
 .DS_Store
+
+# betting system
+betting/data/*.db
+betting/data/cache/
+betting/data/*.csv
+betting/reports/
+.pytest_cache/

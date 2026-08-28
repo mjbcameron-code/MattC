@@ -1,0 +1,154 @@
+# ---------------------------------------------------------------------------
+# League coverage.
+#
+# Each entry maps one competition onto the codes used by the data sources:
+#
+#   football_data : the file code used by football-data.co.uk
+#                   (https://www.football-data.co.uk/<country>m.php) — this is
+#                   the primary source of results, shots, shots on target,
+#                   corners, cards and historical bookmaker prices.
+#   odds_api      : the sport key used by the-odds-api.com for live prices.
+#                   null = no feed exists, so prices must be entered manually
+#                   (see `vb odds-template`).
+#   understat     : league key on understat.com for real xG. null = no public
+#                   xG, in which case the model falls back to its shot-based
+#                   xG proxy (see vb/models/xg.py).
+#   openfootball  : path fragment in the openfootball/football.json repo, used
+#                   for competitions football-data.co.uk does not cover.
+# ---------------------------------------------------------------------------
+
+leagues:
+  # ---- England -----------------------------------------------------------
+  - code: E0
+    name: Premier League
+    country: England
+    tier: 1
+    football_data: E0
+    odds_api: soccer_epl
+    understat: EPL
+    enabled: true
+
+  - code: E1
+    name: EFL Championship
+    country: England
+    tier: 2
+    football_data: E1
+    odds_api: soccer_efl_champ
+    understat: null
+    enabled: true
+
+  - code: E2
+    name: EFL League One
+    country: England
+    tier: 3
+    football_data: E2
+    odds_api: soccer_england_league1
+    understat: null
+    enabled: true
+
+  - code: E3
+    name: EFL League Two
+    country: England
+    tier: 4
+    football_data: E3
+    odds_api: soccer_england_league2
+    understat: null
+    enabled: true
+
+  - code: EC
+    name: National League
+    country: England
+    tier: 5
+    football_data: EC
+    odds_api: soccer_england_national_league
+    understat: null
+    enabled: true
+
+  # ---- Scotland ----------------------------------------------------------
+  - code: SC0
+    name: Scottish Premiership
+    country: Scotland
+    tier: 1
+    football_data: SC0
+    odds_api: soccer_spl
+    understat: null
+    enabled: true
+
+  - code: SC1
+    name: Scottish Championship
+    country: Scotland
+    tier: 2
+    football_data: SC1
+    odds_api: null          # no live feed — manual prices
+    understat: null
+    enabled: true
+
+  - code: SC2
+    name: Scottish League One
+    country: Scotland
+    tier: 3
+    football_data: SC2
+    odds_api: null
+    understat: null
+    enabled: true
+
+  - code: SC3
+    name: Scottish League Two
+    country: Scotland
+    tier: 4
+    football_data: SC3
+    odds_api: null
+    understat: null
+    enabled: true
+
+  # ---- Europe (domestic) -------------------------------------------------
+  - code: D1
+    name: Bundesliga
+    country: Germany
+    tier: 1
+    football_data: D1
+    odds_api: soccer_germany_bundesliga
+    understat: Bundesliga
+    enabled: true
+
+  - code: I1
+    name: Serie A
+    country: Italy
+    tier: 1
+    football_data: I1
+    odds_api: soccer_italy_serie_a
+    understat: Serie_A
+    enabled: true
+
+  - code: SP1
+    name: La Liga
+    country: Spain
+    tier: 1
+    football_data: SP1
+    odds_api: soccer_spain_la_liga
+    understat: La_liga
+    enabled: true
+
+  # ---- UEFA --------------------------------------------------------------
+  # football-data.co.uk carries no European club competition file, so these
+  # run off openfootball fixtures + live odds, and team ratings are borrowed
+  # from each club's domestic league (see vb/models/ratings.py:cross_league).
+  - code: UCL
+    name: Champions League
+    country: Europe
+    tier: 0
+    football_data: null
+    odds_api: soccer_uefa_champs_league
+    understat: null
+    openfootball: cl
+    enabled: true
+
+  - code: UEL
+    name: Europa League
+    country: Europe
+    tier: 0
+    football_data: null
+    odds_api: soccer_uefa_europa_league
+    understat: null
+    openfootball: el
+    enabled: true

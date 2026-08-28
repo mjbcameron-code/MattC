@@ -1,0 +1,147 @@
+# ---------------------------------------------------------------------------
+# Staking, selection thresholds and model tuning.
+# Everything here is read at runtime — change a number, re-run `vb tips`.
+# ---------------------------------------------------------------------------
+
+bankroll:
+  # 1 pt = 1 unit. Bet sizes are always quoted in points, never in money.
+  starting_points: 100.0
+  kelly_fraction: 0.25      # quarter-Kelly: the standard defensive setting
+  max_stake_pts: 3.0
+  min_stake_pts: 0.25
+  stake_step: 0.25          # stakes are rounded to this
+
+selection:
+  min_edge: 0.04            # 4% expected value before a bet is even considered
+  min_odds: 1.40            # nothing shorter — the downside isn't worth it
+  max_odds: 26.0            # nothing longer for a single
+  min_model_prob: 0.05      # ignore lottery tickets the model barely rates
+  max_tips_per_week: 12
+  max_tips_per_league: 3
+  # A bet needs this many "supporting signals" (form, xG trend, team news,
+  # rest advantage, market drift) before it can be tipped, on top of the edge.
+  min_signals: 2
+
+accumulator:
+  enabled: true
+  min_legs: 2
+  max_legs: 4
+  min_leg_prob: 0.45        # only fold reasonably likely legs together
+  min_combined_edge: 0.10   # accas need a bigger edge to justify the variance
+  max_stake_pts: 1.0
+  # Each leg's probability is shaded by this before folding. Model error
+  # compounds across legs exactly as the odds do, so an unshaded four-fold
+  # flatters itself badly.
+  leg_haircut: 0.04
+
+bet_builder:
+  enabled: true
+  min_legs: 2
+  max_legs: 4
+  # Same-game legs are correlated, so bet builder prices are computed by
+  # Monte Carlo simulation rather than by multiplying leg probabilities.
+  simulations: 40000
+  # Bookmakers price builders with a heavier margin; demand more edge.
+  min_combined_edge: 0.12
+  max_stake_pts: 1.0
+
+long_term:
+  enabled: true
+  # Outright / season-long markets: title, relegation, promotion, top scorer.
+  min_edge: 0.10            # tied-up money needs a fatter edge
+  max_stake_pts: 2.0
+
+model:
+  # Dixon-Coles time decay. Half-life in days for match weighting.
+  half_life_days: 180
+  # Seasons of history to fit on.
+  history_seasons: 3
+  min_matches_per_team: 6
+  # Weight given to real/proxy xG versus actual goals when fitting attack and
+  # defence strength. xG is the better predictor; goals still carry finishing.
+  xg_weight: 0.65
+  # How much the model opinion counts against the (devigged) market price.
+  # Sharper markets get a lower weight. Keyed by league tier.
+  # These are a starting point, not gospel. Run `vb backtest` on real data and
+  # check the calibration table: if the model keeps predicting 65% and getting
+  # 55%, these numbers are too high.
+  market_blend:
+    "0": 0.22               # UCL / UEL — very sharp, and few games to fit on
+    "1": 0.26               # top divisions
+    "2": 0.30
+    "3": 0.34
+    "4": 0.36
+    "5": 0.38               # National League — softest prices, but the weakest
+                            # data too, which is why this is not 0.6
+  # Half-weight is reached at this many matches per club. A promoted side eight
+  # games into a season gets half the say of one thirty games in.
+  confidence_k: 8.0
+  # Shrinkage of a team's rating toward the league mean when it has few games.
+  shrinkage_matches: 10
+  # How much a team's strength is moved by missing players. A squad reported as
+  # 0.20 "missing" loses 0.20 x attack_factor of its attacking output.
+  news_attack_factor: 0.55
+  news_defence_factor: 0.40
+
+# ---------------------------------------------------------------------------
+# Cross-league strength, for Champions League and Europa League ties.
+#
+# There are no results between a Bundesliga club and a Premier League club to
+# fit on, so the gap between divisions is a *prior*, expressed on the same log
+# scale as the attack/defence ratings (0.30 is roughly a one-division gap).
+# Nudge these if European results keep landing on one side of your model.
+# ---------------------------------------------------------------------------
+league_strength:
+  E0: 0.00        # reference
+  SP1: -0.01
+  D1: -0.03
+  I1: -0.03
+  E1: -0.32
+  E2: -0.52
+  E3: -0.64
+  EC: -0.78
+  SC0: -0.34
+  SC1: -0.62
+  SC2: -0.74
+  SC3: -0.84
+
+markets:
+  goal_lines: [0.5, 1.5, 2.5, 3.5, 4.5]
+  team_goal_lines: [0.5, 1.5, 2.5]
+  corner_lines: [7.5, 8.5, 9.5, 10.5, 11.5, 12.5, 13.5]
+  card_lines: [2.5, 3.5, 4.5, 5.5]
+  booking_points_lines: [25.5, 35.5, 45.5, 55.5]   # 10 per yellow, 25 per red
+  player_sot_lines: [0.5, 1.5, 2.5]
+  asian_handicaps: [-2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0]
+
+bookmakers:
+  # Books we shop for a price, in rough order of preference for the write-up.
+  preferred:
+    - skybet
+    - bet365
+    - paddypower
+    - williamhill
+    - ladbrokes_uk
+    - coral
+    - betfred
+    - betvictor
+    - boylesports
+    - unibet_uk
+    - 888sport
+    - betway
+  # Exchange prices are near-fair (low margin) so they are used as the
+  # benchmark for what a price *should* be, not as a bet to place.
+  exchanges:
+    - betfair_ex_uk
+    - smarkets
+    - matchbook
+  region: uk
+
+devig:
+  # How to strip the bookmaker's overround: shin | odds_ratio | proportional
+  method: shin
+
+report:
+  season: "2025/26"
+  title: "The Value Ledger"
+  tipster_name: "The Ledger"

@@ -1,0 +1,234 @@
+# Club-name spellings -> canonical name.
+#
+# football-data.co.uk uses terse forms ("Nott'm Forest", "M'gladbach",
+# "Ath Madrid"); the-odds-api uses long ones ("Nottingham Forest",
+# "Borussia Monchengladbach", "Atletico Madrid"). Both are listed here so the
+# two feeds join onto one club row. Anything not listed falls through to the
+# fuzzy matcher in vb/repo.py.
+#
+# Add a line whenever `vb doctor` reports an unmatched club.
+
+aliases:
+  # ---- England: football-data.co.uk short forms ---------------------------
+  "Man United": Manchester United
+  "Man Utd": Manchester United
+  "Manchester Utd": Manchester United
+  "Man City": Manchester City
+  "Newcastle": Newcastle United
+  "Nott'm Forest": Nottingham Forest
+  "Notts Forest": Nottingham Forest
+  "Tottenham": Tottenham Hotspur
+  "Spurs": Tottenham Hotspur
+  "West Ham": West Ham United
+  "West Brom": West Bromwich Albion
+  "Wolves": Wolverhampton Wanderers
+  "Brighton": Brighton and Hove Albion
+  "Brighton & Hove Albion": Brighton and Hove Albion
+  "Leeds": Leeds United
+  "Sheffield Weds": Sheffield Wednesday
+  "Sheff Wed": Sheffield Wednesday
+  "Sheff Utd": Sheffield United
+  "QPR": Queens Park Rangers
+  "Peterboro": Peterborough United
+  "Peterborough": Peterborough United
+  "Ipswich": Ipswich Town
+  "Norwich": Norwich City
+  "Luton": Luton Town
+  "Hull": Hull City
+  "Stoke": Stoke City
+  "Cardiff": Cardiff City
+  "Swansea": Swansea City
+  "Coventry": Coventry City
+  "Derby": Derby County
+  "Preston": Preston North End
+  "Birmingham": Birmingham City
+  "Blackburn": Blackburn Rovers
+  "Bolton": Bolton Wanderers
+  "Bournemouth": AFC Bournemouth
+  "Oxford": Oxford United
+  "Plymouth": Plymouth Argyle
+  "Portsmouth": Portsmouth
+  "Charlton": Charlton Athletic
+  "Barnsley": Barnsley
+  "Wigan": Wigan Athletic
+  "Burton": Burton Albion
+  "Cambridge": Cambridge United
+  "Exeter": Exeter City
+  "Lincoln": Lincoln City
+  "Mansfield": Mansfield Town
+  "Northampton": Northampton Town
+  "Rotherham": Rotherham United
+  "Shrewsbury": Shrewsbury Town
+  "Stockport": Stockport County
+  "Huddersfield": Huddersfield Town
+  "Doncaster": Doncaster Rovers
+  "Bradford": Bradford City
+  "Carlisle": Carlisle United
+  "Chesterfield": Chesterfield
+  "Colchester": Colchester United
+  "Crewe": Crewe Alexandra
+  "Fleetwood Town": Fleetwood Town
+  "Newport County": Newport County
+  "Salford": Salford City
+  "Swindon": Swindon Town
+  "Tranmere": Tranmere Rovers
+  "Accrington": Accrington Stanley
+  "Grimsby": Grimsby Town
+  "Harrogate": Harrogate Town
+  "Gillingham": Gillingham
+  "Walsall": Walsall
+  "Cheltenham": Cheltenham Town
+  "Crawley Town": Crawley Town
+  "Bristol Rvs": Bristol Rovers
+  "Wimbledon": AFC Wimbledon
+  "Milton Keynes Dons": MK Dons
+  # National League
+  "Boreham Wood": Boreham Wood
+  "Ebbsfleet": Ebbsfleet United
+  "Halifax": FC Halifax Town
+  "Solihull": Solihull Moors
+  "Sutton": Sutton United
+  "Wealdstone": Wealdstone
+  "Woking": Woking
+  "York": York City
+  "Southend": Southend United
+  "Oldham": Oldham Athletic
+  "Altrincham": Altrincham
+  "Aldershot": Aldershot Town
+  "Braintree": Braintree Town
+  "Dag and Red": Dagenham and Redbridge
+  "Eastleigh": Eastleigh
+  "Forest Green": Forest Green Rovers
+  "Gateshead": Gateshead
+  "Hartlepool": Hartlepool United
+  "Rochdale": Rochdale
+  "Scunthorpe": Scunthorpe United
+  "Tamworth": Tamworth
+  "Yeovil": Yeovil Town
+
+  # ---- Scotland ----------------------------------------------------------
+  "Hearts": Heart of Midlothian
+  "Hibernian": Hibernian
+  "Hibs": Hibernian
+  "St Johnstone": St Johnstone
+  "St Mirren": St Mirren
+  "Ross County": Ross County
+  "Dundee United": Dundee United
+  "Dundee Utd": Dundee United
+  "Inverness C": Inverness Caledonian Thistle
+  "Inverness CT": Inverness Caledonian Thistle
+  "Queen's Park": Queen's Park
+  "Airdrie Utd": Airdrieonians
+  "Airdrieonians": Airdrieonians
+  "Morton": Greenock Morton
+  "Partick": Partick Thistle
+  "Raith Rovers": Raith Rovers
+  "Ayr": Ayr United
+  "Dunfermline": Dunfermline Athletic
+  "Hamilton": Hamilton Academical
+  "Alloa": Alloa Athletic
+  "Cove Rangers": Cove Rangers
+  "Annan Athletic": Annan Athletic
+  "East Fife": East Fife
+  "Elgin": Elgin City
+  "Forfar": Forfar Athletic
+  "Peterhead": Peterhead
+  "Stenhousemuir": Stenhousemuir
+  "Stirling": Stirling Albion
+  "Stranraer": Stranraer
+  "Edinburgh City": Edinburgh City
+  "Bonnyrigg": Bonnyrigg Rose
+  "Kelty Hearts": Kelty Hearts
+  "Spartans": The Spartans
+  "Clyde": Clyde
+  "Dumbarton": Dumbarton
+  "Montrose": Montrose
+  "Arbroath": Arbroath
+  "Falkirk": Falkirk
+  "Livingston": Livingston
+
+  # ---- Germany -----------------------------------------------------------
+  "Bayern Munich": Bayern Munich
+  "Bayern München": Bayern Munich
+  "FC Bayern Munich": Bayern Munich
+  "Dortmund": Borussia Dortmund
+  "Leverkusen": Bayer Leverkusen
+  "Bayer 04 Leverkusen": Bayer Leverkusen
+  "Ein Frankfurt": Eintracht Frankfurt
+  "M'gladbach": Borussia Monchengladbach
+  "Borussia Mönchengladbach": Borussia Monchengladbach
+  "FC Koln": FC Koln
+  "1. FC Köln": FC Koln
+  "Koln": FC Koln
+  "RB Leipzig": RB Leipzig
+  "Werder Bremen": Werder Bremen
+  "Union Berlin": Union Berlin
+  "1. FC Union Berlin": Union Berlin
+  "Hoffenheim": Hoffenheim
+  "TSG Hoffenheim": Hoffenheim
+  "Mainz": Mainz 05
+  "1. FSV Mainz 05": Mainz 05
+  "Stuttgart": VfB Stuttgart
+  "Wolfsburg": VfL Wolfsburg
+  "Freiburg": SC Freiburg
+  "Augsburg": FC Augsburg
+  "Bochum": VfL Bochum
+  "Heidenheim": FC Heidenheim
+  "St Pauli": St Pauli
+  "FC St. Pauli": St Pauli
+  "Holstein Kiel": Holstein Kiel
+  "Hamburg": Hamburger SV
+  "Hamburger SV": Hamburger SV
+
+  # ---- Italy -------------------------------------------------------------
+  "Inter": Inter Milan
+  "Internazionale": Inter Milan
+  "Milan": AC Milan
+  "Roma": AS Roma
+  "Lazio": Lazio
+  "Napoli": Napoli
+  "Juventus": Juventus
+  "Verona": Hellas Verona
+  "Atalanta": Atalanta
+  "Fiorentina": Fiorentina
+  "Bologna": Bologna
+  "Torino": Torino
+  "Udinese": Udinese
+  "Sassuolo": Sassuolo
+  "Genoa": Genoa
+  "Cagliari": Cagliari
+  "Lecce": Lecce
+  "Empoli": Empoli
+  "Monza": Monza
+  "Parma": Parma
+  "Como": Como
+  "Venezia": Venezia
+  "Pisa": Pisa
+  "Cremonese": Cremonese
+
+  # ---- Spain -------------------------------------------------------------
+  "Ath Madrid": Atletico Madrid
+  "Atlético Madrid": Atletico Madrid
+  "Ath Bilbao": Athletic Bilbao
+  "Athletic Club": Athletic Bilbao
+  "Sociedad": Real Sociedad
+  "Betis": Real Betis
+  "Espanol": Espanyol
+  "Vallecano": Rayo Vallecano
+  "Celta": Celta Vigo
+  "Celta de Vigo": Celta Vigo
+  "Alaves": Deportivo Alaves
+  "Deportivo Alavés": Deportivo Alaves
+  "Las Palmas": Las Palmas
+  "Leganes": Leganes
+  "Valladolid": Real Valladolid
+  "Elche": Elche
+  "Levante": Levante
+  "Oviedo": Real Oviedo
+  "Mallorca": Mallorca
+  "Getafe": Getafe
+  "Girona": Girona
+  "Osasuna": Osasuna
+  "Sevilla": Sevilla
+  "Villarreal": Villarreal
+  "Valencia": Valencia
