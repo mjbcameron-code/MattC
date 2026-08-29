@@ -157,6 +157,8 @@ keeps saying 65% and getting 55%, lower the `market_blend` weights in
 | `vb import odds\|results\|news\|players <file>` | load one back |
 | `vb take REF 3.10` | record the price you actually got |
 | `vb grade REF won` | settle a player prop or outright by hand |
+| `vb apifootball check` | verify the API-Football key and league mapping |
+| `vb apifootball injuries` | pull injury and suspension lists into team news |
 | `vb doctor` | what is loaded, what is missing, what will not settle |
 | `vb demo` | synthetic season and dashboard, no network needed |
 
@@ -176,14 +178,55 @@ not publish at all. The richer feed catches up later with shots, corners and
 cards; the fast path only fills in a score where one is missing, so it never
 overwrites the better data.
 
+## API-Football (optional, and worth it)
+
+`vb update` and the odds API cover results, prices and fixtures. API-Football
+adds the three things neither can: **injury and suspension lists**, per-match
+statistics for the divisions where football-data.co.uk publishes little more
+than the score, and player-level data.
+
+```bash
+export API_FOOTBALL_KEY='...'          # from api-football.com, free tier is fine
+python3 -m vb apifootball check        # 2 requests: verifies the key, maps the leagues
+python3 -m vb apifootball injuries     # 1 request per league -> team news
+python3 -m vb apifootball fixtures --date 2026-08-29   # 1 request, every league
+```
+
+Read the table `check` prints before trusting anything. League ids are numbers,
+and a wrong one does not error — it quietly returns a different competition. The
+mapping is discovered by matching country and name, every match carries a
+confidence score, and near misses are listed so an ambiguous one is visible. If
+it gets one wrong, put the right id in `config/leagues.yaml` as `api_football:`
+and it will stop guessing.
+
+**Requests are rationed, and the cost is per fixture.** Every result on a given
+day costs one request; the statistics for those fixtures cost one *each*. The
+free allowance disappears in an afternoon if nothing is counting, so every call
+goes through a budget that reads the allowance back from the API's own headers
+and stops before it runs out — naming what it did not fetch. `--budget N` caps
+a single run.
+
+A sensible weekly rhythm on the free tier:
+
+| When | Command | Cost |
+|---|---|---|
+| Match day, before betting | `vb apifootball injuries` | ~1 per league |
+| Match day, after the games | `vb settle --fetch` | ~1 per league with a bet |
+| Occasionally | `vb apifootball fixtures` | 1 per day requested |
+
+Player statistics and per-match shot data are the expensive calls, and the
+reason to consider a paid tier. Everything above works on the free one.
+
 ## Things it needs you to do
 
 Three inputs have no free structured feed worth trusting, and the tool asks for
 them rather than pretending:
 
 - **Team news.** Injuries and suspensions move a price more than almost anything
-  else. `vb template news` writes a CSV with this weekend's clubs already in it;
-  add the missing players and how much you think each one matters.
+  else. With an API-Football key, `vb apifootball injuries` fills this in
+  automatically. Without one, `vb template news` writes a CSV with this
+  weekend's clubs already in it. Either way the *importance* of an absence is a
+  judgement call the tool leaves at a default — raise it for a talisman.
 - **Player data.** Player markets stay switched off until you import minutes,
   shots and cards (an FBref or Sofascore export works).
 - **Prices in the smaller leagues.** `vb template odds` for the divisions no

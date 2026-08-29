@@ -28,6 +28,9 @@ class League:
     odds_api: str | None = None
     understat: str | None = None
     openfootball: str | None = None
+    # Set this by hand when the automatic API-Football match is wrong; an
+    # explicit id always beats discovery.
+    api_football: int | None = None
     enabled: bool = True
 
     @property

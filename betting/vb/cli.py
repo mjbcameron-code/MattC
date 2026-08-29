@@ -436,6 +436,84 @@ def cmd_grade(args) -> int:
     return 0 if ok else 1
 
 
+def cmd_apifootball(args) -> int:
+    """Check the API-Football key and league mapping, or pull from it."""
+    from .sources import apifootball as af
+
+    try:
+        client = af.Client(budget=af.Budget(max_this_run=args.budget))
+    except af.MissingKey as exc:
+        print(exc)
+        return 1
+
+    season = _season(args)
+    with session(args.db) as conn:
+        if args.action == "check":
+            report = af.check(conn, client, season)
+            print(f"\n{BOLD}API-Football{RESET}")
+            print(f"  shopfront detected : {report['shopfront']}")
+            if not report.get("ok"):
+                for line in report["errors"]:
+                    print(f"  {RED}{line}{RESET}")
+                return 1
+            print(f"  plan               : {report.get('plan')} "
+                  f"({'active' if report.get('plan_active') else 'inactive'})")
+            print(f"  requests today     : {report.get('requests_today')} of "
+                  f"{report.get('requests_limit')}")
+            print(f"\n  {'league':6}{'matched to':34}{'id':>8}{'season':>8}{'score':>7}")
+            for code, match in report["leagues"].items():
+                colour = GREEN if match.confident else RED
+                print(f"  {code:6}{colour}{(match.api_name or '— no match')[:33]:34}{RESET}"
+                      f"{str(match.api_id or '—'):>8}{str(match.season or '—'):>8}"
+                      f"{match.score:>7.2f}")
+                if match.note:
+                    print(f"         {DIM}{match.note}{RESET}")
+                for name, other_id, score in match.alternatives:
+                    print(f"         {DIM}also considered: {name} (id {other_id}, "
+                          f"{score:.2f}){RESET}")
+            if report["unmatched"]:
+                print(f"\n  {RED}{len(report['unmatched'])} league(s) need checking: "
+                      f"{', '.join(report['unmatched'])}{RESET}")
+                print("  Put the right id in config/leagues.yaml as `api_football:` "
+                      "to override.")
+            else:
+                print(f"\n  {GREEN}every league mapped confidently{RESET}")
+            print(f"\n  {report.get('budget', '')}")
+            return 0
+
+        if args.action == "fixtures":
+            counts = af.load_fixtures(conn, client, season, date=args.date,
+                                      codes=_leagues(args) if args.leagues else None)
+            print(f"fixtures/results written: {sum(counts.values())} "
+                  f"({', '.join(f'{k} {v}' for k, v in sorted(counts.items())) or 'none'})")
+        elif args.action == "injuries":
+            counts = af.load_injuries(conn, client, season,
+                                      codes=_leagues(args) if args.leagues else None)
+            total = sum(counts.values())
+            print(f"team news written: {total} absences across "
+                  f"{sum(1 for v in counts.values() if v)} leagues")
+            for code, n in sorted(counts.items()):
+                if n:
+                    print(f"   {code}: {n}")
+        elif args.action == "stats":
+            pending = af.matches_needing_statistics(
+                conn, limit=args.limit,
+                codes=_leagues(args) if args.leagues else None)
+            if not pending:
+                print("No played matches are both missing shot data and known to "
+                      "this feed. Run `apifootball fixtures` first — the fixture "
+                      "ids it stores are what makes this possible.")
+            else:
+                print(f"{len(pending)} matches missing shot data; "
+                      f"one request each.")
+                filled = af.load_statistics(conn, client, pending)
+                print(f"filled in {filled}")
+        print(f"\n{client.budget.describe()}")
+        for skipped in client.budget.skipped:
+            print(f"  {RED}skipped:{RESET} {skipped}")
+    return 0
+
+
 def cmd_doctor(args) -> int:
     """Health check: what is loaded, what is missing, what will not settle."""
     with session(args.db) as conn:
@@ -594,6 +672,17 @@ def build_parser() -> argparse.ArgumentParser:
     grade = add("grade", cmd_grade, "grade a bet by hand (player props, outrights)")
     grade.add_argument("ref")
     grade.add_argument("status", choices=["won", "lost", "void", "half_won", "half_lost"])
+
+    apif = add("apifootball", cmd_apifootball,
+               "check the API-Football key and mapping, or pull from it")
+    apif.add_argument("action", choices=["check", "fixtures", "injuries", "stats"],
+                      help="check verifies the key and maps the leagues")
+    apif.add_argument("--season")
+    apif.add_argument("--leagues")
+    apif.add_argument("--date", help="YYYY-MM-DD, for fixtures")
+    apif.add_argument("--budget", type=int, default=40,
+                      help="stop after this many requests (default 40)")
+    apif.add_argument("--limit", type=int, default=20)
 
     add("doctor", cmd_doctor, "check what is loaded and what is missing")
     return parser

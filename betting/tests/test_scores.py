@@ -85,3 +85,39 @@ def test_club_spellings_still_resolve(conn, fixture_row, monkeypatch):
 def test_find_match_near_respects_its_window(conn, fixture_row):
     assert find_match_near(conn, "E0", "Tottenham", "Newcastle", "2026-08-30") is not None
     assert find_match_near(conn, "E0", "Tottenham", "Newcastle", "2026-09-02") is None
+
+
+def test_an_older_database_gains_new_columns(tmp_path):
+    """Columns added after the first release must reach existing databases.
+
+    CREATE TABLE IF NOT EXISTS silently does nothing to a table that already
+    exists, so without a migration step an upgraded install keeps the old
+    schema. The schema also indexes one of the new columns, which is why the
+    migration has to run before the schema script rather than after it.
+    """
+    import re
+    import sqlite3
+
+    from vb.db import LATER_COLUMNS, SCHEMA, migrate, session
+
+    old_schema = SCHEMA
+    for table, columns in LATER_COLUMNS.items():
+        for column in columns:
+            old_schema = re.sub(rf"^\s*{column}\b.*$", "", old_schema, flags=re.M)
+            old_schema = re.sub(rf"^.*CREATE INDEX.*\({column}\).*$", "",
+                                old_schema, flags=re.M)
+    assert "api_fixture_id" not in old_schema
+
+    path = tmp_path / "old.db"
+    old = sqlite3.connect(path)
+    old.executescript(old_schema)
+    old.execute("INSERT INTO leagues (code, name, country, tier) "
+                "VALUES ('E0','Premier League','England',1)")
+    old.commit()
+    old.close()
+
+    with session(path) as conn:
+        columns = {r["name"] for r in conn.execute("PRAGMA table_info(matches)")}
+        assert "api_fixture_id" in columns
+        assert conn.execute("SELECT COUNT(*) FROM leagues").fetchone()[0] >= 1
+        assert migrate(conn) == [], "migration should be idempotent"

@@ -237,7 +237,7 @@ def set_team_league(conn: sqlite3.Connection, team_id: int, league_code: str) ->
 _MATCH_STAT_COLUMNS = (
     "status", "stage", "referee", "fthg", "ftag", "hthg", "htag", "hs", "as",
     "hst", "ast", "hc", "ac", "hf", "af", "hy", "ay", "hr", "ar",
-    "home_xg", "away_xg", "source", "kickoff",
+    "home_xg", "away_xg", "api_fixture_id", "source", "kickoff",
 )
 
 

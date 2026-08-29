@@ -56,12 +56,14 @@ CREATE TABLE IF NOT EXISTS matches (
     hy   INTEGER, ay  INTEGER,            -- yellow cards
     hr   INTEGER, ar  INTEGER,            -- red cards
     home_xg REAL, away_xg REAL,           -- real xG where a feed exists
+    api_fixture_id INTEGER,               -- the id this match has at API-Football
     source  TEXT,
     updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (league_code, season, home_id, away_id, match_date)
 );
 
 CREATE INDEX IF NOT EXISTS idx_matches_league_date ON matches(league_code, kickoff);
+CREATE INDEX IF NOT EXISTS idx_matches_api_id ON matches(api_fixture_id);
 CREATE INDEX IF NOT EXISTS idx_matches_status ON matches(status, kickoff);
 
 CREATE TABLE IF NOT EXISTS odds (
@@ -226,10 +228,41 @@ def connect(path: Path | str | None = None) -> sqlite3.Connection:
     return conn
 
 
+# Columns added after the first release. CREATE TABLE IF NOT EXISTS will not
+# add a column to a table that already exists, so they are applied separately.
+LATER_COLUMNS = {
+    "matches": {"api_fixture_id": "INTEGER"},
+}
+
+
+def migrate(conn: sqlite3.Connection) -> list[str]:
+    """Add any columns a database created by an earlier version is missing.
+
+    This has to run *before* the schema script, not after: the script creates an
+    index over one of the new columns, and on an old database that fails before
+    anything else has a chance to run. Tables that do not exist yet are skipped,
+    so a fresh database falls straight through to the schema.
+    """
+    applied: list[str] = []
+    tables = {row["name"] for row in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'")}
+    for table, columns in LATER_COLUMNS.items():
+        if table not in tables:
+            continue
+        existing = {row["name"] for row in
+                    conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        for column, kind in columns.items():
+            if column not in existing:
+                conn.execute(f'ALTER TABLE {table} ADD COLUMN "{column}" {kind}')
+                applied.append(f"{table}.{column}")
+    return applied
+
+
 def init_db(conn: sqlite3.Connection | None = None) -> sqlite3.Connection:
-    """Create the schema (idempotent) and seed the league table."""
+    """Create the schema (idempotent), apply migrations, seed the leagues."""
     own = conn is None
     conn = conn or connect()
+    migrate(conn)
     conn.executescript(SCHEMA)
     for lg in load_leagues().values():
         conn.execute(

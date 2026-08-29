@@ -15,6 +15,11 @@
 #                   xG proxy (see vb/models/xg.py).
 #   openfootball  : path fragment in the openfootball/football.json repo, used
 #                   for competitions football-data.co.uk does not cover.
+#   api_football  : usually left out. API-Football's league ids are discovered
+#                   by `vb apifootball check` and cached; set this only to
+#                   override a match it got wrong. A wrong id returns another
+#                   competition's fixtures without erroring, so check the table
+#                   that command prints before trusting it.
 # ---------------------------------------------------------------------------
 
 leagues:
