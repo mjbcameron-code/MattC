@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from typing import Any, Iterable
 
 from ..config import enabled_leagues, league as get_league, load_settings
-from ..repo import upsert_match, upsert_odds
+from ..repo import find_match_near, upsert_match, upsert_odds
 from .http import FetchError, fetch_json
 
 API_BASE = "https://api.the-odds-api.com/v4"
@@ -215,11 +215,15 @@ def load_scores(
     days_from: int = 3,
     force: bool = True,
 ) -> int:
-    """Pull recent finished scores. This is how UEFA results get in.
+    """Pull recent finished scores — the fastest results path there is.
 
-    football-data.co.uk publishes no Champions/Europa League file, so for those
-    two competitions the odds API scores endpoint (or a manual CSV) is the only
-    way results reach the database.
+    football-data.co.uk refreshes a couple of times a week, so on a Saturday
+    morning Friday night's results may not be in yet. This endpoint has them
+    within minutes of full time. It also carries the Champions and Europa
+    League, for which football-data.co.uk publishes nothing at all.
+
+    Costs one API request per league, so it is opt-in rather than part of every
+    update; `vb settle --fetch` asks only for the leagues holding open bets.
     """
     lg = get_league(league_code)
     if not lg.odds_api:
@@ -233,7 +237,7 @@ def load_scores(
     if isinstance(data, dict):
         raise FetchError(f"{league_code}: odds API said {data.get('message')!r}")
 
-    updated = 0
+    filled = added = 0
     for event in data:
         if not event.get("completed"):
             continue
@@ -243,10 +247,25 @@ def load_scores(
             fthg, ftag = int(scores[home]), int(scores[away])
         except (KeyError, TypeError, ValueError):
             continue
+        kickoff = (event.get("commence_time") or "").replace("Z", "")
+
+        existing = find_match_near(conn, league_code, home, away, kickoff)
+        if existing is not None:
+            # Fill in the score we already have a fixture for. The richer feed
+            # (shots, corners, cards) will overwrite this later; the point of
+            # this path is to know the result now rather than on Wednesday.
+            if existing["fthg"] is None:
+                conn.execute(
+                    "UPDATE matches SET fthg = ?, ftag = ?, status = 'played', "
+                    "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (fthg, ftag, existing["id"]),
+                )
+                filled += 1
+            continue
+
         upsert_match(
-            conn, league_code, season,
-            (event.get("commence_time") or "").replace("Z", ""), home, away,
+            conn, league_code, season, kickoff, home, away,
             fthg=fthg, ftag=ftag, status="played", source="odds-api-scores",
         )
-        updated += 1
-    return updated
+        added += 1
+    return filled + added

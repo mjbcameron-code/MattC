@@ -318,6 +318,30 @@ def upsert_odds(
     )
 
 
+def find_match_near(
+    conn: sqlite3.Connection, league_code: str, home: str, away: str,
+    date: str, window_days: int = 1,
+) -> sqlite3.Row | None:
+    """Find a fixture within a day or so of ``date``.
+
+    Feeds disagree about which calendar day a match belongs to: the odds API
+    stamps kick-off in UTC, football-data.co.uk uses local time, and a 20:45
+    game in Italy is one date in one feed and the next date in the other.
+    Matching on the exact day would create a second row for the same match —
+    a duplicate that silently splits a club's record in two.
+    """
+    home_id = resolve_team(conn, home, league_code, create=False)
+    away_id = resolve_team(conn, away, league_code, create=False)
+    if home_id is None or away_id is None:
+        return None
+    return conn.execute(
+        "SELECT * FROM matches WHERE league_code = ? AND home_id = ? AND away_id = ? "
+        "AND ABS(julianday(match_date) - julianday(?)) <= ? "
+        "ORDER BY ABS(julianday(match_date) - julianday(?)) LIMIT 1",
+        (league_code, home_id, away_id, date[:10], window_days, date[:10]),
+    ).fetchone()
+
+
 def find_match(
     conn: sqlite3.Connection, league_code: str, home: str, away: str, date: str | None = None
 ) -> sqlite3.Row | None:

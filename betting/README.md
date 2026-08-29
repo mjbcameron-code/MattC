@@ -63,7 +63,7 @@ python3 -m vb demo
 # 2. Then the real thing.
 python3 -m vb update            # results, fixtures and opening prices
 python3 -m vb tips --record     # this week's card, written to the ledger
-python3 -m vb settle            # grade last week's bets
+python3 -m vb settle --fetch    # pull fresh results, then grade last week's bets
 python3 -m vb report            # rebuild the dashboard
 ```
 
@@ -146,9 +146,9 @@ keeps saying 65% and getting 55%, lower the `market_blend` weights in
 
 | Command | What it does |
 |---|---|
-| `vb update` | pull results, fixtures, opening prices and xG |
+| `vb update` | pull results, fixtures, opening prices and xG (`--scores` for same-day results) |
 | `vb tips` | this week's card (`--record` to write it to the ledger) |
-| `vb settle` | grade everything whose result is in |
+| `vb settle` | grade everything whose result is in (`--fetch` pulls results first) |
 | `vb report` | rebuild the HTML dashboard |
 | `vb ledger` | print the bet ledger |
 | `vb backtest` | walk-forward replay of the season |
@@ -159,6 +159,22 @@ keeps saying 65% and getting 55%, lower the `market_blend` weights in
 | `vb grade REF won` | settle a player prop or outright by hand |
 | `vb doctor` | what is loaded, what is missing, what will not settle |
 | `vb demo` | synthetic season and dashboard, no network needed |
+
+## How quickly results arrive
+
+football-data.co.uk refreshes a couple of times a week, so on a Saturday
+morning Friday night's results may not be in yet. Two ways round that:
+
+* `vb settle --fetch` pulls finished scores from the odds API before grading,
+  and asks only about the leagues holding open bets — usually three or four
+  requests, not fourteen.
+* `vb update --scores` does the same across every configured league.
+
+Scores arrive within minutes of full time, and this is also the only automatic
+route for Champions and Europa League results, which football-data.co.uk does
+not publish at all. The richer feed catches up later with shots, corners and
+cards; the fast path only fills in a score where one is missing, so it never
+overwrites the better data.
 
 ## Things it needs you to do
 

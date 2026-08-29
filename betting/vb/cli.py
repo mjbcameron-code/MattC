@@ -116,8 +116,12 @@ def cmd_update(args) -> int:
                 except Exception as exc:                # noqa: BLE001
                     problems.append(f"{code} odds: {exc}")
 
+        if args.scores:
+            totals["scores"] = _fetch_scores(conn, codes, season, problems)
+
     print(f"\n{totals['results']} results, {totals['fixtures']} fixtures, "
-          f"{totals['prices']} live prices, {totals['xg']} xG rows.")
+          f"{totals['prices']} live prices, {totals['xg']} xG rows"
+          + (f", {totals['scores']} recent scores." if args.scores else "."))
     if problems:
         print(f"\n{len(problems)} source(s) could not be read:")
         for line in problems[:12]:
@@ -125,6 +129,33 @@ def cmd_update(args) -> int:
         if len(problems) > 12:
             print(f"  … and {len(problems) - 12} more")
     return 0
+
+
+def _fetch_scores(conn, codes: list[str], season: str, problems: list[str]) -> int:
+    """Pull recent finished scores for the given leagues.
+
+    One request per league, so the caller decides which leagues are worth
+    spending a request on.
+    """
+    from .sources import oddsapi
+
+    total = 0
+    for code in codes:
+        league = load_leagues().get(code)
+        if not league or not league.odds_api:
+            continue
+        try:
+            got = oddsapi.load_scores(conn, code, season)
+            total += got
+            if got:
+                print(f"  {code}: {got} finished result(s) in")
+        except oddsapi.MissingApiKey as exc:
+            # The same message once, not once per league.
+            problems.append(str(exc))
+            break
+        except Exception as exc:                        # noqa: BLE001
+            problems.append(f"could not fetch {code} scores: {exc}")
+    return total
 
 
 def cmd_tips(args) -> int:
@@ -253,6 +284,21 @@ def _rating_quality(bank, fixture) -> str:
 
 def cmd_settle(args) -> int:
     with session(args.db) as conn:
+        if args.fetch:
+            # Only ask about leagues we actually have money on — each league
+            # costs an API request, and most weeks that is three or four rather
+            # than all fourteen.
+            open_leagues = [r["league_code"] for r in conn.execute(
+                "SELECT DISTINCT league_code FROM bets WHERE status = 'pending' "
+                "AND league_code IS NOT NULL")]
+            if not open_leagues:
+                print("No open bets, so nothing to fetch.")
+            else:
+                problems: list[str] = []
+                print(f"Fetching results for {', '.join(sorted(open_leagues))}…")
+                _fetch_scores(conn, open_leagues, _season(args), problems)
+                for line in problems:
+                    print(f"  {line}")
         counts = settle.settle_bets(conn)
         summary = metrics.summarise(conn)
     if counts:
@@ -477,6 +523,10 @@ def build_parser() -> argparse.ArgumentParser:
     update.add_argument("--season")
     update.add_argument("--history", type=int, default=3, help="seasons of results")
     update.add_argument("--odds", action="store_true", help="also pull live odds-api prices")
+    update.add_argument("--scores", action="store_true",
+                        help="also pull finished scores from the odds API — far faster "
+                             "than waiting for the football-data refresh (1 request "
+                             "per league)")
     update.add_argument("--no-fixtures", action="store_true")
     update.add_argument("--no-xg", action="store_true")
     update.add_argument("--force", action="store_true", help="ignore the cache")
@@ -498,7 +548,11 @@ def build_parser() -> argparse.ArgumentParser:
                         help="value required on top of the shaded price")
     prices.add_argument("--quiet", action="store_true", help="hide the reasoning")
 
-    add("settle", cmd_settle, "grade everything whose result is in")
+    settle_cmd = add("settle", cmd_settle, "grade everything whose result is in")
+    settle_cmd.add_argument("--fetch", action="store_true",
+                            help="pull fresh results first, for the leagues holding "
+                                 "open bets only")
+    settle_cmd.add_argument("--season")
 
     report = add("report", cmd_report, "write the HTML dashboard")
     report.add_argument("--out")
