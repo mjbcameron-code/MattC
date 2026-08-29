@@ -138,7 +138,9 @@ class Client:
             raise MissingKey(
                 "API_FOOTBALL_KEY is not set. Sign up at https://api-football.com, "
                 "copy the key from your dashboard, and export it:\n"
-                "    export API_FOOTBALL_KEY='...'"
+                "    export API_FOOTBALL_KEY='...'\n"
+                "Keep it in the environment: a key pasted into a chat, an issue or a "
+                "commit is a key that needs regenerating."
             )
         self.budget = budget or Budget()
         self.timeout = timeout

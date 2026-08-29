@@ -187,6 +187,9 @@ than the score, and player-level data.
 
 ```bash
 export API_FOOTBALL_KEY='...'          # from api-football.com, free tier is fine
+# Keep the key in the environment or an untracked .env — never in a commit,
+# an issue, or a chat. `vb apifootball check` prints no credential, so its
+# output is safe to share when you want help reading it.
 python3 -m vb apifootball check        # 2 requests: verifies the key, maps the leagues
 python3 -m vb apifootball injuries     # 1 request per league -> team news
 python3 -m vb apifootball fixtures --date 2026-08-29   # 1 request, every league
