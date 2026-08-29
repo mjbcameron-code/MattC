@@ -150,3 +150,34 @@ def test_season_probabilities_are_coherent(league):
     assert sum(outlook.title(t) for t in teams) == pytest.approx(1.0, abs=1e-9)
     assert sum(outlook.probability_position(t, 4) for t in teams) == pytest.approx(4.0, abs=1e-9)
     assert sum(outlook.probability_bottom(t, 3) for t in teams) == pytest.approx(3.0, abs=1e-9)
+
+
+# ---------------------------------------------------------------------------
+def test_form_signals_admit_when_the_run_is_last_season(conn):
+    """On opening weekend a club's "last six" are from May. Say so.
+
+    The ratings model already discounts those games by age. The write-up did
+    not: it called them recent form, which on matchday one is three months and
+    a transfer window out of date.
+    """
+    from datetime import datetime, timedelta
+
+    from vb.features.form import recent_form
+    from vb.repo import upsert_match
+
+    # Six games played last spring, then a long summer.
+    for i in range(6):
+        upsert_match(conn, "E0", "2025/26",
+                     (datetime(2026, 4, 1) + timedelta(days=7 * i)).isoformat(),
+                     "Alpha FC", f"Rival {i}", fthg=2, ftag=0)
+    team_id = conn.execute("SELECT id FROM teams WHERE name = 'Alpha'").fetchone()["id"]
+
+    august = recent_form(conn, team_id, "E0", datetime(2026, 8, 29))
+    assert august.is_stale
+    assert august.current_season_games == 0
+    assert "last season" in august.run_phrase()
+
+    # The same run, read the week after it happened, is simply form.
+    may = recent_form(conn, team_id, "E0", datetime(2026, 5, 12))
+    assert not may.is_stale
+    assert may.run_phrase() == f"their last {may.played}"

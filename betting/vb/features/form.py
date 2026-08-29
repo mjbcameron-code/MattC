@@ -21,6 +21,9 @@ from datetime import datetime, timedelta
 from ..models.xg import XgProxy, fit_proxy, match_xg
 from ..repo import team_name
 
+# A run whose most recent game is older than this is not "form" any more.
+STALE_AFTER_DAYS = 45
+
 
 def possessive(name: str) -> str:
     """Newcastle -> Newcastle's, Rangers -> Rangers'."""
@@ -61,6 +64,27 @@ class TeamForm:
     corners_against: float
     cards_for: float
     xg_matches: int = 0            # how many of those games had usable xG
+    days_since: int = 0            # age of the most recent game in the run
+    current_season_games: int = 0  # how many of them are from this season
+
+    @property
+    def is_stale(self) -> bool:
+        """True when the "form" predates the summer.
+
+        On the opening weekend a club's last six games are from May, either
+        side of a transfer window. Those results still carry information — the
+        ratings model time-weights them — but calling them "recent form" in a
+        write-up is misleading, so the signals say what they are.
+        """
+        return self.days_since > STALE_AFTER_DAYS or self.current_season_games == 0
+
+    def run_phrase(self) -> str:
+        """How to describe the run in prose, honestly."""
+        if self.current_season_games == 0:
+            return f"their last {self.played} of last season"
+        if self.is_stale:
+            return f"their last {self.played}, most of them last season"
+        return f"their last {self.played}"
 
     @property
     def has_xg(self) -> bool:
@@ -105,7 +129,7 @@ def recent_form(
     """Roll up a team's last ``games`` matches before ``before``."""
     proxy = proxy or fit_proxy(conn, league_code)
     rows = conn.execute(
-        'SELECT kickoff, home_id, away_id, fthg, ftag, hs, "as", hst, ast, hc, ac, '
+        'SELECT kickoff, season, home_id, away_id, fthg, ftag, hs, "as", hst, ast, hc, ac, '
         "hy, ay, home_xg, away_xg FROM matches WHERE league_code = ? AND status = 'played' "
         "AND (home_id = ? OR away_id = ?) AND kickoff < ? ORDER BY kickoff DESC LIMIT ?",
         (league_code, team_id, team_id, before.isoformat(), games),
@@ -145,6 +169,13 @@ def recent_form(
         cards += (r["hy"] if home else r["ay"]) or 0
 
     played = len(rows)
+    try:
+        days_since = max(0, (before - datetime.fromisoformat(rows[0]["kickoff"][:19])).days)
+    except ValueError:
+        days_since = 0
+    latest_season = rows[0]["season"]
+    current_season_games = sum(1 for r in rows if r["season"] == latest_season
+                               and days_since <= STALE_AFTER_DAYS)
     return TeamForm(
         team_id=team_id, name=team_name(conn, team_id), played=played,
         points=points, goals_for=goals_for, goals_against=goals_against,
@@ -153,6 +184,7 @@ def recent_form(
         clean_sheets=clean, failed_to_score=failed,
         corners_for=corners_for / played, corners_against=corners_against / played,
         cards_for=cards / played, xg_matches=xg_matches,
+        days_since=days_since, current_season_games=current_season_games,
     )
 
 
@@ -232,19 +264,20 @@ def build_signals(
     for side, form in (("home", home), ("away", away)):
         if form.played >= 4:
             ppg = form.points_per_game
+            stale = 0.45 if form.is_stale else 1.0
             if ppg >= 2.0:
                 signals.append(Signal(
                     "form", side,
-                    f"{form.name} have taken {form.points} points from their last "
-                    f"{form.played} ({form.form_string()})",
-                    min(1.0, (ppg - 1.3) / 1.0), favours=side,
+                    f"{form.name} took {form.points} points from "
+                    f"{form.run_phrase()} ({form.form_string()})",
+                    min(1.0, (ppg - 1.3) / 1.0) * stale, favours=side,
                 ))
             elif ppg <= 0.8:
                 signals.append(Signal(
                     "form", side,
-                    f"{form.name} have managed just {form.points} points from "
-                    f"{form.played} ({form.form_string()})",
-                    min(1.0, (1.1 - ppg) / 1.0),
+                    f"{form.name} managed just {form.points} points from "
+                    f"{form.run_phrase()} ({form.form_string()})",
+                    min(1.0, (1.1 - ppg) / 1.0) * stale,
                     favours="away" if side == "home" else "home",
                 ))
 
@@ -292,30 +325,35 @@ def build_signals(
         ))
 
     # --- goals character ----------------------------------------------------
+    stale_run = home.is_stale or away.is_stale
+    stale_factor = 0.45 if stale_run else 1.0
+    when = " games last season" if stale_run else " games"
     combined_over = (home.over25_rate + away.over25_rate) / 2
     if combined_over >= 0.75:
         signals.append(Signal(
             "trend", "match",
-            f"Both these sides are living in high-scoring games — over 2.5 has landed in "
-            f"{home.over25_rate:.0%} of {possessive(home.name)} and "
-            f"{away.over25_rate:.0%} of {possessive(away.name)} recent matches",
-            min(1.0, (combined_over - 0.5) * 2), favours="over", topic="goals",
+            f"Over 2.5 landed in {home.over25_rate:.0%} of {possessive(home.name)} and "
+            f"{away.over25_rate:.0%} of {possessive(away.name)} last six{when}",
+            min(1.0, (combined_over - 0.5) * 2) * stale_factor, favours="over",
+            topic="goals",
         ))
     elif combined_over <= 0.3:
         signals.append(Signal(
             "trend", "match",
-            f"Low-scoring fare all round — over 2.5 has landed in only "
-            f"{home.over25_rate:.0%} and {away.over25_rate:.0%} of their last six",
-            min(1.0, (0.5 - combined_over) * 2), favours="under", topic="goals",
+            f"Low-scoring fare all round — over 2.5 landed in only "
+            f"{home.over25_rate:.0%} and {away.over25_rate:.0%} of their last six{when}",
+            min(1.0, (0.5 - combined_over) * 2) * stale_factor, favours="under",
+            topic="goals",
         ))
 
     combined_btts = (home.btts_rate + away.btts_rate) / 2
     if combined_btts >= 0.75:
         signals.append(Signal(
             "trend", "match",
-            f"Both teams have scored in {home.btts_rate:.0%} of {possessive(home.name)} "
-            f"and {away.btts_rate:.0%} of {possessive(away.name)} recent games",
-            min(1.0, (combined_btts - 0.5) * 2), favours="over", topic="goals",
+            f"Both teams scored in {home.btts_rate:.0%} of {possessive(home.name)} and "
+            f"{away.btts_rate:.0%} of {possessive(away.name)} last six{when}",
+            min(1.0, (combined_btts - 0.5) * 2) * stale_factor, favours="over",
+            topic="goals",
         ))
     if home.clean_sheets >= 3 or away.clean_sheets >= 3:
         keeper = home if home.clean_sheets >= away.clean_sheets else away
