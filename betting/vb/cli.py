@@ -408,6 +408,34 @@ def cmd_weekly(args) -> int:
         synthetic=False, open=not args.no_open))
 
 
+def cmd_prune(args) -> int:
+    """Clear unsettled advice — for when the engine that produced it was wrong."""
+    from .track.ledger import drop_open_bets, find_duplicates
+
+    with session(args.db) as conn:
+        if args.duplicates:
+            groups = find_duplicates(conn)
+            if not groups:
+                print("No duplicates on the record.")
+                return 0
+            extra = [ref for group in groups for ref in group["refs"][1:]]
+            print(f"{len(groups)} bet(s) recorded more than once; "
+                  f"removing {len(extra)} copy(ies):")
+            for group in groups:
+                print(f"  {group['selection'][:50]}  {', '.join(group['refs'])}")
+            print(f"\nRemoved {drop_open_bets(conn, refs=extra)}.")
+            return 0
+        open_count = conn.execute(
+            "SELECT COUNT(*) FROM bets WHERE status = 'pending'").fetchone()[0]
+        if not args.yes:
+            print(f"{open_count} unsettled bet(s) would be removed"
+                  + (f" (recorded before {args.before})" if args.before else "")
+                  + ".\nSettled bets are never touched. Re-run with --yes to do it.")
+            return 0
+        print(f"Removed {drop_open_bets(conn, before=args.before)} unsettled bet(s).")
+    return 0
+
+
 def cmd_app(args) -> int:
     """Run the local web app."""
     try:
@@ -811,6 +839,15 @@ def cmd_doctor(args) -> int:
         print(f"  team news in the last fortnight  {news}"
               + ("" if news else f"   {BLUE}(none — see below){RESET}"))
 
+        from .track.ledger import find_duplicates
+
+        duplicates = find_duplicates(conn)
+        if duplicates:
+            print(f"  {RED}{len(duplicates)} bet(s) on the record twice{RESET} — "
+                  "run `vb prune --duplicates`")
+            problems.append(f"{len(duplicates)} duplicate bet(s) would double-count "
+                            "your record; `vb prune --duplicates` clears them")
+
         settled = conn.execute(
             "SELECT COUNT(*) FROM bets WHERE status != 'pending'").fetchone()[0]
         pending = conn.execute(
@@ -938,6 +975,12 @@ def build_parser() -> argparse.ArgumentParser:
                         help="show the card without writing it to the ledger")
     weekly.add_argument("--no-odds", action="store_true")
     weekly.add_argument("--no-open", action="store_true")
+
+    prune = add("prune", cmd_prune, "clear unsettled advice from the record")
+    prune.add_argument("--before", help="only those recorded before this timestamp")
+    prune.add_argument("--duplicates", action="store_true",
+                       help="remove only bets recorded twice, keeping the first")
+    prune.add_argument("--yes", action="store_true", help="actually do it")
 
     web = add("app", cmd_app, "run the local web app in your browser")
     web.add_argument("--port", type=int, default=5137)

@@ -213,3 +213,42 @@ def test_one_dead_host_is_reported_once_not_per_league(capsys, tmp_path,
     out = capsys.readouterr().out
     assert out.count("blocked by a proxy") == 1, "the same cause, reported once"
     assert "affects E0" in out
+
+
+def test_the_same_bet_is_never_recorded_twice(loaded):
+    """References carry the tip's rank, so ranking is not identity.
+
+    The moment a price moves the ordering shifts, and an identical bet arrives
+    under a new reference. Deduplicating on the reference let it onto the
+    ledger again, double-counting its stake and its result.
+    """
+    from vb.tips.select import build_tipsheet
+    from vb.track.ledger import find_duplicates, record_tipsheet
+
+    sheet = build_tipsheet(loaded, days=7, season="2026/27", include_outrights=False)
+    first = sum(record_tipsheet(loaded, sheet).values())
+    assert first, "no tips to test with"
+
+    for offset, tip in enumerate(sheet.singles, start=len(sheet.singles) + 1):
+        tip.ref = f"{sheet.week_ref}-{offset:02d}"
+    assert sum(record_tipsheet(loaded, sheet).values()) == 0
+    assert find_duplicates(loaded) == []
+    assert loaded.execute(
+        "SELECT COUNT(*) FROM bets").fetchone()[0] == first
+
+
+def test_a_settled_bet_can_never_be_pruned(loaded):
+    """A record you can delete losers from is not a record."""
+    from vb.tips.select import build_tipsheet
+    from vb.track.ledger import drop_open_bets, record_tipsheet
+
+    record_tipsheet(loaded, build_tipsheet(loaded, days=7, season="2026/27",
+                                           include_outrights=False))
+    ref = loaded.execute("SELECT ref FROM bets LIMIT 1").fetchone()["ref"]
+    loaded.execute("UPDATE bets SET status = 'lost', pnl_pts = -1.0 WHERE ref = ?",
+                   (ref,))
+    drop_open_bets(loaded)
+    survivor = loaded.execute("SELECT status FROM bets WHERE ref = ?", (ref,)).fetchone()
+    assert survivor is not None and survivor["status"] == "lost"
+    assert loaded.execute(
+        "SELECT COUNT(*) FROM bets WHERE status = 'pending'").fetchone()[0] == 0

@@ -15,10 +15,62 @@ from datetime import datetime
 from ..tips.select import Tip, TipSheet
 
 
+def _leg_key(legs) -> tuple:
+    """What actually identifies a bet: its legs, not the label it was given."""
+    return tuple(sorted(
+        (leg.get("match_id"), (leg.get("market") or "").lower(),
+         (leg.get("raw_selection") or leg.get("selection") or "").lower(),
+         None if leg.get("line") is None else round(float(leg["line"]), 3),
+         (leg.get("subject") or "").lower())
+        for leg in legs
+    ))
+
+
+def _tip_legs(tip: Tip) -> list[dict]:
+    if tip.legs:
+        return tip.legs
+    if tip.match_id is not None:
+        return [{"match_id": tip.match_id, "market": tip.raw_market,
+                 "raw_selection": tip.raw_selection, "line": tip.raw_line,
+                 "subject": tip.subject}]
+    return []
+
+
+def already_open(conn: sqlite3.Connection, tip: Tip) -> bool:
+    """Is this same bet already on the record and unsettled?
+
+    References carry the tip's rank within the week, so the moment a price moves
+    and the ordering shifts, an identical bet arrives under a new reference.
+    Deduplicating on the reference therefore let the same bet onto the ledger
+    twice, which double-counts its stake and its result.
+    """
+    legs = _tip_legs(tip)
+    if not legs:
+        # Outrights have no fixture to key on.
+        row = conn.execute(
+            "SELECT 1 FROM bets WHERE status = 'pending' AND bet_type = ? "
+            "AND selection = ? AND event_date = ?",
+            (tip.kind, tip.selection, tip.event_date)).fetchone()
+        return row is not None
+
+    wanted = _leg_key(legs)
+    for row in conn.execute(
+            "SELECT id FROM bets WHERE status = 'pending' AND bet_type = ?",
+            (tip.kind,)):
+        existing = conn.execute(
+            "SELECT match_id, market, selection, line, subject FROM bet_legs "
+            "WHERE bet_id = ?", (row["id"],)).fetchall()
+        if _leg_key([dict(leg) for leg in existing]) == wanted:
+            return True
+    return False
+
+
 def record_tip(conn: sqlite3.Connection, tip: Tip, placed_at: str | None = None) -> int | None:
     """Write one tip to the ledger. Returns the bet id, or None if already there."""
     existing = conn.execute("SELECT id FROM bets WHERE ref = ?", (tip.ref,)).fetchone()
     if existing:
+        return None
+    if already_open(conn, tip):
         return None
     cur = conn.execute(
         "INSERT INTO bets (ref, placed_at, event_date, league_code, bet_type, "
@@ -142,3 +194,40 @@ def mark_passed(conn: sqlite3.Connection, ref: str) -> bool:
         "UPDATE bets SET placed = 0, placed_price = NULL, placed_stake = NULL "
         "WHERE id = ?", (row["id"],))
     return True
+
+
+def find_duplicates(conn: sqlite3.Connection) -> list[dict]:
+    """Unsettled bets recorded more than once under different references."""
+    seen: dict[tuple, list[str]] = {}
+    for row in conn.execute(
+            "SELECT id, ref, selection FROM bets WHERE status = 'pending'"):
+        legs = conn.execute(
+            "SELECT match_id, market, selection, line, subject FROM bet_legs "
+            "WHERE bet_id = ?", (row["id"],)).fetchall()
+        if not legs:
+            continue
+        seen.setdefault(_leg_key([dict(leg) for leg in legs]),
+                        []).append((row["ref"], row["selection"]))
+    return [{"refs": [r for r, _ in group], "selection": group[0][1]}
+            for group in seen.values() if len(group) > 1]
+
+
+def drop_open_bets(conn: sqlite3.Connection, before: str | None = None,
+                   refs: list[str] | None = None) -> int:
+    """Remove unsettled bets from the record.
+
+    For clearing advice produced by a version of the engine since found to be
+    wrong. Settled bets are never touched: a record you can delete losers from
+    is not a record.
+    """
+    if refs:
+        placeholders = ",".join("?" * len(refs))
+        cur = conn.execute(
+            f"DELETE FROM bets WHERE status = 'pending' AND ref IN ({placeholders})",
+            refs)
+    elif before:
+        cur = conn.execute(
+            "DELETE FROM bets WHERE status = 'pending' AND placed_at < ?", (before,))
+    else:
+        cur = conn.execute("DELETE FROM bets WHERE status = 'pending'")
+    return cur.rowcount or 0
