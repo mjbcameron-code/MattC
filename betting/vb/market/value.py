@@ -289,11 +289,40 @@ class Trace:
         "tipped",
     ]
 
+    #: How many near misses to keep per league.
+    KEEP = 5
+
     def __init__(self) -> None:
         self.counts: dict[str, Counter] = defaultdict(Counter)
+        self.best: dict[str, list[tuple[float, str]]] = defaultdict(list)
+        self.setup: dict[str, dict[str, float]] = {}
 
     def note(self, league_code: str, reason: str, n: int = 1) -> None:
         self.counts[league_code][reason] += n
+
+    def saw_edge(self, league_code: str, edge: float, label: str) -> None:
+        """Remember the strongest edges, whether or not they cleared the bar.
+
+        A count of "83 below the minimum" is ambiguous in the way that matters:
+        83 prices at 3.9% means the thresholds are a shade tight, and 83 at
+        0.2% means the model is not really disagreeing with the market at all.
+        Those call for opposite responses, so the number has to be visible.
+        """
+        top = self.best[league_code]
+        top.append((edge, label))
+        top.sort(key=lambda pair: -pair[0])
+        del top[self.KEEP:]
+
+    def note_setup(self, league_code: str, weight: float, matches_seen: int) -> None:
+        """How much say the model had, and how much football it had seen.
+
+        Early in a season these are the numbers behind a quiet card: the model
+        is deliberately shaded down until it has evidence, so its edges shrink
+        toward nothing and the thresholds stop everything. That is the design
+        working, but it is indistinguishable from a broken model unless the
+        weight is on the page.
+        """
+        self.setup[league_code] = {"weight": weight, "matches_seen": matches_seen}
 
     def leagues(self) -> list[str]:
         return sorted(self.counts)
@@ -312,16 +341,32 @@ class Trace:
             n for r, n in counts.items() if r not in self.ORDER)
 
     def to_json(self) -> str:
-        return json.dumps({c: dict(v) for c, v in self.counts.items()},
-                          sort_keys=True)
+        return json.dumps({
+            "counts": {c: dict(v) for c, v in self.counts.items()},
+            "best": {c: v for c, v in self.best.items()},
+            "setup": self.setup,
+        }, sort_keys=True)
 
     @classmethod
     def from_json(cls, blob: str | None) -> "Trace":
+        raw = json.loads(blob or "{}")
+        # An older database holds the bare counts, with no wrapper around them.
+        if raw and "counts" not in raw:
+            raw = {"counts": raw}
         trace = cls()
-        for code, reasons in json.loads(blob or "{}").items():
+        for code, reasons in raw.get("counts", {}).items():
             for reason, count in reasons.items():
                 trace.note(code, reason, count)
+        for code, pairs in raw.get("best", {}).items():
+            trace.best[code] = [(float(e), str(lbl)) for e, lbl in pairs]
+        trace.setup = {c: dict(v) for c, v in raw.get("setup", {}).items()}
         return trace
+
+    def near_misses(self, league_code: str) -> list[tuple[float, str]]:
+        return self.best.get(league_code, [])
+
+    def weight(self, league_code: str) -> dict[str, float] | None:
+        return self.setup.get(league_code)
 
     def rows(self, league_code: str) -> list[tuple[str, int]]:
         """Reasons for one league, in funnel order, skipping the empty ones."""
@@ -381,6 +426,9 @@ def scan_fixture(
     def drop(reason: str, n: int = 1) -> None:
         if trace is not None:
             trace.note(code, reason, n)
+
+    if trace is not None:
+        trace.note_setup(code, weight, fixture.matches_seen)
 
     if not groups:
         # The case this whole tally exists for. A fixture nobody priced leaves
@@ -450,6 +498,12 @@ def scan_fixture(
             else:
                 expected_value = blended * quote.price - 1
 
+            if trace is not None:
+                trace.saw_edge(
+                    code, expected_value,
+                    f"{fixture.label}: {market} {sel}"
+                    + (f" {line:g}" if line is not None else "")
+                    + f" at {quote.price:.2f}")
             if expected_value < min_edge:
                 drop("edge below the minimum")
                 continue

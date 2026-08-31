@@ -252,6 +252,12 @@ def cmd_why(args) -> int:
             for reason, count in rows:
                 mark = "->" if reason == "tipped" else "  "
                 print(f"  {mark} {count:5d}  {reason}")
+            setup = trace.weight(code)
+            if setup:
+                print(f"{DIM}     model weight {setup['weight']:.0%} on "
+                      f"{setup['matches_seen']:.0f} matches per club{RESET}")
+            for edge, label in trace.near_misses(code):
+                print(f"{DIM}     {edge:+6.1%}  {label}{RESET}")
     return 0
 
 

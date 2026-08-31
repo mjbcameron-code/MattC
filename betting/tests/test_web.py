@@ -145,3 +145,56 @@ def test_the_trace_survives_the_round_trip_through_the_database(conn):
     back = Trace.from_json(trace.to_json())
     assert back.rows("EC") == trace.rows("EC")
     assert back.total("EC") == trace.total("EC")
+
+
+def test_the_health_tab_shows_how_far_short_a_price_fell(conn, loaded_app, client):
+    """"83 below the minimum" is ambiguous unless the sizes are visible.
+
+    83 near misses at 3.9% and 83 at 0.2% call for opposite responses.
+    """
+    from vb.db import set_setting
+    from vb.market.value import Trace
+    from vb.tips.select import build_tipsheet
+
+    trace = Trace()
+    build_tipsheet(conn, days=7, season="2026/27", include_outrights=False,
+                   trace=trace)
+    set_setting(conn, "coverage.trace", trace.to_json())
+    conn.commit()
+
+    body = client.get("/").get_data(as_text=True)
+    assert "Strongest edges found" in body
+    assert "of\n        the say against the market" in body or \
+           "the say against the market" in body
+
+
+def test_the_magnitudes_survive_the_database(conn):
+    from vb.market.value import Trace
+
+    trace = Trace()
+    trace.saw_edge("EC", 0.039, "Woking v Barnet: h2h home at 2.10")
+    trace.note_setup("EC", 0.127, 4)
+    back = Trace.from_json(trace.to_json())
+    assert back.near_misses("EC") == [(0.039, "Woking v Barnet: h2h home at 2.10")]
+    assert back.weight("EC") == {"weight": 0.127, "matches_seen": 4}
+
+
+def test_a_trace_saved_before_magnitudes_existed_still_loads(conn):
+    """An older database holds the bare counts with no wrapper."""
+    from vb.market.value import Trace
+
+    back = Trace.from_json('{"EC": {"edge below the minimum": 83}}')
+    assert back.rows("EC") == [("edge below the minimum", 83)]
+    assert back.near_misses("EC") == []
+    assert back.weight("EC") is None
+
+
+def test_only_the_strongest_near_misses_are_kept(conn):
+    from vb.market.value import Trace
+
+    trace = Trace()
+    for i in range(40):
+        trace.saw_edge("EC", i / 1000, f"bet {i}")
+    kept = trace.near_misses("EC")
+    assert len(kept) == Trace.KEEP
+    assert [round(e, 3) for e, _ in kept] == [0.039, 0.038, 0.037, 0.036, 0.035]
