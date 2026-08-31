@@ -360,6 +360,7 @@ def build_builders(
     min_edge = float(settings.get("bet_builder.min_combined_edge", 0.12))
     max_stake = float(settings.get("bet_builder.max_stake_pts", 1.0))
     max_legs = int(settings.get("bet_builder.max_legs", 4))
+    haircut = float(settings.get("bet_builder.leg_haircut", 0.04))
     as_of_iso = (as_of or datetime.now()).isoformat()
 
     # Only build on fixtures we already like for a reason.
@@ -404,6 +405,15 @@ def build_builders(
                 # per leg, which is how a builder that looks like value is not.
                 prob = _anchor_to_market(conn, fixture, market, sel, line, prob,
                                          blend_weight, as_of_iso)
+                # Shade each leg, exactly as an accumulator does. The backtest
+                # is unambiguous about why: over two seasons the model
+                # over-predicts in every probability band, and that error
+                # compounds once per leg. Accumulators, which shade, came out
+                # ahead; builders, which did not, lost a quarter of everything
+                # staked on them and carried 87% of the total loss from 26% of
+                # the money. A leg is not more reliable for having been chosen
+                # by a template rather than by the value engine — it is less.
+                prob = max(0.01, prob - haircut)
                 legs.append(Leg(market, sel, line))
                 marginals.append(prob)
             if not ok or len(legs) < 2 or len(legs) > max_legs:

@@ -58,6 +58,12 @@ bet_builder:
   simulations: 40000
   # Bookmakers price builders with a heavier margin; demand more edge.
   min_combined_edge: 0.12
+  # Shade every leg by this before combining, the same as an accumulator does.
+  # Measured over two seasons the model over-predicts in every probability
+  # band, and that error compounds once per leg. Builders had no haircut and
+  # lost 25% of everything staked on them — 87% of the total loss from 26% of
+  # the money — while accumulators, which do shade, finished ahead.
+  leg_haircut: 0.04
   max_stake_pts: 1.0
 
 long_term:

@@ -154,3 +154,42 @@ def test_an_old_database_has_its_handicap_lines_repaired(tmp_path):
             "SELECT line FROM odds WHERE selection = 'away'").fetchone()["line"]
         assert away == pytest.approx(-1.0)
         assert repair_ah_lines(conn) == 0, "running twice would undo the repair"
+
+
+def test_a_builder_shades_its_legs_like_an_accumulator(conn):
+    """Model error compounds once per leg, so every leg has to be shaded.
+
+    Over two seasons the model over-predicted in every probability band.
+    Accumulators, which shade, finished ahead; builders, which did not, lost a
+    quarter of everything staked on them.
+    """
+    from vb.config import load_settings
+    from vb.sample import generate_all
+    from vb.tips.select import build_builders, gather
+
+    generate_all(conn, season="2026/27", leagues=["E2"], seed=8)
+    candidates, fixtures, _ = gather(conn, days=7)
+
+    settings = load_settings()
+    raw = settings.raw["bet_builder"]
+    before = raw.get("leg_haircut", 0.04)
+    try:
+        raw["leg_haircut"] = 0.0
+        unshaded = build_builders(conn, fixtures, candidates, settings)
+        raw["leg_haircut"] = 0.04
+        shaded = build_builders(conn, fixtures, candidates, settings)
+    finally:
+        raw["leg_haircut"] = before
+
+    assert unshaded and shaded, "no builders produced to compare"
+    by_ref = {t.ref: t for t in unshaded}
+    compared = 0
+    for tip in shaded:
+        other = by_ref.get(tip.ref)
+        if other is None:
+            continue
+        compared += 1
+        assert tip.price > other.price, (
+            f"{tip.ref}: shading legs must raise the price you demand, "
+            f"got {tip.price} against {other.price}")
+    assert compared, "no builder survived both settings to compare"
