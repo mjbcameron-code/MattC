@@ -43,6 +43,7 @@ class ScoutReport:
     horizon: int
     enriched: int
     generated_at: str = ""
+    is_sample: bool = False
 
 
 class Scout:

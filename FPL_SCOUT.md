@@ -81,6 +81,7 @@ with them:
 --aggression       safe | balanced | aggressive — how much risk to lean towards
 --out PATH         where to write the report
 --open             open the report when it is written
+--fragment         omit the html/head/body shell, for embedding in another page
 --demo             run on generated sample data, no network needed
 --offline          use cached responses only
 --no-deep          skip per-match history: faster, less reliable DefCon rates

@@ -50,6 +50,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--open", action="store_true", help="open the report when it is written")
     parser.add_argument(
+        "--fragment", action="store_true",
+        help="omit the html/head/body shell, for embedding in another page",
+    )
+    parser.add_argument(
         "--demo", action="store_true",
         help="run against generated sample data, with no network access",
     )
@@ -116,9 +120,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  Checked match-by-match history for {loaded.enriched} players")
 
     report = Scout(horizon=args.horizon, aggression=args.aggression).run(loaded)
+    report.is_sample = args.demo
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(render(report), encoding="utf-8")
+    args.out.write_text(render(report, fragment=args.fragment), encoding="utf-8")
     print(f"\nReport written to {args.out.resolve()}")
 
     _summarise(report)

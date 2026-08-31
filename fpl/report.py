@@ -641,8 +641,12 @@ def _method(report: ScoutReport) -> str:
 </div>"""
 
 
-def render(report: ScoutReport) -> str:
-    """Build the whole page as one self-contained HTML document."""
+def render(report: ScoutReport, fragment: bool = False) -> str:
+    """Build the page.
+
+    With `fragment` set, the document shell is left off and only the head
+    contents and body markup are returned, for embedding in a host page.
+    """
     review = report.review
     gameweek = report.gameweek
 
@@ -738,17 +742,15 @@ def render(report: ScoutReport) -> str:
     )
 
     team_name = esc(report.squad.team_name) if report.squad else "FPL Scout"
-    return f"""<!doctype html>
-<html lang="en"><head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{team_name} Scout Report</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
-<style>{CSS}</style>
-</head><body>
-{_sheet(report)}
+    banner = ""
+    if fragment and getattr(report, "is_sample", False):
+        banner = """<div class="wrap" style="padding-top:18px;padding-bottom:0">
+  <div class="note"><b>Sample data.</b> This page is running on a generated season —
+  invented clubs, invented players, invented numbers — so you can see how the scout
+  presents things. Run it against your own team ID for real analysis.</div>
+</div>"""
+
+    body = f"""{_sheet(report)}{banner}
 <div class="wrap">
   <div class="tabs" role="tablist">{tabs}</div>
   {panel_html}
@@ -759,5 +761,25 @@ def render(report: ScoutReport) -> str:
     before the deadline — the model cannot read a press conference.
   </footer>
 </div>
-<script>{SCRIPT}</script>
-</body></html>"""
+<script>{SCRIPT}</script>"""
+
+    head = (
+        '<title>' + team_name + ' Scout Report</title>\n'
+        '<link rel="preconnect" href="https://fonts.googleapis.com">\n'
+        '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n'
+        '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?'
+        'family=Anton&family=Archivo:wght@400;500;600;700&'
+        'family=IBM+Plex+Mono:wght@400;500;600&display=swap">\n'
+        '<style>' + CSS + '</style>'
+    )
+
+    if fragment:
+        return head + "\n" + body
+
+    return (
+        '<!doctype html>\n<html lang="en"><head>\n'
+        '<meta charset="utf-8">\n'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+        + head +
+        '\n</head><body>\n' + body + '\n</body></html>'
+    )
