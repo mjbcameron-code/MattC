@@ -218,6 +218,28 @@ def test_a_record_from_an_older_build_says_so(conn, loaded_app, client):
     assert "31 August, 09:15" in body
 
 
+def test_a_record_with_every_field_but_an_older_shape_is_still_stale(
+        conn, loaded_app, client):
+    """The hole the first staleness check had.
+
+    This record carries counts, near misses and a weight — everything the
+    reader looks for — but holds the weight in the older single-value shape.
+    Converted for display it reports "across 1 fixtures", which is not a
+    measurement of anything, and nothing said so.
+    """
+    from vb.db import set_setting
+
+    set_setting(conn, "coverage.trace", (
+        '{"counts": {"EC": {"edge below the minimum": 83}}, '
+        '"best": {"EC": [[0.286, "Harrogate v Gateshead"]]}, '
+        '"setup": {"EC": {"weight": 0.35, "matches_seen": 95}}}'))
+    set_setting(conn, "coverage.built_at", "2026-08-31T13:31:00")
+    conn.commit()
+
+    body = client.get("/").get_data(as_text=True)
+    assert "saved by an older version" in body
+
+
 def test_a_fresh_record_carries_no_warning(conn, loaded_app, client):
     from vb.db import set_setting
     from vb.market.value import Trace

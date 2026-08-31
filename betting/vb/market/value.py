@@ -292,7 +292,16 @@ class Trace:
     #: How many near misses to keep per league.
     KEEP = 5
 
+    #: Bumped whenever the stored shape changes. A saved record announces the
+    #: format it was written in, so a reader can tell "this ran just now and
+    #: had nothing more to say" from "this predates what you are looking for".
+    #: Inferring that from missing fields does not work: an older record can
+    #: carry every field the reader wants and still hold the wrong shape in
+    #: them, which is exactly how a stale record slipped through as current.
+    FORMAT = 3
+
     def __init__(self) -> None:
+        self.format = self.FORMAT
         self.counts: dict[str, Counter] = defaultdict(Counter)
         self.best: dict[str, list[tuple[float, str]]] = defaultdict(list)
         self.setup: dict[str, list[list[float]]] = {}
@@ -344,6 +353,7 @@ class Trace:
 
     def to_json(self) -> str:
         return json.dumps({
+            "format": self.FORMAT,
             "counts": {c: dict(v) for c, v in self.counts.items()},
             "best": {c: v for c, v in self.best.items()},
             "setup": self.setup,
@@ -356,6 +366,7 @@ class Trace:
         if raw and "counts" not in raw:
             raw = {"counts": raw}
         trace = cls()
+        trace.format = int(raw.get("format", 1)) if raw else cls.FORMAT
         for code, reasons in raw.get("counts", {}).items():
             for reason, count in reasons.items():
                 trace.note(code, reason, count)

@@ -146,10 +146,11 @@ def _coverage(conn, leagues) -> tuple[list[dict[str, Any]], str, bool]:
                      for e, lbl in trace.near_misses(code)],
         })
     out.sort(key=lambda r: (-r["tipped"], -r["considered"]))
-    # A record saved by an older build carries the counts but none of the
-    # detail. Rendering it silently looks exactly like a fresh run that found
-    # nothing to say, so it has to announce itself.
-    stale = bool(out) and all(r["weight"] is None for r in out)
+    # Rendering a record from an older build silently looks exactly like a
+    # fresh run that found nothing to say, so it has to announce itself. The
+    # format it was written in is the only reliable test: a record can carry
+    # every field this reader wants and still hold an older shape in them.
+    stale = bool(out) and trace.format < Trace.FORMAT
     return out, built, stale
 
 
