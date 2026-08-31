@@ -785,9 +785,32 @@ def cmd_calibrate(args) -> int:
         with session(scratch) as conn:
             season = None if (args.season or "all").lower() == "all" \
                 else _season(args)
+            # Replay with no correction in force, whatever is configured. The
+            # fit maps the model's raw probability onto what happens, so a
+            # replay that is already corrected measures the residual instead of
+            # the fault. Worse, it deadlocks: a correction severe enough to
+            # empty the card leaves too few bets to fit a replacement, and the
+            # tool cannot recover from its own bad calibration. Forcing the
+            # identity here makes the fit idempotent and self-healing.
+            settings = load_settings()
+            model = settings.raw.setdefault("model", {})
+            previous = model.get("calibration")
+            in_force = (float(settings.get("model.calibration.slope", 1.0)),
+                        float(settings.get("model.calibration.intercept", 0.0)))
+            if in_force != (1.0, 0.0):
+                print(f"  {DIM}Ignoring the correction in force "
+                      f"({in_force[0]:.3f} / {in_force[1]:+.3f}) for the "
+                      f"replay — a fit has to see the model uncorrected.{RESET}")
+            model["calibration"] = {"slope": 1.0, "intercept": 0.0}
             print("Replaying the record. This takes a few minutes…")
-            result = backtest_mod.run(conn, season=season,
-                                      warmup_weeks=args.warmup)
+            try:
+                result = backtest_mod.run(conn, season=season,
+                                          warmup_weeks=args.warmup)
+            finally:
+                if previous is None:
+                    model.pop("calibration", None)
+                else:
+                    model["calibration"] = previous
             if result.note:
                 print(f"\n{result.note}")
                 return 1

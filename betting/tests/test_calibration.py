@@ -294,3 +294,48 @@ def test_the_backtest_states_the_correction_it_ran_under(conn, tmp_path, capsys,
         assert "settings.local.yaml" in out
     finally:
         config.load_settings.cache_clear()
+
+
+def test_calibrate_fits_on_an_uncorrected_replay(conn, tmp_path, capsys,
+                                                 monkeypatch):
+    """A correction severe enough to empty the card would otherwise be final.
+
+    Fitting needs bets; a bad correction prevents bets; so the tool could not
+    recover from its own calibration. It happened — 296 bets fell to 30, and
+    the next fit refused with "only 52 graded bets". The replay must therefore
+    ignore whatever is configured and measure the model raw.
+    """
+    import shutil
+    from types import SimpleNamespace
+
+    import vb.config as config
+    from vb.cli import cmd_calibrate
+    from vb.sample import generate_all
+
+    generate_all(conn, season="2026/27", leagues=["E2", "E3"], seed=4)
+    conn.commit()
+    source = conn.execute("PRAGMA database_list").fetchone()["file"]
+    db = tmp_path / "cal.db"
+    shutil.copy(source, db)
+
+    settings = config.load_settings()
+    model = settings.raw.setdefault("model", {})
+    before = model.get("calibration")
+    # A correction harsh enough that nothing would clear the thresholds.
+    model["calibration"] = {"slope": 1.0, "intercept": -2.5}
+    try:
+        args = SimpleNamespace(db=str(db), season="2026/27", warmup=2,
+                               apply=False)
+        cmd_calibrate(args)
+        out = capsys.readouterr().out
+        assert "Ignoring the correction in force" in out
+        assert "Too few to fit" not in out, \
+            "a harsh correction must not stop a fit being made"
+        assert "fitted on" in out
+        # And the setting is put back exactly as it was found.
+        assert model["calibration"] == {"slope": 1.0, "intercept": -2.5}
+    finally:
+        if before is None:
+            model.pop("calibration", None)
+        else:
+            model["calibration"] = before
