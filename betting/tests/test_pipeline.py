@@ -296,3 +296,45 @@ def test_the_sample_generator_is_actually_reproducible():
         for salt in (0, 1, 2)
     }
     assert len(seeds) == 1, f"the seed moves with PYTHONHASHSEED: {seeds}"
+
+
+def test_explain_shows_the_workings_for_one_fixture(loaded, tmp_path, capsys):
+    """The engine's strongest views get binned unexamined; this is the look."""
+    import shutil
+    from types import SimpleNamespace
+
+    from vb.cli import cmd_explain
+
+    loaded.commit()
+    source = loaded.execute("PRAGMA database_list").fetchone()["file"]
+    db = tmp_path / "explain.db"
+    shutil.copy(source, db)
+
+    team = loaded.execute(
+        "SELECT t.name FROM teams t JOIN matches m ON m.home_id = t.id "
+        "WHERE m.status = 'scheduled' LIMIT 1").fetchone()["name"]
+
+    assert cmd_explain(SimpleNamespace(db=str(db), team=team, market="h2h")) == 0
+    out = capsys.readouterr().out
+    assert team in out
+    assert "of the say against the market" in out
+    # the three columns that let you judge a disagreement
+    for column in ("model", "market", "blend", "edge"):
+        assert column in out
+    assert "every price on file" in out
+
+
+def test_explain_is_honest_when_it_has_nothing(loaded, tmp_path, capsys):
+    import shutil
+    from types import SimpleNamespace
+
+    from vb.cli import cmd_explain
+
+    loaded.commit()
+    source = loaded.execute("PRAGMA database_list").fetchone()["file"]
+    db = tmp_path / "explain.db"
+    shutil.copy(source, db)
+
+    assert cmd_explain(SimpleNamespace(db=str(db), team="Nonexistent Rovers",
+                                       market=None)) == 1
+    assert "No upcoming fixture found" in capsys.readouterr().out

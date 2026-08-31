@@ -17,8 +17,8 @@ import json
 import sys
 
 from . import backtest as backtest_mod
-from .config import (CACHE_DIR, DB_PATH, enabled_leagues, load_leagues,
-                     load_settings)
+from .config import (CACHE_DIR, DB_PATH, enabled_leagues, league as get_league,
+                     load_leagues, load_settings)
 from .db import session
 from .report import dashboard
 from .sources import footballdata, manual, understat
@@ -283,6 +283,108 @@ def _wrap(text: str, width: int) -> list[str]:
     import textwrap
 
     return textwrap.wrap(text, width) or [""]
+
+
+def cmd_explain(args) -> int:
+    """Show the full workings behind one fixture's prices.
+
+    The engine's strongest opinions are the ones it throws away: an edge over
+    `max_edge` is binned as a data fault, unexamined, every week. Sometimes
+    that is right — a stale price, a mis-mapped club — and sometimes it is the
+    one genuine call on the card. Nothing decided which, because the workings
+    were never visible. This prints them.
+    """
+    from datetime import datetime
+
+    from .market.odds import best_prices, consensus_fair, latest_quotes
+    from .market.value import blend, confidence_weight
+    from .models.fixture import ModelBank, build_fixture
+
+    settings = load_settings()
+    with session(args.db) as conn:
+        like = f"%{args.team}%"
+        row = conn.execute(
+            "SELECT m.* FROM matches m "
+            "JOIN teams h ON h.id = m.home_id "
+            "JOIN teams a ON a.id = m.away_id "
+            "WHERE (h.name LIKE ? OR a.name LIKE ?) AND m.status = 'scheduled' "
+            "ORDER BY m.kickoff LIMIT 1", (like, like)).fetchone()
+        if row is None:
+            print(f"No upcoming fixture found for '{args.team}'.")
+            return 1
+
+        bank = ModelBank(conn, as_of=datetime.now())
+        fixture = build_fixture(conn, row, bank)
+        if fixture is None:
+            print("No model for that fixture yet — not enough matches on file.")
+            return 1
+
+        league = get_league(fixture.league_code)
+        weight = confidence_weight(
+            settings.market_blend(league.tier), fixture.matches_seen,
+            float(settings.get("model.confidence_k", 8.0)))
+        exchanges = list(settings.get("bookmakers.exchanges", []) or [])
+        aggregates = list(settings.get("bookmakers.aggregates", []) or [])
+        unbettable = set(exchanges) | set(aggregates)
+        sharp = exchanges + aggregates + ["pinnacle"]
+
+        print(f"\n{BOLD}{fixture.label}{RESET} — {league.name}, "
+              f"{fixture.kickoff[:16].replace('T', ' ')}")
+        print(f"{DIM}model fitted on {fixture.matches_seen} matches per club; "
+              f"it gets {weight:.0%} of the say against the market{RESET}")
+
+        groups = conn.execute(
+            "SELECT DISTINCT market, line FROM odds "
+            "WHERE match_id = ? AND is_closing = 0 ORDER BY market",
+            (fixture.match_id,)).fetchall()
+        if not groups:
+            print("\nNo prices on file for this fixture.")
+            return 1
+
+        for group in groups:
+            market, line = group["market"], group["line"]
+            if args.market and market != args.market:
+                continue
+            quotes = latest_quotes(conn, fixture.match_id, market, line)
+            if not quotes:
+                continue
+            fair = consensus_fair(quotes, prefer_books=sharp)
+            bettable = [q for q in quotes if q.bookmaker not in unbettable]
+            best = best_prices(bettable) if bettable else {}
+            title = market + (f" {line:g}" if line is not None else "")
+            print(f"\n  {BOLD}{title}{RESET}")
+            print(f"  {'selection':<14}{'model':>8}{'market':>9}{'blend':>9}"
+                  f"{'best':>8}  {'book':<14}{'edge':>8}")
+            for selection in sorted({q.selection for q in quotes}):
+                subject, _, sel = selection.rpartition("|")
+                model_prob = fixture.probability(market, sel, line,
+                                                 subject or None)
+                market_prob = fair.get(selection)
+                quote = best.get(selection)
+                blended = (blend(model_prob, market_prob, weight)
+                           if model_prob is not None else None)
+                edge = (blended * quote.price - 1
+                        if blended is not None and quote else None)
+                print(f"  {selection:<14}"
+                      f"{_pct(model_prob):>8}{_pct(market_prob):>9}"
+                      f"{_pct(blended):>9}"
+                      f"{(f'{quote.price:.2f}' if quote else '—'):>8}  "
+                      f"{(quote.bookmaker if quote else '—'):<14}"
+                      f"{(f'{edge:+.1%}' if edge is not None else '—'):>8}")
+            print(f"\n  {DIM}every price on file:{RESET}")
+            by_book: dict[str, list[str]] = {}
+            for q in sorted(quotes, key=lambda q: q.bookmaker):
+                mark = "*" if q.bookmaker in unbettable else " "
+                by_book.setdefault(f"{q.bookmaker}{mark}", []).append(
+                    f"{q.selection} {q.price:.2f}")
+            for book, prices in by_book.items():
+                print(f"    {DIM}{book:<16}{'  '.join(prices)}{RESET}")
+            print(f"    {DIM}* not a price you can take — reference only{RESET}")
+    return 0
+
+
+def _pct(value) -> str:
+    return "—" if value is None else f"{value:.1%}"
 
 
 def cmd_prices(args) -> int:
@@ -992,6 +1094,11 @@ def build_parser() -> argparse.ArgumentParser:
               "account for every price: what was tipped and what stopped it")
     why.add_argument("--days", type=int, default=7)
     why.add_argument("--leagues")
+
+    explain = add("explain", cmd_explain,
+                  "the full workings behind one fixture's prices")
+    explain.add_argument("team", help="any part of either club's name")
+    explain.add_argument("--market", help="just this market, e.g. h2h")
 
     prices = add("prices", cmd_prices, "fair prices for a day's fixtures (no odds needed)")
     prices.add_argument("--date", help="YYYY-MM-DD, default tomorrow")
