@@ -22,6 +22,7 @@ import webbrowser
 from pathlib import Path
 
 from fpl.api import FplApiError, FplClient
+from fpl.config import load_team_id, save_team_id
 from fpl.loader import load_all
 from fpl.report import render
 from fpl.scout import Scout
@@ -34,7 +35,14 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="Find your team ID in your FPL URL: /entry/<THIS NUMBER>/event/1",
     )
-    parser.add_argument("--team-id", type=int, help="your FPL entry (team) ID")
+    parser.add_argument(
+        "--team-id", type=int,
+        help="your FPL entry (team) ID (remembered after the first run)",
+    )
+    parser.add_argument(
+        "--forget", action="store_true",
+        help="clear the remembered team ID and exit",
+    )
     parser.add_argument("--gameweek", type=int, help="gameweek to plan for (default: the next one)")
     parser.add_argument(
         "--horizon", type=int, default=5,
@@ -72,13 +80,31 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
+    if args.forget:
+        from fpl.config import CONFIG_FILE
+
+        if CONFIG_FILE.exists():
+            CONFIG_FILE.unlink()
+            print(f"Forgot the stored team ID ({CONFIG_FILE}).")
+        else:
+            print("No team ID was stored.")
+        return 0
+
+    # Explicit flag wins, then FPL_TEAM_ID, then whatever was saved last time.
+    remembered = False
+    if not args.team_id and not args.demo:
+        args.team_id = load_team_id()
+        remembered = args.team_id is not None
+
     if not args.demo and not args.team_id:
         print(
             "No team ID given.\n\n"
             "  Run with your own team:   python3 fpl_scout.py --team-id 1234567\n"
             "  Or look around first:     python3 fpl_scout.py --demo\n\n"
-            "Your team ID is the number in your FPL URL:\n"
-            "  fantasy.premierleague.com/entry/1234567/event/4\n",
+            "Your team ID is a plain number, from your FPL URL:\n"
+            "  fantasy.premierleague.com/entry/1234567/event/4\n"
+            "                                  ^^^^^^^\n"
+            "It is remembered after the first run, so you only type it once.\n",
             file=sys.stderr,
         )
         return 2
@@ -94,20 +120,46 @@ def main(argv: list[str] | None = None) -> int:
         entry_id = 1234567
         print("Running on generated sample data — nothing here is real.")
     else:
+        if args.team_id <= 0:
+            print("A team ID must be a positive number.", file=sys.stderr)
+            return 2
         client = FplClient(ttl_seconds=args.cache_ttl, offline=args.offline)
         entry_id = args.team_id
-        print(f"Fetching Fantasy Premier League data for team {entry_id}…")
+        source = " (remembered)" if remembered else ""
+        print(f"Fetching Fantasy Premier League data for team {entry_id}{source}…")
 
     try:
         loaded = load_all(client, entry_id, args.gameweek, deep=not args.no_deep)
     except FplApiError as error:
         print(f"\nCould not load the data: {error}\n", file=sys.stderr)
-        print(
-            "If this is a network problem, try again in a moment. If the team ID is wrong,\n"
-            "check the number in your FPL URL. Use --offline to fall back on cached data.",
-            file=sys.stderr,
-        )
+        if "not found" in str(error).lower() or "team ID" in str(error):
+            from fpl.config import CONFIG_FILE, load_team_id as _stored
+
+            if not args.demo and _stored() == entry_id and CONFIG_FILE.exists():
+                CONFIG_FILE.unlink()
+            print(
+                f"No FPL team with the ID {entry_id} exists.\n\n"
+                "Check the number in your FPL URL while logged in:\n"
+                "  fantasy.premierleague.com/entry/1234567/event/4\n"
+                "                                  ^^^^^^^\n"
+                "Then run again with --team-id, or clear the stored one with --forget.",
+                file=sys.stderr,
+            )
+        else:
+            if not args.demo:
+                save_team_id(entry_id)
+            print(
+                "This looks like a network problem rather than a bad team ID, so the ID\n"
+                "has been remembered anyway. Try again in a moment, or use --offline to\n"
+                "fall back on cached data.",
+                file=sys.stderr,
+            )
         return 1
+
+    if not args.demo:
+        saved_to = save_team_id(entry_id)
+        if saved_to:
+            print(f"  Remembered this team ID — future runs need no arguments.")
 
     squad = loaded.squad
     if squad:

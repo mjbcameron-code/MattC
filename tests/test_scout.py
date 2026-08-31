@@ -8,6 +8,7 @@ matter: unavailable players, defensive thresholds and hostile input.
 from __future__ import annotations
 
 import html
+import os
 import re
 import unittest
 
@@ -320,6 +321,61 @@ class TestReport(unittest.TestCase):
         page = render(Scout(horizon=3).run(loaded))
         self.assertNotIn('<script>alert("x")</script>', page)
         self.assertIn("&lt;script&gt;", page)
+
+
+class TestConfig(unittest.TestCase):
+    """The team ID is remembered so it only has to be typed once."""
+
+    def setUp(self):
+        import tempfile
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self._env = dict(os.environ)
+        os.environ["FPL_SCOUT_CONFIG_DIR"] = self.tmp.name
+        os.environ.pop("FPL_TEAM_ID", None)
+        import importlib
+
+        import fpl.config
+        self.config = importlib.reload(fpl.config)
+
+    def tearDown(self):
+        os.environ.clear()
+        os.environ.update(self._env)
+        import importlib
+
+        import fpl.config
+        importlib.reload(fpl.config)
+
+    def test_nothing_remembered_at_first(self):
+        self.assertIsNone(self.config.load_team_id())
+
+    def test_round_trip(self):
+        self.config.save_team_id(12642)
+        self.assertEqual(self.config.load_team_id(), 12642)
+
+    def test_environment_wins_over_stored_value(self):
+        self.config.save_team_id(12642)
+        os.environ["FPL_TEAM_ID"] = "999"
+        self.assertEqual(self.config.load_team_id(), 999)
+
+    def test_junk_values_are_ignored(self):
+        os.environ["FPL_TEAM_ID"] = "not-a-number"
+        self.assertIsNone(self.config.load_team_id())
+        self.config.CONFIG_FILE.write_text("{ broken json")
+        self.assertIsNone(self.config.load_team_id())
+
+    def test_a_uuid_is_not_accepted_as_a_team_id(self):
+        os.environ["FPL_TEAM_ID"] = "fb191bf6-7c65-4bf3-8f75-e666cb93fcd9"
+        self.assertIsNone(self.config.load_team_id())
+
+    def test_saving_is_never_fatal(self):
+        os.environ["FPL_SCOUT_CONFIG_DIR"] = "/proc/nonexistent/nope"
+        import importlib
+
+        import fpl.config
+        config = importlib.reload(fpl.config)
+        self.assertIsNone(config.save_team_id(1))
 
 
 if __name__ == "__main__":

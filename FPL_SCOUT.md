@@ -12,12 +12,20 @@ visual report you open in a browser.
 python3 fpl_scout.py --team-id 1234567 --open
 ```
 
-Your team ID is the number in your FPL URL:
+Your team ID is a plain number, from your FPL URL while logged in:
 
 ```
 fantasy.premierleague.com/entry/1234567/event/4
                                 ^^^^^^^
 ```
+
+It is remembered after the first run, so from then on:
+
+```bash
+python3 fpl_scout.py --open
+```
+
+Set `FPL_TEAM_ID` to override it, or `--forget` to clear it.
 
 No dependencies beyond the Python standard library, and no account details —
 every endpoint it reads is public.
@@ -75,7 +83,8 @@ with them:
 ## Options
 
 ```
---team-id N        your FPL entry ID
+--team-id N        your FPL entry ID (remembered after the first run)
+--forget           clear the remembered team ID and exit
 --gameweek N       gameweek to plan for (default: the next one)
 --horizon N        gameweeks to project ahead (default: 5)
 --aggression       safe | balanced | aggressive — how much risk to lean towards
