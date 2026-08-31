@@ -76,6 +76,8 @@ def cmd_update(args) -> int:
 
     with session(args.db) as conn:
         for code in codes:
+            if args.fixtures_only:
+                break
             league = load_leagues()[code]
             if league.football_data:
                 for season_label in seasons:
@@ -616,20 +618,42 @@ def cmd_doctor(args) -> int:
 
         # ---- 2. club identity -------------------------------------------
         print(f"\n{BOLD}2. Clubs{RESET}")
-        singles = conn.execute(
-            "SELECT t.name, COUNT(m.id) AS n FROM teams t LEFT JOIN matches m "
-            "ON m.home_id = t.id OR m.away_id = t.id GROUP BY t.id HAVING n <= 1"
+        counts = conn.execute(
+            "SELECT t.id, t.name, COUNT(m.id) AS n FROM teams t LEFT JOIN matches m "
+            "ON m.home_id = t.id OR m.away_id = t.id GROUP BY t.id"
         ).fetchall()
-        print(f"  {conn.execute('SELECT COUNT(*) FROM teams').fetchone()[0]} clubs, "
+        singles = [r for r in counts if r["n"] <= 1]
+        established = [r for r in counts if r["n"] > 5]
+        print(f"  {len(counts)} clubs, "
               f"{conn.execute('SELECT COUNT(*) FROM team_aliases').fetchone()[0]} spellings")
         if singles:
-            print(f"  {RED}{len(singles)} club(s) with almost no matches — the "
-                  f"signature of a name that failed to match:{RESET}")
+            from .repo import token_similarity
+
+            print(f"  {len(singles)} club(s) with almost no matches. That is either "
+                  f"a name that failed to match, or a club new to the data:")
+            suspected = []
             for row in singles[:12]:
-                print(f"    {row['name']}")
-            problems.append(
-                f"{len(singles)} club(s) look like duplicates from a spelling mismatch; "
-                "add them to config/aliases.yaml")
+                # Naming the club it was probably meant to be is the whole point:
+                # the fix is a line in aliases.yaml, and that line needs both names.
+                twin, score = None, 0.0
+                for other in established:
+                    similarity = token_similarity(row["name"], other["name"])
+                    if similarity > score:
+                        twin, score = other, similarity
+                if twin is not None and score >= 0.5:
+                    suspected.append(row)
+                    print(f"    {RED}{row['name']:28}{RESET} probably the same club as "
+                          f"{twin['name']} ({twin['n']} matches, {score:.0%} alike)")
+                else:
+                    print(f"    {row['name']:28} no obvious match — it may simply be "
+                          "newly promoted")
+            if suspected:
+                problems.append(
+                    f"{len(suspected)} club(s) look like duplicates from a spelling "
+                    "mismatch; add them to config/aliases.yaml")
+            else:
+                print(f"  {DIM}None of these resembles an existing club, so they are "
+                      f"most likely newly promoted rather than misspelled.{RESET}")
         else:
             print(f"  {GREEN}no duplicates detected{RESET}")
 
@@ -643,9 +667,22 @@ def cmd_doctor(args) -> int:
                 print(f"  {code:8}{bad:>16}{'':>10}{'':>12}  too few results to fit")
                 continue
             import math
-            thin = min(model.matches_per_team.values()) < 6 if model.matches_per_team else True
-            mark = warn if thin else ok
-            note = "some clubs have barely played" if thin else ""
+            # A club with few games in this division is only a problem if it has
+            # nowhere to borrow a rating from. Promotion churn is normal and is
+            # already handled by rating such clubs from the division below.
+            unsupported = []
+            for team_id, played in (model.matches_per_team or {}).items():
+                if played >= 6:
+                    continue
+                elsewhere = conn.execute(
+                    "SELECT COUNT(*) FROM matches WHERE (home_id = ? OR away_id = ?) "
+                    "AND status = 'played' AND league_code != ?",
+                    (team_id, team_id, code)).fetchone()[0]
+                if elsewhere < 6:
+                    unsupported.append(team_id)
+            mark = warn if unsupported else ok
+            note = (f"{len(unsupported)} club(s) new to the data entirely"
+                    if unsupported else "")
             print(f"  {code:8}{mark:>16}{model.home_adv:>10.3f}"
                   f"{math.exp(model.base) * 2:>12.2f}  {note}")
             fittable += 1
@@ -759,6 +796,9 @@ def build_parser() -> argparse.ArgumentParser:
                              "than waiting for the football-data refresh (1 request "
                              "per league)")
     update.add_argument("--no-fixtures", action="store_true")
+    update.add_argument("--fixtures-only", action="store_true",
+                        help="skip the results files and refresh only the upcoming "
+                             "fixtures and their prices")
     update.add_argument("--no-xg", action="store_true")
     update.add_argument("--force", action="store_true", help="ignore the cache")
 

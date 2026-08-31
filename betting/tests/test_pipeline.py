@@ -123,3 +123,50 @@ def test_doctor_passes_a_healthy_database_and_fails_an_empty_one(loaded, tmp_pat
         assert "Everything the tipping needs is in place" in out
     finally:
         config.DB_PATH = original
+
+
+def test_a_promoted_club_is_not_mistaken_for_a_misspelling(conn, capsys):
+    """One match played can mean a bad name match — or a club just promoted."""
+    from types import SimpleNamespace
+
+    from vb.cli import cmd_doctor
+    from vb.repo import upsert_match
+
+    for i in range(20):
+        upsert_match(conn, "I1", "2025/26", f"2026-01-{(i % 27) + 1:02d}T15:00:00",
+                     "Juventus", f"Opponent {i}", fthg=1, ftag=1)
+    upsert_match(conn, "I1", "2026/27", "2026-08-24T15:00:00",
+                 "Frosinone", "Juventus", fthg=0, ftag=2)
+    conn.commit()
+
+    path = conn.execute("PRAGMA database_list").fetchone()["file"]
+    cmd_doctor(SimpleNamespace(db=path))
+    out = capsys.readouterr().out
+    assert "newly promoted" in out
+    assert "spelling mismatch" not in out, "a promoted club is not a fault"
+
+
+def test_a_real_misspelling_is_still_caught(conn, capsys):
+    from types import SimpleNamespace
+
+    from vb.cli import cmd_doctor
+    from vb.repo import resolve_team, upsert_match
+
+    for i in range(20):
+        upsert_match(conn, "I1", "2025/26", f"2026-01-{(i % 27) + 1:02d}T15:00:00",
+                     "Hellas Verona", f"Opponent {i}", fthg=1, ftag=1)
+    # A spelling the matcher rejected, now sitting alone with one match.
+    conn.execute("INSERT INTO teams (name, league_code) VALUES ('Verona FC', 'I1')")
+    stray = conn.execute("SELECT id FROM teams WHERE name = 'Verona FC'").fetchone()["id"]
+    home = resolve_team(conn, "Juventus", "I1")
+    conn.execute(
+        "INSERT INTO matches (league_code, season, kickoff, match_date, home_id, "
+        "away_id, status, fthg, ftag) VALUES "
+        "('I1','2026/27','2026-08-24T15:00:00','2026-08-24',?,?,'played',1,1)",
+        (home, stray))
+    conn.commit()
+
+    cmd_doctor(SimpleNamespace(db=conn.execute("PRAGMA database_list").fetchone()["file"]))
+    out = capsys.readouterr().out
+    assert "probably the same club as Hellas Verona" in out
+    assert "spelling mismatch" in out
