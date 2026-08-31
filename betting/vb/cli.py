@@ -782,9 +782,29 @@ def cmd_calibrate(args) -> int:
     train = [(p, won) for _, p, won in graded[:half]]
     holdout = [(p, won) for _, p, won in graded[half:]]
 
-    fitted = calibrate.fit(train)
+    free = calibrate.fit(train)
+    shift = calibrate.fit(train, shift_only=True)
     print(f"\n{BOLD}Calibration{RESET}")
     print(f"  fitted on {len(train)} bets, held back {len(holdout)}")
+
+    # A free slope fits the crowded middle bands better and pays for it in the
+    # tails. Worse than "pays for it": a slope under 1 crosses over somewhere
+    # and lifts every probability beneath the crossing, so the correction makes
+    # the model *more* confident about long shots — the cheapest place to
+    # manufacture an edge, and where the card promptly fills up. The measured
+    # fault is over-confidence in every band at once, so a correction that
+    # raises anything is fitting noise, whatever its squared error says.
+    if free.raises_anywhere():
+        fitted = shift
+        crossing = calibrate.inverse_logit(
+            free.intercept / (1 - free.slope)) if free.slope != 1 else 0.0
+        print(f"  {DIM}A free slope fitted {free.slope:.3f} / "
+              f"{free.intercept:+.3f}, which raises every probability below "
+              f"{crossing:.0%} instead of lowering it. Rejected — the model is "
+              f"over-confident in every band, so a correction cannot add "
+              f"confidence anywhere.{RESET}")
+    else:
+        fitted = free
     print(f"  corrected_logit = {fitted.slope:.3f} x logit(p) "
           f"{fitted.intercept:+.3f}")
 

@@ -56,8 +56,23 @@ class Fit:
     def is_identity(self) -> bool:
         return abs(self.slope - 1) < 1e-9 and abs(self.intercept) < 1e-9
 
+    def raises_anywhere(self, low: float = 0.02, high: float = 0.90) -> bool:
+        """Does this correction ever make the model *more* confident?
 
-def fit(rows: list[tuple[float, bool]], buckets: int = 6) -> Fit:
+        A slope below 1 pulls toward the middle, so a fitted line crosses over
+        somewhere and lifts every probability beneath it. That is a disaster
+        here and not a subtle one: the measured fault is over-confidence in
+        every band at once, so a correction that raises anything is fitting
+        noise — and it raises the long shots, which are the cheapest place to
+        manufacture an edge and therefore where the card immediately fills up.
+        """
+        step = (high - low) / 40
+        return any(apply(low + step * i, self.slope, self.intercept)
+                   > low + step * i + 1e-9 for i in range(41))
+
+
+def fit(rows: list[tuple[float, bool]], buckets: int = 6,
+        shift_only: bool = False) -> Fit:
     """Least squares on the log-odds, one point per bucket, weighted by size.
 
     Bucketing rather than fitting each bet individually is deliberate: a single
@@ -88,6 +103,14 @@ def fit(rows: list[tuple[float, bool]], buckets: int = 6) -> Fit:
     weight = sum(n for _, _, n in points)
     mean_x = sum(logit(p) * n for p, _, n in points) / weight
     mean_y = sum(logit(a) * n for _, a, n in points) / weight
+
+    if shift_only:
+        # Slope pinned at 1: a pure downward shift, which is what "uniformly
+        # over-confident" actually means. Freeing the slope buys a little fit
+        # in the crowded middle bands and pays for it in the tails, where the
+        # data is thinnest and the consequences are worst.
+        return Fit(slope=1.0, intercept=mean_y - mean_x, bets=len(usable))
+
     sxy = sum(n * (logit(p) - mean_x) * (logit(a) - mean_y) for p, a, n in points)
     sxx = sum(n * (logit(p) - mean_x) ** 2 for p, _, n in points)
     if sxx <= 0:

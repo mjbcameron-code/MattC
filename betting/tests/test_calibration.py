@@ -189,3 +189,60 @@ def test_applying_twice_does_not_stack_up(tmp_path, monkeypatch):
     data = yaml.safe_load((tmp_path / "settings.local.yaml").read_text())
     assert data["model"]["calibration"] == {"slope": 0.819, "intercept": -0.281}
     config.load_settings.cache_clear()
+
+
+def test_a_correction_may_never_add_confidence():
+    """A slope under 1 crosses over and lifts every probability beneath it.
+
+    That is how a correction for over-confidence ends up manufacturing edges on
+    long shots — the cheapest place to find one — and filling the card with
+    them. It happened: 296 bets became 30, and 35 of the 52 graded sat in the
+    bottom band, exactly where the fitted line pushed the wrong way.
+    """
+    from vb.calibrate import Fit, apply
+
+    free = Fit(slope=0.819, intercept=-0.281)
+    assert free.raises_anywhere(), "this is the fit that went wrong"
+    assert apply(0.10, free.slope, free.intercept) > 0.10
+
+    shift = Fit(slope=1.0, intercept=-0.263)
+    assert not shift.raises_anywhere()
+    for p in (0.03, 0.10, 0.30, 0.55, 0.85):
+        assert apply(p, shift.slope, shift.intercept) < p
+
+
+def test_a_shift_only_fit_recovers_a_uniform_distortion():
+    fitted = fit(_biased(4000, -0.30), shift_only=True)
+    assert fitted.slope == 1.0
+    assert fitted.intercept == pytest.approx(-0.30, abs=0.08)
+    assert not fitted.raises_anywhere()
+
+
+def test_the_identity_is_not_counted_as_raising_anything():
+    from vb.calibrate import Fit
+
+    assert not Fit().raises_anywhere()
+
+
+def test_shift_only_is_worse_on_squared_error_and_still_the_right_choice():
+    """The whole judgement, as a test: aggregate fit is not the criterion.
+
+    Being wrong in one direction is survivable and in the other it is not, so a
+    correction that never adds confidence is preferred even where a free slope
+    tracks the crowded middle bands more closely.
+    """
+    from vb.calibrate import Fit, apply
+
+    bands = [(.115, .090, 89), (.287, .282, 110),
+             (.534, .453, 192), (.655, .529, 51)]
+    free = Fit(slope=0.819, intercept=-0.281)
+    shift = Fit(slope=1.0, intercept=-0.263)
+
+    def error(f):
+        return sum(n * (apply(p, f.slope, f.intercept) - a) ** 2
+                   for p, a, n in bands)
+
+    assert error(free) < error(shift), "the free fit does fit better overall"
+    assert free.raises_anywhere() and not shift.raises_anywhere()
+    # And in the band that matters it is the shift that is right.
+    assert abs(apply(.115, 1.0, -.263) - .090) < abs(apply(.115, .819, -.281) - .090)
