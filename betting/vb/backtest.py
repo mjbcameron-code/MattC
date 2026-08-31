@@ -31,6 +31,10 @@ class BacktestResult:
     weeks: int = 0
     tips: int = 0
     summary: metrics.Summary = field(default_factory=metrics.Summary)
+    #: The same figures over bets advised at a price a bookmaker was
+    #: actually seen to offer. See metrics._rows for why that is not
+    #: all of them.
+    priced: metrics.Summary = field(default_factory=metrics.Summary)
     by_market: list[dict] = field(default_factory=list)
     by_league: list[dict] = field(default_factory=list)
     by_type: list[dict] = field(default_factory=list)
@@ -152,6 +156,7 @@ def run(
     settle_bets(conn, as_of=finish + timedelta(days=7))
     result.weeks = week
     result.summary = metrics.summarise(conn)
+    result.priced = metrics.summarise(conn, priced_only=True)
     result.by_market = metrics.by_market(conn)
     result.by_league = metrics.by_league(conn)
     result.by_type = metrics.by_type(conn)

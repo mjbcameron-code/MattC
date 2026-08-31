@@ -58,17 +58,31 @@ class Summary:
         return self.pnl / self.settled if self.settled else 0.0
 
 
-def _rows(conn: sqlite3.Connection, season_start: str | None) -> list[sqlite3.Row]:
+def _rows(conn: sqlite3.Connection, season_start: str | None,
+          priced_only: bool = False) -> list[sqlite3.Row]:
     sql = "SELECT * FROM bets"
+    where: list[str] = []
     params: list = []
     if season_start:
-        sql += " WHERE event_date >= ?"
+        where.append("event_date >= ?")
         params.append(season_start)
+    if priced_only:
+        # Bets advised at a price no bookmaker was seen to offer. A bet builder
+        # is quoted as a target — "take it at 6.98 or bigger" — computed from
+        # our own fair price, and settled at that number. Its profit and loss is
+        # therefore a restatement of the model, not a measurement of it: raise
+        # the price we demand and the figures improve without a single bet
+        # changing. An accumulator is different, and stays in: its price is the
+        # product of real quotes, which is what a book actually pays.
+        where.append("bookmaker IS NOT NULL AND bookmaker != ''")
+    if where:
+        sql += " WHERE " + " AND ".join(where)
     return conn.execute(sql + " ORDER BY event_date, id", params).fetchall()
 
 
-def summarise(conn: sqlite3.Connection, season_start: str | None = None) -> Summary:
-    rows = _rows(conn, season_start)
+def summarise(conn: sqlite3.Connection, season_start: str | None = None,
+              priced_only: bool = False) -> Summary:
+    rows = _rows(conn, season_start, priced_only)
     summary = Summary(bets=len(rows))
     odds_total = stake_total = edge_total = 0.0
     clv_values: list[float] = []

@@ -272,3 +272,27 @@ def test_no_uncertainty_is_claimed_from_a_single_bet(conn):
     _settled_bet(conn, "T1", 4.0, won=True)
     conn.commit()
     assert metrics.summarise(conn).roi_stderr == 0.0
+
+
+def test_a_price_we_invented_does_not_count_as_a_measurement(conn):
+    """A bet builder is advised at a target we compute, and settled at it.
+
+    So raising the price we demand improves the record without a single bet
+    changing — which is exactly what happened when builder legs were shaded.
+    Those bets carry no bookmaker, and that is what tells them apart.
+    """
+    from vb.track import metrics
+
+    for i in range(10):                      # real quotes, level book
+        _settled_bet(conn, f"R{i:03d}", 4.0, won=(i % 4 == 0))
+    conn.execute("UPDATE bets SET bookmaker = 'bet365'")
+    for i in range(10):                      # invented target prices, all losers
+        _settled_bet(conn, f"B{i:03d}", 6.0, won=False)
+    conn.commit()
+
+    everything = metrics.summarise(conn)
+    measured = metrics.summarise(conn, priced_only=True)
+
+    assert everything.settled == 20 and measured.settled == 10
+    assert measured.pnl > everything.pnl, "the invented bets must be excluded"
+    assert measured.staked == 10.0

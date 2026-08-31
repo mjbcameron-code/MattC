@@ -692,9 +692,21 @@ def _run_backtest(db_path, args) -> int:
     if result.note:
         print(f"\n{BOLD}Backtest: nothing to test{RESET}\n  {result.note}")
         return 1
-    s = result.summary
+    # Headline on bets advised at a price a bookmaker was seen to offer. A
+    # builder is quoted at a target computed from our own fair price and
+    # settled at it, so its profit and loss restates the model rather than
+    # testing it — shading its legs raised the demanded price and "improved"
+    # 158 bets without one of them changing.
+    s = result.priced if result.priced.settled else result.summary
+    unpriced = result.summary.settled - result.priced.settled
     print(f"\n{BOLD}Backtest {result.first_date} → {result.last_date}{RESET}")
-    print(f"  {result.weeks} weeks, {result.tips} bets, {s.staked:.1f} pts staked")
+    print(f"  {result.weeks} weeks, {s.settled} bets at a real price, "
+          f"{s.staked:.1f} pts staked")
+    if unpriced:
+        print(f"  {DIM}{unpriced} more were advised at a target price no book "
+              f"was seen to offer ({result.summary.pnl - s.pnl:+.2f} pts). They "
+              f"are in the table below but not in these figures — a price we "
+              f"set ourselves cannot measure us.{RESET}")
     colour = GREEN if s.pnl >= 0 else RED
     print(f"  {colour}{s.pnl:+.2f} pts{RESET}  ROI {s.roi:+.1%} "
           f"± {s.roi_stderr:.1%}  strike {s.strike_rate:.1%}"
