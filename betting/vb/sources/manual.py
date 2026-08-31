@@ -90,6 +90,7 @@ def load_odds(conn: sqlite3.Connection, path: str | Path, season: str) -> int:
                 row["selection"], float(price),
                 float(line) if line else None,
                 taken_at=datetime.now().isoformat(timespec="seconds"),
+                source="manual",
             )
             loaded += 1
     return loaded

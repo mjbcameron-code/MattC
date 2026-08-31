@@ -208,6 +208,7 @@ def load_league_odds(
                     upsert_odds(
                         conn, match_id, book_key, our_market, selection,
                         float(price), outcome.get("point"), taken_at=taken_at,
+                        source="odds-api",
                     )
                     stored += 1
     return (len(events), stored)

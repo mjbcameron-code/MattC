@@ -768,8 +768,7 @@ def cmd_doctor(args) -> int:
         if os.environ.get("ODDS_API_KEY"):
             live = conn.execute(
                 "SELECT COUNT(DISTINCT bookmaker) AS books, COUNT(*) AS n FROM odds "
-                "WHERE bookmaker NOT IN ('bet365','skybet','betvictor','betfair_ex',"
-                "'bwin','pinnacle','williamhill','market_max','market_avg')"
+                "WHERE source = 'odds-api'"
             ).fetchone()
             from .sources import oddsapi
             state = (f"set — {live['n']} prices from {live['books']} book(s) via the API"

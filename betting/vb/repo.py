@@ -304,16 +304,18 @@ def upsert_odds(
     line: float | None = None,
     taken_at: str | None = None,
     is_closing: bool = False,
+    source: str | None = None,
 ) -> None:
     conn.execute(
         "INSERT INTO odds (match_id, bookmaker, market, selection, line, price, "
-        "taken_at, is_closing) VALUES (?,?,?,?,?,?,?,?) "
+        "taken_at, is_closing, source) VALUES (?,?,?,?,?,?,?,?,?) "
         "ON CONFLICT(match_id, bookmaker, market, selection, line, taken_at) "
-        "DO UPDATE SET price = excluded.price, is_closing = excluded.is_closing",
+        "DO UPDATE SET price = excluded.price, is_closing = excluded.is_closing, "
+        "source = COALESCE(excluded.source, odds.source)",
         (
             match_id, bookmaker.lower(), market, selection, line, float(price),
             taken_at or datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            int(is_closing),
+            int(is_closing), source,
         ),
     )
 

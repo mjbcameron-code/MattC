@@ -188,6 +188,7 @@ def load_csv_text(
                 upsert_odds(
                     conn, match_id, book, market, selection, price, line,
                     taken_at=taken, is_closing=book.endswith("_close"),
+                    source="football-data",
                 )
         count += 1
     return count
@@ -258,6 +259,7 @@ def load_fixtures(
             if book.endswith("_close"):
                 continue
             upsert_odds(conn, match_id, book, market, selection, price, line,
-                        taken_at=datetime.now().isoformat(timespec="seconds"))
+                        taken_at=datetime.now().isoformat(timespec="seconds"),
+                        source="football-data-fixtures")
         counts[league_code] = counts.get(league_code, 0) + 1
     return counts

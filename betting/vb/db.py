@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS odds (
     price       REAL NOT NULL,            -- decimal odds
     taken_at    TEXT NOT NULL,
     is_closing  INTEGER NOT NULL DEFAULT 0,
+    source      TEXT,                    -- which feed produced this price
     UNIQUE (match_id, bookmaker, market, selection, line, taken_at)
 );
 
@@ -232,6 +233,7 @@ def connect(path: Path | str | None = None) -> sqlite3.Connection:
 # add a column to a table that already exists, so they are applied separately.
 LATER_COLUMNS = {
     "matches": {"api_fixture_id": "INTEGER"},
+    "odds": {"source": "TEXT"},
 }
 
 

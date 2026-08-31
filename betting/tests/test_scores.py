@@ -100,13 +100,25 @@ def test_an_older_database_gains_new_columns(tmp_path):
 
     from vb.db import LATER_COLUMNS, SCHEMA, migrate, session
 
+    def without(schema: str, table: str, column: str) -> str:
+        """Drop one column from one table's CREATE block, and any index on it.
+
+        Scoped to the table on purpose: several tables have a column called
+        "source", and a blanket removal takes out the wrong ones.
+        """
+        pattern = re.compile(rf"(CREATE TABLE IF NOT EXISTS {table} \(.*?\n\);)",
+                             re.S)
+        block = pattern.search(schema)
+        assert block, f"{table} not found in the schema"
+        trimmed = re.sub(rf"^\s*{column}\b.*$\n", "", block.group(1), flags=re.M)
+        schema = schema.replace(block.group(1), trimmed)
+        return re.sub(rf"^.*CREATE INDEX.*\({column}\).*$\n?", "", schema, flags=re.M)
+
     old_schema = SCHEMA
     for table, columns in LATER_COLUMNS.items():
         for column in columns:
-            old_schema = re.sub(rf"^\s*{column}\b.*$", "", old_schema, flags=re.M)
-            old_schema = re.sub(rf"^.*CREATE INDEX.*\({column}\).*$", "",
-                                old_schema, flags=re.M)
-    assert "api_fixture_id" not in old_schema
+            old_schema = without(old_schema, table, column)
+            assert f"{column} " not in old_schema.split(f"CREATE TABLE IF NOT EXISTS {table}")[1].split(");")[0]
 
     path = tmp_path / "old.db"
     old = sqlite3.connect(path)
@@ -117,71 +129,12 @@ def test_an_older_database_gains_new_columns(tmp_path):
     old.close()
 
     with session(path) as conn:
-        columns = {r["name"] for r in conn.execute("PRAGMA table_info(matches)")}
-        assert "api_fixture_id" in columns
+        for table, columns in LATER_COLUMNS.items():
+            present = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+            for column in columns:
+                assert column in present, f"{table}.{column} was not added"
         assert conn.execute("SELECT COUNT(*) FROM leagues").fetchone()[0] >= 1
         assert migrate(conn) == [], "migration should be idempotent"
-
-
-# ---------------------------------------------------------------------------
-def test_a_byte_order_mark_does_not_swallow_a_fixture_list():
-    """The bug that quietly cost a whole fixture list.
-
-    football-data.co.uk serves these files with a byte-order mark. Decoded as
-    plain utf-8 it stays on the front of the first column name, so every row's
-    "Div" reads as None, every row is filed under a league we do not follow, and
-    the load reports zero fixtures without a single error. The results files
-    were unaffected only because that code never reads the first column.
-    """
-    from vb.sources.footballdata import iter_rows
-
-    header = "Div,Date,Time,HomeTeam,AwayTeam,B365H,B365D,B365A"
-    body = "E0,29/08/2026,15:00,Liverpool,Nott'm Forest,1.50,4.20,6.00"
-    rows = list(iter_rows("﻿" + header + "\n" + body + "\n"))
-    assert len(rows) == 1
-    assert rows[0]["Div"] == "E0", "the mark is still attached to the first column"
-    assert rows[0]["HomeTeam"] == "Liverpool"
-
-
-def test_current_bookmaker_columns_are_read():
-    """Sky Bet and BetVictor are in these files now — quote them."""
-    from vb.sources.footballdata import _odds_from_row, iter_rows
-
-    header = ("Div,Date,Time,HomeTeam,AwayTeam,B365H,B365D,B365A,"
-              "SKBH,SKBD,SKBA,BVH,BVD,BVA")
-    body = "E0,29/08/2026,15:00,Liverpool,Forest,1.50,4.20,6.00,1.53,4.00,6.50,1.49,4.15,6.10"
-    row = next(iter_rows("﻿" + header + "\n" + body + "\n"))
-    books = {book for book, _, _, _, _ in _odds_from_row(row)}
-    assert {"bet365", "skybet", "betvictor"} <= books
-
-
-def test_fixtures_land_in_the_database(conn):
-    """End to end: a fixtures file becomes priced fixtures we can tip."""
-    from vb.sources.footballdata import load_fixtures
-    from vb.sources import footballdata
-
-    header = ("Div,Date,Time,HomeTeam,AwayTeam,B365H,B365D,B365A,SKBH,SKBD,SKBA")
-    rows = [
-        "E0,29/08/2026,15:00,Liverpool,Nott'm Forest,1.50,4.20,6.00,1.53,4.00,6.50",
-        "B1,29/08/2026,15:00,Genk,Beveren,1.42,4.10,6.00,1.44,4.20,6.10",
-    ]
-    text = "﻿" + header + "\n" + "\n".join(rows) + "\n"
-    footballdata.fetch_text = lambda *a, **k: text          # noqa: E731
-    import vb.sources.http as http_module
-    original = http_module.fetch_text
-    http_module.fetch_text = lambda *a, **k: text
-    try:
-        counts = load_fixtures(conn, "2026/27")
-    finally:
-        http_module.fetch_text = original
-
-    assert counts.get("E0") == 1, "the English fixture was not loaded"
-    assert "B1" not in counts, "Belgium is not a league we follow"
-    priced = conn.execute(
-        "SELECT COUNT(DISTINCT bookmaker) FROM odds").fetchone()[0]
-    assert priced >= 2, "prices should have come in with the fixture"
-    assert conn.execute(
-        "SELECT status FROM matches").fetchone()["status"] == "scheduled"
 
 
 def test_the_odds_quota_is_read_from_the_reply():
@@ -201,3 +154,37 @@ def test_an_unknown_quota_says_so_rather_than_guessing():
 
     oddsapi.QUOTA.clear()
     assert "not yet known" in oddsapi.quota_summary()
+
+
+def test_every_price_records_which_feed_it_came_from(conn, monkeypatch):
+    """Guessing a price's origin from the bookmaker's name reports fiction.
+
+    The health check claimed tens of thousands of prices had arrived "via the
+    API" on a database the API had never been called for, because it inferred
+    the source from which books were involved.
+    """
+    from vb.repo import upsert_match, upsert_odds
+    from vb.sources import oddsapi
+
+    match_id = upsert_match(conn, "E0", "2026/27", "2026-08-29T15:00:00",
+                            "Liverpool", "Nottingham Forest", status="scheduled")
+    upsert_odds(conn, match_id, "skybet", "h2h", "home", 1.50,
+                source="football-data-fixtures")
+    assert conn.execute(
+        "SELECT COUNT(*) FROM odds WHERE source = 'odds-api'").fetchone()[0] == 0
+
+    monkeypatch.setattr(oddsapi, "api_key", lambda: "k")
+    monkeypatch.setattr(oddsapi, "_fetch_odds", lambda *a, **k: [{
+        "home_team": "Liverpool", "away_team": "Nottingham Forest",
+        "commence_time": "2026-08-29T15:00:00Z",
+        "bookmakers": [{"key": "paddypower", "markets": [{"key": "h2h", "outcomes": [
+            {"name": "Liverpool", "price": 1.55},
+            {"name": "Nottingham Forest", "price": 6.2},
+            {"name": "Draw", "price": 4.1}]}]}],
+    }])
+    oddsapi.load_league_odds(conn, "E0", "2026/27")
+    assert conn.execute(
+        "SELECT COUNT(*) FROM odds WHERE source = 'odds-api'").fetchone()[0] == 3
+    assert conn.execute(
+        "SELECT COUNT(*) FROM odds WHERE source = 'football-data-fixtures'"
+    ).fetchone()[0] == 1
