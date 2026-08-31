@@ -173,9 +173,43 @@ played before the decision date, and every price is read as it stood at the
 time — a price taken later is invisible to the engine, which is the one mistake
 that makes betting backtests look brilliant and mean nothing.
 
-Read the calibration table it prints before you read the profit. If the model
-keeps saying 65% and getting 55%, lower the `market_blend` weights in
-`config/settings.yaml` and run it again.
+Read the calibration table it prints before you read the profit, and read the
+profit's error bar before you read the profit.
+
+## What it has actually measured
+
+Written down so nobody has to re-derive it. Two seasons, walk-forward, 455
+bets, English and Scottish leagues plus the Bundesliga, Serie A, La Liga and
+the European competitions.
+
+**The model is over-confident, and that is the only strong finding.** Pooled
+across probability bands it expected 186 winners and got 155 — three standard
+errors, and every band pointed the same way. Fitting a line through the
+log-odds gives a near-uniform downward shift of about 0.25, validated on a half
+of the record it was never fitted on (the gap fell from z = 1.87 to z = 0.48).
+
+**Corrected for that, the claimed edge largely disappears.** A 2.50 shot the
+model made 45% becomes 38%, and a +12.5% edge becomes negative. Most of what
+the engine reported as value was its own optimism, which is why it expected +42
+points over two seasons and delivered -6.
+
+**Nothing here is evidence of beating the market.** Uncorrected, singles
+returned -1.8% over 281 bets, which is inside the noise of break-even at these
+prices. Closing line value was +0.55% while beating the close only 42% of the
+time — slightly the wrong side of a coin flip. Corrected, the card thins to
+roughly one bet a month, and any profit over a sample that size means nothing:
+the thresholds that select those bets were all tuned while looking at these
+same two seasons.
+
+**Bet builders cannot be evaluated at all.** No feed publishes builder prices,
+so the engine quotes a target and the backtest settles at it. Raising the
+target — which shading the legs does — improves the figures without a single
+bet changing. They are reported separately and excluded from the headline for
+that reason.
+
+If you want this to find a real edge, the answer is better inputs rather than
+better fitting: real xG rather than a proxy, team news, lineups. Everything
+above is the same public information the market already has.
 
 ## Commands
 
@@ -188,7 +222,11 @@ keeps saying 65% and getting 55%, lower the `market_blend` weights in
 | `vb settle` | grade everything whose result is in (`--fetch` pulls results first) |
 | `vb report` | rebuild the HTML dashboard |
 | `vb ledger` | print the bet ledger |
-| `vb backtest` | walk-forward replay of the season |
+| `vb backtest` | walk-forward replay (`--season all` for every season on file) |
+| `vb calibrate` | measure the model's over-confidence; `--apply` corrects for it |
+| `vb why` | account for every price: what was tipped, and what stopped the rest |
+| `vb explain Harrogate` | the full workings behind one fixture's prices |
+| `vb prune` | clear unsettled advice (`--duplicates`, `--backtest`) |
 | `vb outlook E0` | simulate the rest of a league |
 | `vb template odds\|results\|news` | write a CSV to fill in by hand |
 | `vb import odds\|results\|news\|players <file>` | load one back |
@@ -302,13 +340,16 @@ Worth knowing before you stake anything:
   National League has the loosest markets and the thinnest data. Those two pull
   in opposite directions, and the blend weights are a guess at the balance —
   check them against a backtest rather than trusting them.
-- **Selection bias is real.** We bet where the model disagrees with the market in
-  our favour, which is exactly where our own error points the same way. The
-  confidence weighting shades for it; it does not remove it. Expect the achieved
-  edge to be smaller than the claimed one, and watch the expected-versus-actual
-  line on the dashboard.
+- **Selection bias is real, and it has been measured.** We bet where the model
+  disagrees with the market in our favour, which is exactly where our own error
+  points the same way. The confidence weighting shades for it and does not
+  remove it: over two seasons the model expected 186 winners and got 155. Run
+  `vb calibrate` and read *What it has actually measured* above.
 - **Accumulators multiply model error as fast as they multiply prices.** Each leg
   is shaded before folding, and they are still the weakest bets on the sheet.
+  A calibration fitted on your own record lives in `config/settings.local.yaml`,
+  written by `vb calibrate --apply`. It is git-ignored on purpose: a correction
+  is a fact about one betting record and is wrong applied to another.
 - **Bet builder prices are quoted as a target, not a price.** Bookmakers price
   builders with their own correlation model and a fat margin, and no feed
   publishes those prices. The tool tells you the number to hold out for.
