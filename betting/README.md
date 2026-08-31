@@ -60,7 +60,7 @@ pip install -r requirements.txt
 # 1. Look around first: builds a fake season and a dashboard, no network needed.
 python3 -m vb demo
 
-# 2. Then the real thing.
+# 2. Then the real thing.  `vb doctor` after any of these says whether it worked.
 python3 -m vb update            # results, fixtures and opening prices
 python3 -m vb tips --record     # this week's card, written to the ledger
 python3 -m vb settle --fetch    # pull fresh results, then grade last week's bets
@@ -161,7 +161,7 @@ keeps saying 65% and getting 55%, lower the `market_blend` weights in
 | `vb apifootball probe` | report which endpoints your plan actually serves |
 | `vb apifootball injuries` | pull injury lists into team news (paid plans only) |
 | `vb suspensions` | infer absences from red cards — no feed needed |
-| `vb doctor` | what is loaded, what is missing, what will not settle |
+| `vb doctor` | walk the whole pipeline and report what works and what is missing |
 | `vb demo` | synthetic season and dashboard, no network needed |
 
 ## How quickly results arrive

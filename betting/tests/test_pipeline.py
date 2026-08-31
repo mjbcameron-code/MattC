@@ -92,3 +92,34 @@ def test_the_dashboard_renders(loaded):
     root_block = html.split(":root {", 1)[1].split("}", 1)[0]
     for token in ("--paper", "--card", "--ink", "--profit", "--loss", "--hero-bg"):
         assert token in root_block, f"{token} is not defined for the default theme"
+
+
+def test_doctor_passes_a_healthy_database_and_fails_an_empty_one(loaded, tmp_path,
+                                                                 capsys):
+    """The health check has to be trustworthy in both directions."""
+    from types import SimpleNamespace
+
+    from vb.cli import cmd_doctor
+
+    empty = SimpleNamespace(db=str(tmp_path / "empty.db"))
+    assert cmd_doctor(empty) == 1
+    assert "No matches loaded" in capsys.readouterr().out
+
+    healthy = SimpleNamespace(db=None)
+    import vb.config as config
+    original = config.DB_PATH
+    try:
+        config.DB_PATH = tmp_path / "healthy.db"
+        # Reuse the populated fixture's data by pointing the check at it.
+        import shutil
+        import sqlite3
+        source = loaded.execute("PRAGMA database_list").fetchone()["file"]
+        loaded.commit()
+        shutil.copy(source, config.DB_PATH)
+        healthy = SimpleNamespace(db=str(config.DB_PATH))
+        assert cmd_doctor(healthy) == 0
+        out = capsys.readouterr().out
+        assert "no duplicates detected" in out
+        assert "Everything the tipping needs is in place" in out
+    finally:
+        config.DB_PATH = original

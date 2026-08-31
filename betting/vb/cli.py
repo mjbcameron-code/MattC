@@ -561,7 +561,19 @@ def _apifootball_action(args, client, season: str) -> int:
 
 
 def cmd_doctor(args) -> int:
-    """Health check: what is loaded, what is missing, what will not settle."""
+    """Walk the whole pipeline and report what works, what is thin, what is broken.
+
+    Answers one question — is this thing actually ready to tip — rather than
+    leaving it to be inferred from a series of separate commands.
+    """
+    from datetime import datetime, timedelta
+
+    from .models.fixture import ModelBank, build_fixture
+    from .models.ratings import fit_league
+
+    ok, warn, bad = f"{GREEN}ok{RESET}  ", f"{BLUE}thin{RESET}", f"{RED}none{RESET}"
+    problems: list[str] = []
+
     with session(args.db) as conn:
         print(f"{BOLD}Database{RESET} {args.db or DB_PATH}")
         rows = conn.execute(
@@ -570,54 +582,149 @@ def cmd_doctor(args) -> int:
             "MAX(match_date) AS latest FROM matches GROUP BY league_code"
         ).fetchall()
         if not rows:
-            print("  No matches loaded. Run `vb update` (or `vb demo` to look around).")
-            return 0
-        print(f"\n  {'league':8}{'played':>8}{'ahead':>7}{'latest':>13}{'priced':>9}{'xG':>7}")
+            print(f"\n  {RED}No matches loaded.{RESET} Run `vb update` — nothing else "
+                  "works until there is football in here.")
+            return 1
+
+        # ---- 1. what is loaded ------------------------------------------
+        print(f"\n{BOLD}1. Data{RESET}")
+        print(f"  {'league':8}{'played':>8}{'ahead':>7}{'latest':>12}{'priced':>8}"
+              f"{'shots':>7}{'xG':>6}")
+        by_league = {}
         for row in rows:
+            code = row["league_code"]
             priced = conn.execute(
                 "SELECT COUNT(DISTINCT o.match_id) FROM odds o JOIN matches m "
                 "ON m.id = o.match_id WHERE m.league_code = ? AND m.status = 'scheduled'",
-                (row["league_code"],),
-            ).fetchone()[0]
+                (code,)).fetchone()[0]
+            shots = conn.execute(
+                "SELECT COUNT(*) FROM matches WHERE league_code = ? AND hst IS NOT NULL",
+                (code,)).fetchone()[0]
             xg = conn.execute(
                 "SELECT COUNT(*) FROM matches WHERE league_code = ? AND home_xg IS NOT NULL",
-                (row["league_code"],),
-            ).fetchone()[0]
-            print(f"  {row['league_code']:8}{row['played'] or 0:>8}{row['ahead'] or 0:>7}"
-                  f"{row['latest'] or '—':>13}{priced:>9}{xg:>7}")
+                (code,)).fetchone()[0]
+            by_league[code] = {"played": row["played"] or 0, "ahead": row["ahead"] or 0,
+                               "priced": priced, "shots": shots}
+            print(f"  {code:8}{row['played'] or 0:>8}{row['ahead'] or 0:>7}"
+                  f"{(row['latest'] or '—'):>12}{priced:>8}{shots:>7}{xg:>6}")
 
-        print(f"\n{BOLD}Clubs{RESET}")
+        stale = [c for c, d in by_league.items() if d["ahead"] == 0]
+        if stale:
+            problems.append(
+                f"no fixtures ahead for {', '.join(sorted(stale))} — `vb update` pulls "
+                "the fixtures file, which only reaches about a week out")
+
+        # ---- 2. club identity -------------------------------------------
+        print(f"\n{BOLD}2. Clubs{RESET}")
         singles = conn.execute(
-            "SELECT t.name FROM teams t LEFT JOIN matches m "
-            "ON m.home_id = t.id OR m.away_id = t.id GROUP BY t.id HAVING COUNT(m.id) <= 1"
+            "SELECT t.name, COUNT(m.id) AS n FROM teams t LEFT JOIN matches m "
+            "ON m.home_id = t.id OR m.away_id = t.id GROUP BY t.id HAVING n <= 1"
         ).fetchall()
         print(f"  {conn.execute('SELECT COUNT(*) FROM teams').fetchone()[0]} clubs, "
-              f"{conn.execute('SELECT COUNT(*) FROM team_aliases').fetchone()[0]} name spellings")
+              f"{conn.execute('SELECT COUNT(*) FROM team_aliases').fetchone()[0]} spellings")
         if singles:
-            print(f"  {RED}{len(singles)} club(s) with almost no matches — usually a name that "
-                  f"failed to match:{RESET}")
-            for row in singles[:10]:
-                print(f"    {row['name']}  (add it to config/aliases.yaml)")
-
-        print(f"\n{BOLD}Player markets{RESET}")
-        players = conn.execute("SELECT COUNT(*) FROM player_stats").fetchone()[0]
-        print(f"  {players} player records loaded"
-              + ("" if players else " — player markets are switched off until you import some"
-                                    " (`vb import players <file.csv>`)"))
-
-        print(f"\n{BOLD}Live prices{RESET}")
-        import os
-        if os.environ.get("ODDS_API_KEY"):
-            try:
-                from .sources import oddsapi
-                for code, status in oddsapi.verify_sport_keys().items():
-                    mark = GREEN if status == "ok" else RED
-                    print(f"  {code:6} {mark}{status}{RESET}")
-            except Exception as exc:                    # noqa: BLE001
-                print(f"  could not reach the odds API: {exc}")
+            print(f"  {RED}{len(singles)} club(s) with almost no matches — the "
+                  f"signature of a name that failed to match:{RESET}")
+            for row in singles[:12]:
+                print(f"    {row['name']}")
+            problems.append(
+                f"{len(singles)} club(s) look like duplicates from a spelling mismatch; "
+                "add them to config/aliases.yaml")
         else:
-            print("  ODDS_API_KEY is not set — football-data.co.uk fixtures still carry "
-                  "opening prices, and `vb template odds` covers the rest.")
+            print(f"  {GREEN}no duplicates detected{RESET}")
+
+        # ---- 3. can the model fit? ---------------------------------------
+        print(f"\n{BOLD}3. Model{RESET}")
+        print(f"  {'league':8}{'fits':>7}{'home adv':>10}{'goals/game':>12}  note")
+        fittable = 0
+        for code in sorted(by_league):
+            model = fit_league(conn, code)
+            if model is None:
+                print(f"  {code:8}{bad:>16}{'':>10}{'':>12}  too few results to fit")
+                continue
+            import math
+            thin = min(model.matches_per_team.values()) < 6 if model.matches_per_team else True
+            mark = warn if thin else ok
+            note = "some clubs have barely played" if thin else ""
+            print(f"  {code:8}{mark:>16}{model.home_adv:>10.3f}"
+                  f"{math.exp(model.base) * 2:>12.2f}  {note}")
+            fittable += 1
+        if not fittable:
+            problems.append("no league has enough results to fit — run `vb update`")
+
+        # ---- 4. does the pipeline produce anything? ----------------------
+        print(f"\n{BOLD}4. Pipeline{RESET}")
+        as_of = datetime.now()
+        upcoming = conn.execute(
+            "SELECT * FROM matches WHERE status = 'scheduled' AND kickoff >= ? "
+            "AND kickoff <= ? ORDER BY kickoff",
+            (as_of.isoformat(), (as_of + timedelta(days=7)).isoformat()),
+        ).fetchall()
+        print(f"  fixtures in the next 7 days      {len(upcoming)}")
+        if not upcoming:
+            problems.append("no fixtures in the next week, so there is nothing to tip")
+        else:
+            bank = ModelBank(conn, as_of=as_of)
+            # Fitting is the slow part, so a large card is sampled rather than
+            # priced in full. Say so, or the sample size reads as a failure count.
+            sample = upcoming[:60]
+            modelled = priced_fixtures = 0
+            for row in sample:
+                fixture = build_fixture(conn, row, bank, with_players=False,
+                                        with_signals=False)
+                if fixture is None:
+                    continue
+                modelled += 1
+                if conn.execute("SELECT 1 FROM odds WHERE match_id = ? LIMIT 1",
+                                (row["id"],)).fetchone():
+                    priced_fixtures += 1
+            checked = f" (of {len(sample)} checked)" if len(sample) < len(upcoming) else ""
+            print(f"  the model can price              {modelled}{checked}")
+            print(f"  and bookmakers' prices are in    {priced_fixtures}{checked}")
+            if modelled < len(sample):
+                problems.append(
+                    f"{len(sample) - modelled} fixture(s) could not be modelled — "
+                    "usually a league with too few results loaded")
+            if modelled and not priced_fixtures:
+                problems.append(
+                    "fixtures are modelled but carry no prices, so no edge can be "
+                    "measured — check that `vb update` reached the fixtures file")
+
+        news = conn.execute(
+            "SELECT COUNT(*) FROM team_news WHERE added_at >= date('now', '-14 days')"
+        ).fetchone()[0]
+        print(f"  team news in the last fortnight  {news}"
+              + ("" if news else f"   {BLUE}(none — see below){RESET}"))
+
+        settled = conn.execute(
+            "SELECT COUNT(*) FROM bets WHERE status != 'pending'").fetchone()[0]
+        pending = conn.execute(
+            "SELECT COUNT(*) FROM bets WHERE status = 'pending'").fetchone()[0]
+        print(f"  bets recorded                    {settled + pending} "
+              f"({pending} open, {settled} settled)")
+
+        # ---- 5. optional extras -------------------------------------------
+        print(f"\n{BOLD}5. Optional{RESET}")
+        players = conn.execute("SELECT COUNT(*) FROM player_stats").fetchone()[0]
+        print(f"  player records   {players}"
+              + ("" if players else "   player markets stay off until some are imported"))
+        import os
+        print(f"  odds API key     {'set' if os.environ.get('ODDS_API_KEY') else 'not set'}")
+        print(f"  API-Football key {'set' if os.environ.get('API_FOOTBALL_KEY') else 'not set'}")
+
+        # ---- verdict -------------------------------------------------------
+        print(f"\n{BOLD}Verdict{RESET}")
+        if problems:
+            for problem in problems:
+                print(f"  {RED}·{RESET} {problem}")
+            print("\n  Fix those and run `vb doctor` again.")
+            return 1
+        print(f"  {GREEN}Everything the tipping needs is in place.{RESET} "
+              "Run `vb tips` for a card.")
+        if not news:
+            print(f"  {DIM}No team news loaded. Suspensions come from red cards "
+                  f"automatically; injuries need `vb template news` or a paid "
+                  f"API-Football plan.{RESET}")
     return 0
 
 
