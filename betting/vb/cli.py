@@ -17,8 +17,8 @@ import json
 import sys
 
 from . import backtest as backtest_mod
-from .config import (CACHE_DIR, DB_PATH, enabled_leagues, league as get_league,
-                     load_leagues, load_settings)
+from .config import (CACHE_DIR, DB_PATH, enabled_leagues,
+                     league as get_league, load_leagues, load_settings)
 from .db import session
 from .report import dashboard
 from .sources import footballdata, manual, understat
@@ -700,6 +700,26 @@ def _run_backtest(db_path, args) -> int:
     s = result.priced if result.priced.settled else result.summary
     unpriced = result.summary.settled - result.priced.settled
     print(f"\n{BOLD}Backtest {result.first_date} → {result.last_date}{RESET}")
+    # State the correction the run used. Two backtests differing only in a
+    # settings file produce output identical to the digit when the file has not
+    # changed, and identical output is then ambiguous between "the change did
+    # nothing" and "the change was never picked up". Naming the input in the
+    # output settles it without anyone having to remember what they ran.
+    settings = load_settings()
+    slope = float(settings.get("model.calibration.slope", 1.0))
+    intercept = float(settings.get("model.calibration.intercept", 0.0))
+    if slope == 1.0 and intercept == 0.0:
+        print(f"  {DIM}no calibration correction in force "
+              f"(`vb calibrate --apply` fits one){RESET}")
+    else:
+        # Read the path off the module rather than a name bound at import, so
+        # it follows the config directory actually in use.
+        from . import config as config_module
+
+        source = config_module.CONFIG_DIR / "settings.local.yaml"
+        print(f"  {DIM}calibration in force: {slope:.3f} x logit(p) "
+              f"{intercept:+.3f}"
+              f"{'  from ' + source.name if source.exists() else ''}{RESET}")
     print(f"  {result.weeks} weeks, {s.settled} bets at a real price, "
           f"{s.staked:.1f} pts staked")
     if unpriced:

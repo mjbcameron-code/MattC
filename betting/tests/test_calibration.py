@@ -246,3 +246,51 @@ def test_shift_only_is_worse_on_squared_error_and_still_the_right_choice():
     assert free.raises_anywhere() and not shift.raises_anywhere()
     # And in the band that matters it is the shift that is right.
     assert abs(apply(.115, 1.0, -.263) - .090) < abs(apply(.115, .819, -.281) - .090)
+
+
+def test_the_backtest_states_the_correction_it_ran_under(conn, tmp_path, capsys,
+                                                         monkeypatch):
+    """Identical output is ambiguous unless the input is named in it.
+
+    Two runs differing only in a settings file match to the digit when the file
+    has not changed — and "the change did nothing" then looks exactly like "the
+    change was never picked up". It has looked like that more than once.
+    """
+    import shutil
+    from types import SimpleNamespace
+
+    import yaml
+
+    import vb.config as config
+    from vb.cli import cmd_backtest
+    from vb.sample import generate_all
+
+    generate_all(conn, season="2026/27", leagues=["E2"], seed=4)
+    conn.commit()
+    source = conn.execute("PRAGMA database_list").fetchone()["file"]
+    db = tmp_path / "bt.db"
+    shutil.copy(source, db)
+
+    args = SimpleNamespace(db=str(db), season="2026/27", warmup=2,
+                           leagues=None, verbose=False)
+
+    cmd_backtest(args)
+    assert "no calibration correction in force" in capsys.readouterr().out
+
+    settings_dir = tmp_path / "config"
+    settings_dir.mkdir()
+    shutil.copy(config.CONFIG_DIR / "settings.yaml", settings_dir)
+    shutil.copy(config.CONFIG_DIR / "leagues.yaml", settings_dir)
+    shutil.copy(config.CONFIG_DIR / "aliases.yaml", settings_dir)
+    (settings_dir / "settings.local.yaml").write_text(yaml.safe_dump(
+        {"model": {"calibration": {"slope": 1.0, "intercept": -0.263}}}))
+    monkeypatch.setattr(config, "CONFIG_DIR", settings_dir)
+    config.load_settings.cache_clear()
+    try:
+        cmd_backtest(args)
+        out = capsys.readouterr().out
+        assert "calibration in force" in out
+        assert "-0.263" in out
+        assert "settings.local.yaml" in out
+    finally:
+        config.load_settings.cache_clear()
