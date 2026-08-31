@@ -119,6 +119,13 @@ def cmd_update(args) -> int:
         if args.scores:
             totals["scores"] = _fetch_scores(conn, codes, season, problems)
 
+    with session(args.db) as conn:
+        from .features.suspensions import derive_suspensions
+
+        suspended = derive_suspensions(conn)
+        if suspended:
+            print(f"  {suspended} suspension(s) inferred from recent red cards")
+
     print(f"\n{totals['results']} results, {totals['fixtures']} fixtures, "
           f"{totals['prices']} live prices, {totals['xg']} xG rows"
           + (f", {totals['scores']} recent scores." if args.scores else "."))
@@ -280,6 +287,15 @@ def _rating_quality(bank, fixture) -> str:
             name = fixture.home if side == "home" else fixture.away
             notes.append(f"{name} rated from {source}")
     return "; ".join(notes)
+
+
+def cmd_suspensions(args) -> int:
+    from .features.suspensions import derive_suspensions
+
+    with session(args.db) as conn:
+        written = derive_suspensions(conn)
+    print(f"{written} suspension(s) recorded from red cards in recent matches.")
+    return 0
 
 
 def cmd_settle(args) -> int:
@@ -504,6 +520,16 @@ def cmd_apifootball(args) -> int:
             for code, n in sorted(counts.items()):
                 if n:
                     print(f"   {code}: {n}")
+        elif args.action == "probe":
+            results = af.probe_plan(conn, client, season)
+            print(f"\n{BOLD}What this plan serves{RESET}\n")
+            for endpoint, info in results.items():
+                mark = {"available": GREEN + "yes" + RESET,
+                        "denied": RED + "no " + RESET}.get(info["status"],
+                                                           DIM + "?  " + RESET)
+                print(f"  {mark}  {endpoint:22}{DIM}{info['buys']}{RESET}")
+                if info["status"] != "available":
+                    print(f"          {DIM}{info['detail'][:130]}{RESET}")
         elif args.action == "stats":
             pending = af.matches_needing_statistics(
                 conn, limit=args.limit,
@@ -684,8 +710,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     apif = add("apifootball", cmd_apifootball,
                "check the API-Football key and mapping, or pull from it")
-    apif.add_argument("action", choices=["check", "fixtures", "injuries", "stats"],
-                      help="check verifies the key and maps the leagues")
+    apif.add_argument("action",
+                      choices=["check", "probe", "fixtures", "injuries", "stats"],
+                      help="check verifies the key and maps the leagues; "
+                           "probe reports which endpoints your plan serves")
     apif.add_argument("--season")
     apif.add_argument("--leagues")
     apif.add_argument("--date", help="YYYY-MM-DD, for fixtures")

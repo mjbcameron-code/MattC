@@ -158,7 +158,9 @@ keeps saying 65% and getting 55%, lower the `market_blend` weights in
 | `vb take REF 3.10` | record the price you actually got |
 | `vb grade REF won` | settle a player prop or outright by hand |
 | `vb apifootball check` | verify the API-Football key and league mapping |
-| `vb apifootball injuries` | pull injury and suspension lists into team news |
+| `vb apifootball probe` | report which endpoints your plan actually serves |
+| `vb apifootball injuries` | pull injury lists into team news (paid plans only) |
+| `vb suspensions` | infer absences from red cards — no feed needed |
 | `vb doctor` | what is loaded, what is missing, what will not settle |
 | `vb demo` | synthetic season and dashboard, no network needed |
 
@@ -219,8 +221,26 @@ A sensible weekly rhythm on the free tier:
 | Match day, after the games | `vb settle --fetch` | ~1 per league with a bet |
 | Occasionally | `vb apifootball fixtures` | 1 per day requested |
 
-Player statistics and per-match shot data are the expensive calls, and the
-reason to consider a paid tier. Everything above works on the free one.
+Run `vb apifootball probe` before planning around any of it. Free plans
+restrict a different set of endpoints than the documentation suggests —
+**injuries are not on the free tier**, which is worth knowing before you build a
+week around them. The probe costs one request per endpoint and answers it
+properly.
+
+Player statistics and per-match shot data are the other expensive calls, and
+between them the reason to consider a paid tier.
+
+### Suspensions without any feed
+
+A red card is in the result, so a sending-off can be turned into an absence in
+that club's next match with no API at all. `vb update` does this automatically,
+and `vb suspensions` runs it on its own.
+
+It cannot name the player — football-data.co.uk records that a team finished
+with ten men, not who was dismissed — so the entry reads "a player" and carries
+a modest impact. Yellow-card accumulation is deliberately not attempted: it
+needs per-player counts that no free feed publishes for these divisions, and a
+guess would be worse than the silence.
 
 ## Things it needs you to do
 

@@ -240,7 +240,8 @@ def build_fixture(
     defence_factor = float(settings.get("model.news_defence_factor", 0.40))
     notes: list[str] = []
     for side, team_id in (("home", home_id), ("away", away_id)):
-        impact = news_impact(team_news(conn, team_id, kickoff))
+        impact = news_impact(team_news(conn, team_id, kickoff,
+                                       match_id=match["id"]))
         if abs(impact) < 0.02:
             continue
         if side == "home":

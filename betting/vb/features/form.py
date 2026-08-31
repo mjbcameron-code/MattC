@@ -210,12 +210,19 @@ def rest_days(conn: sqlite3.Connection, team_id: int, before: datetime) -> tuple
 
 
 def team_news(conn: sqlite3.Connection, team_id: int, before: datetime,
-              window_days: int = 14) -> list[sqlite3.Row]:
+              window_days: int = 14, match_id: int | None = None) -> list[sqlite3.Row]:
+    """Absences relevant to one fixture.
+
+    News pinned to a specific match applies to that match only — a one-game
+    suspension should not follow a club around for a fortnight. News with no
+    match attached is general, and applies for a window.
+    """
     since = (before - timedelta(days=window_days)).date().isoformat()
     return conn.execute(
-        "SELECT * FROM team_news WHERE team_id = ? AND added_at >= ? "
+        "SELECT * FROM team_news WHERE team_id = ? "
+        "AND ((match_id IS NULL AND added_at >= ?) OR match_id = ?) "
         "ORDER BY impact DESC",
-        (team_id, since),
+        (team_id, since, match_id),
     ).fetchall()
 
 
@@ -387,7 +394,7 @@ def build_signals(
 
     # --- team news -----------------------------------------------------------
     for side, team_id_ in (("home", home_id), ("away", away_id)):
-        rows = team_news(conn, team_id_, kickoff)
+        rows = team_news(conn, team_id_, kickoff, match_id=match["id"])
         if not rows:
             continue
         impact = news_impact(rows)

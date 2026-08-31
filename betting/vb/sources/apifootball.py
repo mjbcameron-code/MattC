@@ -930,3 +930,81 @@ def _key_from_environment() -> bool:
     from ..config import ENV_LOADED
 
     return bool(os.environ.get("API_FOOTBALL_KEY")) and "API_FOOTBALL_KEY" not in ENV_LOADED
+
+
+# ---------------------------------------------------------------------------
+# what does this plan actually include?
+# ---------------------------------------------------------------------------
+# Endpoints worth knowing about, each with what it would buy us. Free plans
+# restrict a different subset than the docs suggest, and guessing one endpoint
+# at a time costs a request per guess.
+PROBE_ENDPOINTS = [
+    ("fixtures", {"league": "{league}", "season": "{season}"},
+     "results and fixtures — the fast results path"),
+    ("fixtures/statistics", {"fixture": "{fixture}"},
+     "shots, corners and cards per match"),
+    ("fixtures/events", {"fixture": "{fixture}"},
+     "goals, cards and who they belong to"),
+    ("fixtures/lineups", {"fixture": "{fixture}"},
+     "confirmed XI, about an hour before kick-off"),
+    ("fixtures/players", {"fixture": "{fixture}"},
+     "player match stats — the player markets"),
+    ("injuries", {"league": "{league}", "season": "{season}"},
+     "injury and suspension lists"),
+    ("odds", {"league": "{league}", "season": "{season}"},
+     "bookmaker prices"),
+    ("standings", {"league": "{league}", "season": "{season}"},
+     "league tables"),
+]
+
+
+def probe_plan(conn: sqlite3.Connection, client: Client, season: str,
+               code: str = "E0") -> dict[str, dict]:
+    """Ask each endpoint once and report what this plan serves.
+
+    Costs one request per endpoint, which is far cheaper than discovering the
+    same thing a feature at a time — as the injuries run did, fourteen requests
+    to learn one fact.
+    """
+    api_league = league_id(conn, code)
+    if api_league is None:
+        raise ApiFootballError(
+            f"{code} has no id yet — run `vb apifootball check` first")
+    year = season_year(conn, code, season)
+
+    # One fixture id to probe the per-match endpoints with.
+    fixture_id = None
+    row = conn.execute(
+        "SELECT api_fixture_id FROM matches WHERE api_fixture_id IS NOT NULL "
+        "AND status = 'played' ORDER BY match_date DESC LIMIT 1").fetchone()
+    if row:
+        fixture_id = row["api_fixture_id"]
+
+    results: dict[str, dict] = {}
+    for endpoint, template, buys in PROBE_ENDPOINTS:
+        needs_fixture = any("{fixture}" in str(v) for v in template.values())
+        if needs_fixture and not fixture_id:
+            results[endpoint] = {
+                "status": "not tested",
+                "detail": "no fixture id stored yet — run `apifootball fixtures` first",
+                "buys": buys,
+            }
+            continue
+        params = {
+            k: str(v).format(league=api_league, season=year, fixture=fixture_id)
+            for k, v in template.items()
+        }
+        try:
+            rows = client.get(endpoint, params, max_age=0, label=endpoint)
+            results[endpoint] = {
+                "status": "available",
+                "detail": f"{len(rows)} rows returned",
+                "buys": buys,
+            }
+        except BudgetExhausted as exc:
+            results[endpoint] = {"status": "not tested", "detail": str(exc),
+                                 "buys": buys}
+            break
+        except ApiFootballError as exc:
+            results[endpoint] = {"status": "denied", "detail": str(exc), "buys": buys}
+    return results
