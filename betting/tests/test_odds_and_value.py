@@ -80,3 +80,25 @@ def test_a_fraction_is_only_shown_when_it_is_honest():
     """3.61 is not 5/2, so the fraction is dropped rather than quoting a shorter price."""
     assert format_price(3.0) == "3.00 (2/1)"
     assert format_price(3.61) == "3.61"
+
+
+@pytest.mark.parametrize("push", [0.0, 0.25, 0.5])
+def test_expected_value_over_price_is_the_edge_in_probability_points(push):
+    """Dividing the edge by the price converts it back into probability.
+
+    This is what lets one rule cover handicaps as well as everything else: a
+    push returns the stake, and the identity still holds.
+    """
+    p_win, price = 0.30, 3.5
+    expected_value = p_win * price + push - 1
+    assert expected_value / price == pytest.approx(p_win - (1 - push) / price)
+
+
+def test_a_percentage_edge_is_not_a_fixed_amount_of_evidence():
+    """The reason the probability floor exists, stated as arithmetic."""
+    edge = 0.04
+    # What a 4% edge asks you to disagree with the price by, in probability.
+    at_short = edge / 1.50
+    at_long = edge / 23.00
+    assert at_short > 0.026 and at_long < 0.002
+    assert at_short > 15 * at_long

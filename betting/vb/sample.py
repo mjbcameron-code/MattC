@@ -16,6 +16,7 @@ from __future__ import annotations
 import math
 import random
 import sqlite3
+import zlib
 from datetime import datetime, timedelta
 
 from .repo import upsert_match, upsert_odds
@@ -174,6 +175,17 @@ def _prices(true_probs: dict[str, float], rng: random.Random, margin: float,
     return quotes
 
 
+def _seed(league_code: str, season: str, seed: int) -> int:
+    """A reproducible seed.
+
+    Python salts `hash()` on strings differently in every process, so seeding
+    an RNG from one gives different synthetic data on every run — the same
+    command produces a different card each time, and a test that needs two
+    bets sometimes finds one. CRC32 has no such surprise.
+    """
+    return zlib.crc32(f"{league_code}|{season}|{seed}".encode())
+
+
 BOOKS = ["bet365", "skybet", "paddypower", "williamhill", "ladbrokes_uk",
          "coral", "betfred", "betvictor"]
 
@@ -189,7 +201,7 @@ def generate_league(
     with_history_odds: bool = True,
 ) -> dict[str, int]:
     """Create one synthetic season: played matches with stats, then fixtures with prices."""
-    rng = random.Random(hash((league_code, season, seed)) & 0xFFFFFFFF)
+    rng = random.Random(_seed(league_code, season, seed))
     teams = TEAMS[league_code]
     profile = LEAGUE_PROFILE[league_code]
     strength = _strengths(rng, teams)

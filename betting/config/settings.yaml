@@ -17,8 +17,19 @@ selection:
   # not value, it is a bug — a mis-read line, a one-sided market, a stale
   # price. Better to miss it than to stake three points on it.
   max_edge: 0.25
+  # Expected value is a share of the stake, which is not a fixed amount of
+  # evidence: 4% at 1.50 means beating the price by 2.7 points of probability,
+  # but 4% at 23.0 means beating it by 0.17 of a point — less than the model's
+  # own calibration error. Without this the card fills with longshots, because
+  # they are the cheapest place to manufacture an edge. So a bet must also beat
+  # the price by this much in probability, whatever the price.
+  min_prob_edge: 0.02
   min_odds: 1.40            # nothing shorter — the downside isn't worth it
-  max_odds: 26.0            # nothing longer for a single
+  # Nothing longer for a single. This follows from the two numbers above rather
+  # than being a taste: at 12.5 the 2-point probability edge already implies a
+  # 25% expected value, which is the point where max_edge calls it a data fault.
+  # Past there the two rules contradict each other, so stop before it.
+  max_odds: 12.0
   min_model_prob: 0.05      # ignore lottery tickets the model barely rates
   max_tips_per_week: 12
   max_tips_per_league: 3
@@ -53,6 +64,10 @@ long_term:
   enabled: true
   # Outright / season-long markets: title, relegation, promotion, top scorer.
   min_edge: 0.10            # tied-up money needs a fatter edge
+  # The same longshot trap as above, and worse here: an outright price is not
+  # blended against a market, it is the season simulation on its own. At 100/1
+  # a 10% edge needs the simulation to rate a side 1.1% rather than 1.0%.
+  min_prob_edge: 0.03
   max_stake_pts: 2.0
 
 model:

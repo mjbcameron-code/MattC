@@ -276,6 +276,7 @@ def scan_fixture(
     min_odds = float(settings.get("selection.min_odds", 1.4))
     max_odds = float(settings.get("selection.max_odds", 26.0))
     min_prob = float(settings.get("selection.min_model_prob", 0.05))
+    min_prob_edge = float(settings.get("selection.min_prob_edge", 0.02))
     preferred = list(settings.get("bookmakers.preferred", []) or [])
     exchanges = list(settings.get("bookmakers.exchanges", []) or [])
     aggregates = list(settings.get("bookmakers.aggregates", []) or [])
@@ -356,6 +357,18 @@ def scan_fixture(
                 # An edge this size on a real market is almost always a fault in
                 # the data — a mis-mapped line, a one-sided book, a stale price —
                 # rather than value nobody else has noticed.
+                continue
+            # Expected value is a percentage of the stake, and that is not a
+            # constant amount of evidence. At 1.50 a 4% edge means disagreeing
+            # with the price by 2.7 points of probability; at 23.0 it means
+            # disagreeing by 0.17 of a point, which is far inside the model's
+            # own error. Left alone, that lets a rounding difference on a 4%
+            # shot outbid a genuine read on a favourite, and the card fills up
+            # with longshots. So demand the disagreement in probability too.
+            # Dividing by the price converts the expected value back into
+            # probability points, pushes included:
+            #     EV / price = p_win - (1 - p_push) / price
+            if expected_value / quote.price < min_prob_edge:
                 continue
 
             fraction = kelly_fraction(

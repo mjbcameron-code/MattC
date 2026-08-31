@@ -462,6 +462,7 @@ def build_outrights(
     if not settings.get("long_term.enabled", True):
         return []
     min_edge = float(settings.get("long_term.min_edge", 0.10))
+    min_prob_edge = float(settings.get("long_term.min_prob_edge", 0.03))
     max_stake = float(settings.get("long_term.max_stake_pts", 2.0))
 
     rows = conn.execute(
@@ -495,6 +496,11 @@ def build_outrights(
             price = float(row["price"])
             edge = prob * price - 1
             if edge < min_edge:
+                continue
+            # And beat the price in probability, not just as a share of the
+            # stake — otherwise a rounding difference on a 100/1 shot reads as
+            # a bigger edge than a real call on the title favourite.
+            if edge / price < min_prob_edge:
                 continue
             stake = min(max_stake, max(0.25, round(edge * 4 * 4) / 4))
             label = OUTRIGHT_LABELS.get(row["market"], row["market"].replace("_", " "))

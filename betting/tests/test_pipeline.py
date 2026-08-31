@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from vb.config import load_settings
 from vb.report import dashboard
 from vb.sample import generate_all
 from vb.tips.select import build_tipsheet
@@ -37,6 +38,26 @@ def test_stakes_respect_the_configured_caps(loaded):
     for tip in sheet.singles:
         assert 0.25 <= tip.stake_pts <= 3.0
         assert (tip.stake_pts * 100) % 25 == 0        # quarter-point steps
+
+
+def test_a_long_price_needs_a_real_disagreement(loaded):
+    """A big percentage on a longshot is the cheapest edge there is to fake.
+
+    4% of the stake is 2.7 points of probability at 1.50 and 0.17 of a point at
+    23.0 — well inside the model's own error. So every single has to beat the
+    price in probability as well as in percentage terms.
+    """
+    settings = load_settings()
+    floor = float(settings.get("selection.min_prob_edge", 0.02))
+    ceiling = float(settings.get("selection.max_odds", 12.0))
+    sheet = build_tipsheet(loaded, days=7, season="2025/26", include_outrights=False)
+    assert sheet.singles
+    for tip in sheet.singles:
+        assert tip.price <= ceiling, f"{tip.selection} tipped at {tip.price}"
+        assert tip.edge / tip.price >= floor - 1e-9, (
+            f"{tip.selection} at {tip.price}: a {tip.edge:.1%} edge is only "
+            f"{tip.edge / tip.price:.2%} of probability"
+        )
 
 
 def test_no_two_bets_on_the_same_angle(loaded):
@@ -252,3 +273,26 @@ def test_a_settled_bet_can_never_be_pruned(loaded):
     assert survivor is not None and survivor["status"] == "lost"
     assert loaded.execute(
         "SELECT COUNT(*) FROM bets WHERE status = 'pending'").fetchone()[0] == 0
+
+
+def test_the_sample_generator_is_actually_reproducible():
+    """`hash()` on a string is salted per process, so it cannot seed anything.
+
+    This caught a real flake: the same seed gave a different card in every run,
+    so a test that needed two bets sometimes found one.
+    """
+    import subprocess
+    import sys
+
+    script = (
+        "import sys; sys.path.insert(0, '.');"
+        "from vb.sample import _seed; print(_seed('E2', '2026/27', 3))"
+    )
+    seeds = {
+        subprocess.run([sys.executable, "-c", script], capture_output=True,
+                       text=True, check=True, env={"PYTHONHASHSEED": str(salt)},
+                       cwd=str(__import__("pathlib").Path(__file__).parent.parent)
+                       ).stdout.strip()
+        for salt in (0, 1, 2)
+    }
+    assert len(seeds) == 1, f"the seed moves with PYTHONHASHSEED: {seeds}"
