@@ -186,14 +186,16 @@ statistics for the divisions where football-data.co.uk publishes little more
 than the score, and player-level data.
 
 ```bash
-export API_FOOTBALL_KEY='...'          # from api-football.com, free tier is fine
-# Keep the key in the environment or an untracked .env — never in a commit,
-# an issue, or a chat. `vb apifootball check` prints no credential, so its
-# output is safe to share when you want help reading it.
+cp .env.example .env                   # then paste your key into it
 python3 -m vb apifootball check        # 2 requests: verifies the key, maps the leagues
 python3 -m vb apifootball injuries     # 1 request per league -> team news
 python3 -m vb apifootball fixtures --date 2026-08-29   # 1 request, every league
 ```
+
+Keys go in `.env`, which is ignored by git and so cannot be committed by
+accident. A real environment variable still wins if you prefer one. Never paste
+a key into a chat, an issue or a commit — `vb apifootball check` prints no
+credential, so its output is safe to share when you want help reading it.
 
 Read the table `check` prints before trusting anything. League ids are numbers,
 and a wrong one does not error — it quietly returns a different competition. The

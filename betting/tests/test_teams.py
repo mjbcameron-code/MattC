@@ -54,3 +54,42 @@ def test_the_same_match_from_two_feeds_is_one_row(conn):
     assert first == second
     row = conn.execute("SELECT fthg, hc, status FROM matches WHERE id = ?", (first,)).fetchone()
     assert (row["fthg"], row["hc"], row["status"]) == (1, 7, "played")
+
+
+# ---------------------------------------------------------------------------
+def test_keys_can_live_in_a_file(tmp_path, monkeypatch):
+    """A key belongs somewhere you edit once, not a terminal variable."""
+    from vb.config import load_env_file
+
+    monkeypatch.delenv("API_FOOTBALL_KEY", raising=False)
+    env = tmp_path / ".env"
+    env.write_text(
+        "# a comment\n"
+        "\n"
+        "API_FOOTBALL_KEY=abc123\n"
+        "ODDS_API_KEY='quoted-value'\n"
+        "MALFORMED LINE\n"
+    )
+    assert set(load_env_file(env)) == {"API_FOOTBALL_KEY", "ODDS_API_KEY"}
+
+    import os
+    assert os.environ["API_FOOTBALL_KEY"] == "abc123"
+    assert os.environ["ODDS_API_KEY"] == "quoted-value", "quotes should be stripped"
+
+
+def test_a_real_environment_variable_beats_the_file(tmp_path, monkeypatch):
+    from vb.config import load_env_file
+
+    monkeypatch.setenv("API_FOOTBALL_KEY", "from-the-shell")
+    env = tmp_path / ".env"
+    env.write_text("API_FOOTBALL_KEY=from-the-file\n")
+    assert load_env_file(env) == []
+
+    import os
+    assert os.environ["API_FOOTBALL_KEY"] == "from-the-shell"
+
+
+def test_a_missing_file_is_not_an_error(tmp_path):
+    from vb.config import load_env_file
+
+    assert load_env_file(tmp_path / "nothing-here") == []

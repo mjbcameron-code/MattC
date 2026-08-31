@@ -11,6 +11,34 @@ from typing import Any
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def load_env_file(path: Path | None = None) -> list[str]:
+    """Read KEY=value lines from a .env file next to the config.
+
+    Keys belong in a file you can edit once and forget, not in a terminal
+    variable that disappears when the window closes. A real environment
+    variable always wins, so this never overrides a deliberate export, and the
+    file is in .gitignore so it cannot be committed by accident.
+    """
+    target = path or (ROOT / ".env")
+    if not target.exists():
+        return []
+    loaded: list[str] = []
+    for line in target.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, _, value = line.partition("=")
+        name = name.strip()
+        value = value.strip().strip("'\"")
+        if name and name not in os.environ:
+            os.environ[name] = value
+            loaded.append(name)
+    return loaded
+
+
+ENV_LOADED = load_env_file()
 CONFIG_DIR = ROOT / "config"
 DATA_DIR = Path(os.environ.get("VB_DATA_DIR", ROOT / "data"))
 CACHE_DIR = DATA_DIR / "cache"
