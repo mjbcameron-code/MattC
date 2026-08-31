@@ -97,7 +97,15 @@ def test_a_401_says_the_key_is_wrong(client, monkeypatch):
         client.get("status")
     text = str(exc.value)
     assert "Invalid API key" in text, "the API's own reason must survive"
-    assert "typo" in text
+    assert "check .env against your dashboard" in text
+
+
+def test_an_unrecognised_401_still_gets_generic_advice(client, monkeypatch):
+    """No matching message, so fall back to what a 401 generally means."""
+    stub(monkeypatch, {"message": "Something new and unhelpful"}, status=401)
+    with pytest.raises(af.ApiFootballError) as exc:
+        client.get("status")
+    assert "typo" in str(exc.value)
 
 
 def test_a_403_lists_the_likely_causes_in_order(client, monkeypatch):
