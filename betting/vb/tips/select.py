@@ -565,6 +565,7 @@ def build_tipsheet(
     season: str | None = None,
     include_outrights: bool = True,
     statuses: tuple[str, ...] = ("scheduled",),
+    trace: Trace | None = None,
 ) -> TipSheet:
     as_of = as_of or datetime.now()
     settings = load_settings()
@@ -572,8 +573,9 @@ def build_tipsheet(
     week = week_reference(as_of)
 
     candidates, fixtures, bank = gather(conn, days=days, leagues=leagues,
-                                        as_of=as_of, statuses=statuses)
-    chosen = choose_singles(candidates, settings)
+                                        as_of=as_of, statuses=statuses,
+                                        trace=trace)
+    chosen = choose_singles(candidates, settings, trace=trace)
 
     singles: list[Tip] = []
     for i, candidate in enumerate(chosen, start=1):

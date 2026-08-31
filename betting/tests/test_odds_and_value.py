@@ -142,7 +142,9 @@ def test_the_trace_tells_no_prices_apart_from_no_value(conn):
     conn.execute("DELETE FROM odds")
     trace = Trace()
     gather(conn, days=7, trace=trace)
-    for code in trace.leagues():
-        reasons = dict(trace.rows(code))
-        assert reasons.get("no price on file", 0) > 0
-        assert reasons.get("priced up", 0) == 0
+    # Not "for each league" — an empty tally would satisfy that without
+    # reporting anything, which is the failure this is here to catch.
+    assert trace.leagues() == ["E2"], "the silent league must still be named"
+    reasons = dict(trace.rows("E2"))
+    assert reasons.get("no price on file", 0) > 0
+    assert reasons.get("priced up", 0) == 0

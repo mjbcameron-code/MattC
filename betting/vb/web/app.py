@@ -101,6 +101,7 @@ def home():
             "SELECT COUNT(*) AS matches, "
             "SUM(status = 'scheduled') AS ahead FROM matches").fetchone()
         placed_summary = _placed_summary(conn)
+        coverage = _coverage(conn, leagues)
     return render_template(
         "app.html",
         title=settings.get("report.title", "The Value Ledger"),
@@ -108,8 +109,34 @@ def home():
         summary=summary, placed=placed_summary, bets=bets, open_tips=open_tips,
         placed_by_ref=placed_by_ref, curve=curve, by_league=by_league,
         matches=counts["matches"] or 0, ahead=counts["ahead"] or 0,
+        coverage=coverage,
         generated=datetime.now().strftime("%d %B %Y, %H:%M"),
     )
+
+
+def _coverage(conn, leagues) -> list[dict[str, Any]]:
+    """What the engine saw last time it priced up, and what stopped each price.
+
+    Silence from a division reads the same on the card whether the prices were
+    judged fair or never arrived. This is the difference, per league.
+    """
+    from ..db import get_setting
+    from ..market.value import Trace
+
+    trace = Trace.from_json(get_setting(conn, "coverage.trace"))
+    out = []
+    for code in trace.leagues():
+        rows = trace.rows(code)
+        counts = dict(rows)
+        out.append({
+            "name": leagues[code].name if code in leagues else code,
+            "considered": trace.total(code),
+            "tipped": counts.get("tipped", 0),
+            "reasons": [{"reason": r, "count": n} for r, n in rows
+                        if r != "tipped"],
+        })
+    out.sort(key=lambda r: (-r["tipped"], -r["considered"]))
+    return out
 
 
 def _placed_summary(conn) -> dict[str, float]:
@@ -164,11 +191,20 @@ def act_refresh():
 @app.post("/act/card")
 def act_card():
     def work(log):
+        from ..db import set_setting
+        from ..market.value import Trace
+
         with db() as conn:
             log("Pricing this week's fixtures…")
-            sheet = build_tipsheet(conn, days=7)
+            trace = Trace()
+            sheet = build_tipsheet(conn, days=7, trace=trace)
             log(f"  {sheet.fixtures_scanned} fixtures, "
                 f"{len(sheet.all_tips)} bets advised")
+            # Keep the account of what was seen and why it was passed over, so
+            # the Health tab can answer "why is there nothing from X?" without
+            # a second, expensive pricing run.
+            set_setting(conn, "coverage.trace", trace.to_json())
+            set_setting(conn, "coverage.built_at", datetime.now().isoformat())
             written = record_tipsheet(conn, sheet)
             log(f"  {sum(written.values())} new tip(s) on the record")
         log("Done — reload to see the card.")

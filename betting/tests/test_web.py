@@ -96,3 +96,52 @@ def test_your_record_counts_only_what_you_backed(conn, loaded_app):
 def test_an_unknown_reference_is_refused(conn, loaded_app):
     assert not mark_placed(conn, "no-such-bet", 2.0, 1.0)
     assert not mark_passed(conn, "no-such-bet")
+
+
+def test_the_health_tab_accounts_for_what_the_engine_saw(conn, loaded_app, client):
+    """Silence from a league must be explained, not just absent."""
+    from vb.db import set_setting
+    from vb.market.value import Trace
+    from vb.tips.select import build_tipsheet
+
+    body = client.get("/").get_data(as_text=True)
+    assert "Build the card" in body, "with no account yet, say how to get one"
+
+    trace = Trace()
+    build_tipsheet(conn, days=7, season="2026/27", include_outrights=False,
+                   trace=trace)
+    set_setting(conn, "coverage.trace", trace.to_json())
+    conn.commit()
+
+    body = client.get("/").get_data(as_text=True)
+    assert "What the engine saw" in body
+    assert "prices" in body
+    # the reasons themselves have to reach the page, not just the totals
+    assert "edge below the minimum" in body or "no price on file" in body
+
+
+def test_a_league_with_no_prices_says_so_on_the_page(conn, loaded_app, client):
+    from vb.db import set_setting
+    from vb.market.value import Trace
+    from vb.tips.select import gather
+
+    conn.execute("DELETE FROM odds")
+    trace = Trace()
+    gather(conn, days=7, trace=trace)
+    set_setting(conn, "coverage.trace", trace.to_json())
+    conn.commit()
+
+    body = client.get("/").get_data(as_text=True)
+    assert "no price on file" in body
+    assert "none tipped" in body
+
+
+def test_the_trace_survives_the_round_trip_through_the_database(conn):
+    from vb.market.value import Trace
+
+    trace = Trace()
+    trace.note("EC", "edge below the minimum", 63)
+    trace.note("EC", "tipped", 2)
+    back = Trace.from_json(trace.to_json())
+    assert back.rows("EC") == trace.rows("EC")
+    assert back.total("EC") == trace.total("EC")

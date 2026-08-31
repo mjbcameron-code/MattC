@@ -20,6 +20,7 @@ fast way to lose a bankroll.
 
 from __future__ import annotations
 
+import json
 import math
 import sqlite3
 from collections import Counter, defaultdict
@@ -310,6 +311,18 @@ class Trace:
         return sum(counts[r] for r in self.ORDER[:cut]) + sum(
             n for r, n in counts.items() if r not in self.ORDER)
 
+    def to_json(self) -> str:
+        return json.dumps({c: dict(v) for c, v in self.counts.items()},
+                          sort_keys=True)
+
+    @classmethod
+    def from_json(cls, blob: str | None) -> "Trace":
+        trace = cls()
+        for code, reasons in json.loads(blob or "{}").items():
+            for reason, count in reasons.items():
+                trace.note(code, reason, count)
+        return trace
+
     def rows(self, league_code: str) -> list[tuple[str, int]]:
         """Reasons for one league, in funnel order, skipping the empty ones."""
         counts = self.counts[league_code]
@@ -368,6 +381,12 @@ def scan_fixture(
     def drop(reason: str, n: int = 1) -> None:
         if trace is not None:
             trace.note(code, reason, n)
+
+    if not groups:
+        # The case this whole tally exists for. A fixture nobody priced leaves
+        # no market to iterate, so without this the league with the broken
+        # feed is the one league the report says nothing about at all.
+        drop("no price on file")
 
     out: list[Candidate] = []
     for group in groups:

@@ -106,6 +106,22 @@ button[disabled]{opacity:.5;cursor:not-allowed}
   border-radius:7px;border:1px solid var(--rule);background:var(--card);color:var(--ink)}
 .tip label{font-size:12px;color:var(--muted)}
 .flag{font-size:12.5px;font-weight:600;color:var(--profit)}
+/* the coverage funnel on the health tab */
+.funnel{border-bottom:1px solid var(--rule)}
+.funnel summary{display:flex;justify-content:space-between;align-items:baseline;
+  gap:12px;padding:9px 2px;cursor:pointer;list-style:none}
+.funnel summary::-webkit-details-marker{display:none}
+.funnel summary::before{content:"\25B8";color:var(--muted);font-size:11px;
+  margin-right:8px;transition:transform .12s}
+.funnel[open] summary::before{transform:rotate(90deg);display:inline-block}
+.funnel .fname{flex:1}
+.funnel .fmeta{font-family:var(--mono);font-size:12px;color:var(--muted);
+  font-variant-numeric:tabular-nums}
+.funnel .fmeta .none{color:var(--muted);opacity:.7}
+.funnel .reasons{margin:0 0 12px 22px;width:auto;font-size:13px}
+.funnel .reasons td{border:0;padding:2px 10px 2px 0;color:var(--muted)}
+.funnel .reasons td.n{width:56px;color:var(--ink)}
+
 /* tables */
 .scroll{overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:13.5px}
@@ -272,6 +288,35 @@ td.n,th.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-
         {% endfor %}
       </tbody>
     </table>
+
+    <h3 style="margin:32px 0 6px">What the engine saw</h3>
+    <p class="prose" style="margin-top:0">
+      Nothing from a division looks the same on the card whether its prices
+      were judged fair or never arrived. This is the difference. Every price
+      considered when the card was last built, and what stopped it.
+    </p>
+    {% for league in coverage %}
+    <details class="funnel">
+      <summary>
+        <span class="fname">{{ league.name }}</span>
+        <span class="fmeta">{{ league.considered }} prices &middot;
+          {% if league.tipped %}<strong>{{ league.tipped }} tipped</strong>
+          {% else %}<span class="none">none tipped</span>{% endif %}</span>
+      </summary>
+      <table class="reasons">
+        <tbody>
+          {% for row in league.reasons %}
+          <tr><td class="n">{{ row.count }}</td><td>{{ row.reason }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
+    {% else %}
+    <p class="prose" style="color:var(--muted)">
+      No account yet — press <strong>Build the card</strong> and it will be
+      recorded as the prices are read.
+    </p>
+    {% endfor %}
   </div>
 
   <p class="foot">
