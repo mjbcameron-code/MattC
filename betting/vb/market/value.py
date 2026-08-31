@@ -278,7 +278,12 @@ def scan_fixture(
     min_prob = float(settings.get("selection.min_model_prob", 0.05))
     preferred = list(settings.get("bookmakers.preferred", []) or [])
     exchanges = list(settings.get("bookmakers.exchanges", []) or [])
-    sharp = exchanges + ["pinnacle"]
+    aggregates = list(settings.get("bookmakers.aggregates", []) or [])
+    # Neither of these is somewhere you can place a bet: an exchange price is
+    # the benchmark fair value is measured against, and "market max" is a
+    # summary of a panel rather than a bookmaker.
+    unbettable = set(exchanges) | set(aggregates)
+    sharp = exchanges + aggregates + ["pinnacle"]
     max_edge = float(settings.get("selection.max_edge", 0.25))
     bankroll = float(settings.get("bankroll.starting_points", 100.0))
     kelly_frac = float(settings.get("bankroll.kelly_fraction", 0.25))
@@ -315,7 +320,7 @@ def scan_fixture(
         # sharp reference when the fair price is calculated, so recommending one
         # measures a price against itself and calls the difference value. The
         # quoted price is pre-commission too.
-        bettable = [q for q in quotes if q.bookmaker not in exchanges]
+        bettable = [q for q in quotes if q.bookmaker not in unbettable]
         if not bettable:
             continue
         best = best_prices(bettable, preferred or None) or best_prices(bettable)

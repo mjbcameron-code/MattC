@@ -143,8 +143,16 @@ bookmakers:
   # benchmark for what a price *should* be, not as a bet to place.
   exchanges:
     - betfair_ex_uk
+    - betfair_ex           # how football-data.co.uk's Betfair columns are stored
+    - betfair
     - smarkets
     - matchbook
+  # Not bookmakers at all: football-data publishes the best and the average
+  # price across its panel. Useful for working out what a fair price is, and
+  # impossible to bet with.
+  aggregates:
+    - market_max
+    - market_avg
   region: uk
 
 devig:

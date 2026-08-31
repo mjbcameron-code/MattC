@@ -230,3 +230,28 @@ def test_an_exchange_price_is_never_the_recommendation(league):
                     fair * 1.08, taken_at="2020-01-01")
     found = scan_fixture(league, fixture)
     assert not [c for c in found if c.bookmaker == "matchbook"]
+
+
+def test_a_price_you_cannot_actually_take_is_never_tipped(league):
+    """"Market max" is a summary of a panel, not a bookmaker.
+
+    football-data.co.uk publishes the best and the average price across the
+    books it tracks. Both are useful for working out fair value and neither is
+    somewhere a bet can be struck, so recommending one advises a price that
+    does not exist.
+    """
+    bank = ModelBank(league)
+    match = league.execute(
+        "SELECT * FROM matches WHERE league_code = 'E3' AND status = 'scheduled' "
+        "LIMIT 1 OFFSET 2").fetchone()
+    fixture = build_fixture(league, match, bank, with_players=False)
+    league.execute("DELETE FROM odds WHERE match_id = ?", (fixture.match_id,))
+    for selection in ("home", "draw", "away"):
+        fair = 1 / fixture.probs.probability("h2h", selection)
+        upsert_odds(league, fixture.match_id, "bet365", "h2h", selection,
+                    fair * 0.97, taken_at="2020-01-01")
+        for synthetic in ("market_max", "market_avg", "betfair_ex"):
+            upsert_odds(league, fixture.match_id, synthetic, "h2h", selection,
+                        fair * 1.10, taken_at="2020-01-01")
+    books = {c.bookmaker for c in scan_fixture(league, fixture)}
+    assert not books & {"market_max", "market_avg", "betfair_ex"}
