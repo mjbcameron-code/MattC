@@ -133,6 +133,9 @@ class Candidate:
     signals: list[Signal] = field(default_factory=list)
     books_seen: int = 0
     blend_weight: float = 0.0
+    #: Priced above `selection.max_odds`, and admitted through the longshot
+    #: lane. Carried so the discipline can ask more of it than of a normal bet.
+    longshot: bool = False
 
     @property
     def league_code(self) -> str:
@@ -277,6 +280,7 @@ class Trace:
         "model rates it below the floor",
         "price outside the odds limits",
         "edge below the minimum",
+        "longshot without enough edge",
         "edge above the maximum (treated as a data fault)",
         "edge too thin in probability",
         "stake rounds below the minimum",
@@ -284,6 +288,7 @@ class Trace:
         # where a priced-up candidate still has to survive the discipline.
         "priced up",
         "not enough supporting signals",
+        "longshot without enough corroboration",
         "same angle already taken",
         "two bets on that match already",
         "league is already at its cap",
@@ -448,6 +453,17 @@ def scan_fixture(
     unbettable = set(exchanges) | set(aggregates)
     sharp = exchanges + aggregates + ["pinnacle"]
     max_edge = float(settings.get("selection.max_edge", 0.25))
+    # The longshot lane. Above max_odds the ordinary rules stop making sense
+    # together — a two-point probability edge at 12.5 already implies the 25%
+    # expected value that max_edge calls a data fault — so a price out there
+    # is judged by its own set instead of by a relaxed version of the usual
+    # one. Fatter relative edge, a smaller but non-zero probability edge,
+    # small stakes, and more corroboration (applied in choose_singles).
+    long_on = bool(settings.get("selection.longshots.enabled", False))
+    long_max_odds = float(settings.get("selection.longshots.max_odds", 34.0))
+    long_min_edge = float(settings.get("selection.longshots.min_edge", 0.10))
+    long_prob_edge = float(settings.get("selection.longshots.min_prob_edge", 0.005))
+    long_stake = float(settings.get("selection.longshots.max_stake_pts", 0.5))
     bankroll = float(settings.get("bankroll.starting_points", 100.0))
     kelly_frac = float(settings.get("bankroll.kelly_fraction", 0.25))
     max_stake = float(settings.get("bankroll.max_stake_pts", 3.0))
@@ -518,7 +534,11 @@ def scan_fixture(
             if model_prob < min_prob:
                 drop("model rates it below the floor")
                 continue
-            if not (min_odds <= quote.price <= max_odds):
+            longshot = quote.price > max_odds
+            if quote.price < min_odds:
+                drop("price outside the odds limits")
+                continue
+            if longshot and not (long_on and quote.price <= long_max_odds):
                 drop("price outside the odds limits")
                 continue
 
@@ -548,8 +568,11 @@ def scan_fixture(
                     f"{fixture.label}: {market} {sel}"
                     + (f" {line:g}" if line is not None else "")
                     + f" at {quote.price:.2f}")
-            if expected_value < min_edge:
-                drop("edge below the minimum")
+            floor_edge = long_min_edge if longshot else min_edge
+            floor_prob = long_prob_edge if longshot else min_prob_edge
+            if expected_value < floor_edge:
+                drop("longshot without enough edge" if longshot
+                     else "edge below the minimum")
                 continue
             if expected_value > max_edge:
                 # An edge this size on a real market is almost always a fault in
@@ -567,7 +590,7 @@ def scan_fixture(
             # Dividing by the price converts the expected value back into
             # probability points, pushes included:
             #     EV / price = p_win - (1 - p_push) / price
-            if expected_value / quote.price < min_prob_edge:
+            if expected_value / quote.price < floor_prob:
                 drop("edge too thin in probability")
                 continue
 
@@ -576,7 +599,8 @@ def scan_fixture(
                 quote.price, push_prob,
             )
             stake = fraction * kelly_frac * bankroll
-            stake = min(max_stake, round(stake / step) * step)
+            ceiling = min(max_stake, long_stake) if longshot else max_stake
+            stake = min(ceiling, round(stake / step) * step)
             if stake < min_stake:
                 drop("stake rounds below the minimum")
                 continue
@@ -588,6 +612,7 @@ def scan_fixture(
                 blended_prob=blended, edge=expected_value, kelly=fraction,
                 stake_pts=stake, push_prob=push_prob, subject=subject,
                 books_seen=len({q.bookmaker for q in quotes}),
+                longshot=longshot,
             )
             candidate.signals = candidate.supporting_signals()
             candidate.blend_weight = weight

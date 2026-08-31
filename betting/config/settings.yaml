@@ -25,11 +25,28 @@ selection:
   # the price by this much in probability, whatever the price.
   min_prob_edge: 0.02
   min_odds: 1.40            # nothing shorter — the downside isn't worth it
-  # Nothing longer for a single. This follows from the two numbers above rather
-  # than being a taste: at 12.5 the 2-point probability edge already implies a
-  # 25% expected value, which is the point where max_edge calls it a data fault.
-  # Past there the two rules contradict each other, so stop before it.
+  # Where the ordinary card stops. This follows from the two numbers above
+  # rather than being a taste: at 12.5 the 2-point probability edge already
+  # implies a 25% expected value, which is the point where max_edge calls it a
+  # data fault. Past there the two rules contradict each other.
   max_odds: 12.0
+  # So a longer price is judged by its own set of rules rather than by a
+  # loosened version of the ordinary ones. The bargain: a much fatter edge, a
+  # smaller but still real probability edge, more corroborating signals than a
+  # normal bet needs, and stakes capped low whatever Kelly says.
+  #
+  # Be clear-eyed about it. Two seasons of backtesting say this is the least
+  # reliable part of the model — a fraction of a point of probability error
+  # moves the edge enormously at 20.0 — and the first version of this engine
+  # filled its card with 23.00 shots for exactly that reason. These numbers are
+  # set to admit the occasional well-supported outsider, not to reopen that.
+  longshots:
+    enabled: true
+    max_odds: 34.0          # 33/1. Beyond this it is a raffle ticket.
+    min_edge: 0.10          # against 4% for an ordinary single
+    min_prob_edge: 0.005    # half a point of probability, against two
+    min_signals: 3          # against two: the "good reason" has to exist
+    max_stake_pts: 0.5      # small, always, whatever the arithmetic says
   min_model_prob: 0.05      # ignore lottery tickets the model barely rates
   max_tips_per_week: 12
   max_tips_per_league: 3

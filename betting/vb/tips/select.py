@@ -161,15 +161,24 @@ def choose_singles(candidates: list[Candidate], settings=None,
     """Apply the discipline: evidence, one angle per match, caps."""
     settings = settings or load_settings()
     min_signals = int(settings.get("selection.min_signals", 2))
+    # "Fancied for good reason" is the whole basis for allowing a longshot at
+    # all, so the reason has to be there. A price beyond max_odds is where the
+    # model's probability is least reliable — a fraction of a point of error
+    # moves the edge enormously — and corroborating signals are the only
+    # independent check the engine has on it.
+    long_signals = int(settings.get("selection.longshots.min_signals", 3))
     max_tips = int(settings.get("selection.max_tips_per_week", 12))
     max_per_league = int(settings.get("selection.max_tips_per_league", 3))
 
     eligible = []
     for candidate in candidates:
-        if _passes_evidence(candidate, min_signals):
+        needed = long_signals if candidate.longshot else min_signals
+        if _passes_evidence(candidate, needed):
             eligible.append(candidate)
         elif trace is not None:
-            trace.note(candidate.league_code, "not enough supporting signals")
+            trace.note(candidate.league_code,
+                       "longshot without enough corroboration"
+                       if candidate.longshot else "not enough supporting signals")
     eligible.sort(key=_score, reverse=True)
 
     chosen: list[Candidate] = []

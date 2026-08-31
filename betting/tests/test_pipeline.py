@@ -50,14 +50,24 @@ def test_a_long_price_needs_a_real_disagreement(loaded):
     settings = load_settings()
     floor = float(settings.get("selection.min_prob_edge", 0.02))
     ceiling = float(settings.get("selection.max_odds", 12.0))
+    long_ceiling = float(settings.get("selection.longshots.max_odds", 34.0))
+    long_floor = float(settings.get("selection.longshots.min_prob_edge", 0.005))
+    long_edge = float(settings.get("selection.longshots.min_edge", 0.10))
     sheet = build_tipsheet(loaded, days=7, season="2025/26", include_outrights=False)
     assert sheet.singles
     for tip in sheet.singles:
-        assert tip.price <= ceiling, f"{tip.selection} tipped at {tip.price}"
-        assert tip.edge / tip.price >= floor - 1e-9, (
-            f"{tip.selection} at {tip.price}: a {tip.edge:.1%} edge is only "
-            f"{tip.edge / tip.price:.2%} of probability"
-        )
+        # Above the ordinary ceiling a price is judged by the longshot rules,
+        # which are stricter on edge and looser on probability — not by a
+        # relaxed version of the ordinary ones.
+        if tip.price > ceiling:
+            assert tip.price <= long_ceiling, f"{tip.selection} at {tip.price}"
+            assert tip.edge >= long_edge - 1e-9
+            assert tip.edge / tip.price >= long_floor - 1e-9
+        else:
+            assert tip.edge / tip.price >= floor - 1e-9, (
+                f"{tip.selection} at {tip.price}: a {tip.edge:.1%} edge is only "
+                f"{tip.edge / tip.price:.2%} of probability"
+            )
 
 
 def test_no_two_bets_on_the_same_angle(loaded):
