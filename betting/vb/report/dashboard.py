@@ -161,6 +161,27 @@ def write(
     ensure_dirs()
     target = Path(path) if path else REPORT_DIR / "dashboard.html"
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(render(build_context(conn, sheet, season_start, synthetic)),
-                      encoding="utf-8")
+    body = render(build_context(conn, sheet, season_start, synthetic))
+    target.write_text(_standalone(body), encoding="utf-8")
     return target
+
+
+# The template is written to be wrapped by a host that supplies the document
+# head. Opened as a local file there is no host, and a browser left to guess
+# the encoding renders every em dash as "â€"" and every star as mojibake.
+STANDALONE = """<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+{body}
+</body>
+</html>
+"""
+
+
+def _standalone(body: str) -> str:
+    """Wrap the page as a complete document, declaring UTF-8."""
+    return STANDALONE.format(body=body)

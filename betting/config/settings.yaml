@@ -13,6 +13,10 @@ bankroll:
 
 selection:
   min_edge: 0.04            # 4% expected value before a bet is even considered
+  # And an upper bound. An edge above this on a market a dozen books price is
+  # not value, it is a bug — a mis-read line, a one-sided market, a stale
+  # price. Better to miss it than to stake three points on it.
+  max_edge: 0.25
   min_odds: 1.40            # nothing shorter — the downside isn't worth it
   max_odds: 26.0            # nothing longer for a single
   min_model_prob: 0.05      # ignore lottery tickets the model barely rates

@@ -35,8 +35,11 @@ def home_win_2_1():
     ("ah", "home", -0.5, "won"),
     ("ah", "home", -1.0, "void"),
     ("ah", "home", -1.5, "lost"),
-    ("ah", "away", 1.0, "void"),
-    ("ah", "away", 1.5, "won"),
+    # `line` is the handicap on the home team, so an away punter giving the
+    # home side a goal is line +1.0, and receiving one is line -1.0.
+    ("ah", "away", -1.0, "void"),      # home won by exactly one
+    ("ah", "away", -1.5, "won"),
+    ("ah", "away", 1.0, "lost"),
     ("team_totals", "home_over", 1.5, "won"),
     ("team_totals", "away_over", 1.5, "lost"),
     ("correct_score", "2-1", None, "won"),

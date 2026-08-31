@@ -193,6 +193,14 @@ def load_league_odds(
                 our_market = _reverse_market(market.get("key", ""))
                 if our_market is None:
                     continue
+                # Handicaps arrive with a point per outcome, mirrored between
+                # the sides. Both are stored under the home team's line so the
+                # market stays whole.
+                home_point = None
+                if our_market == "ah":
+                    for outcome in market.get("outcomes", []):
+                        if outcome.get("name") == home:
+                            home_point = outcome.get("point")
                 for outcome in market.get("outcomes", []):
                     price = outcome.get("price")
                     if not price or price <= 1.0:
@@ -205,9 +213,12 @@ def load_league_odds(
                         continue
                     if subject:
                         selection = f"{subject}|{selection}"
+                    point = outcome.get("point")
+                    if our_market == "ah" and home_point is not None:
+                        point = home_point
                     upsert_odds(
                         conn, match_id, book_key, our_market, selection,
-                        float(price), outcome.get("point"), taken_at=taken_at,
+                        float(price), point, taken_at=taken_at,
                         source="odds-api",
                     )
                     stored += 1

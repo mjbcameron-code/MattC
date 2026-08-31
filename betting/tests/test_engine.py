@@ -118,9 +118,9 @@ def test_a_generous_price_is_found(league):
         for book in ("bet365", "skybet", "paddypower"):
             upsert_odds(league, fixture.match_id, book, "h2h", selection, fair,
                         taken_at="2020-01-01")
-    # One book goes 40% over the odds on the home side.
+    # One book goes 15% over the odds on the home side — a real, findable edge.
     home_fair = 1 / fixture.probs.probability("h2h", "home")
-    upsert_odds(league, fixture.match_id, "coral", "h2h", "home", home_fair * 1.4,
+    upsert_odds(league, fixture.match_id, "coral", "h2h", "home", home_fair * 1.15,
                 taken_at="2020-01-01")
     upsert_odds(league, fixture.match_id, "coral", "h2h", "draw",
                 1 / fixture.probs.probability("h2h", "draw"), taken_at="2020-01-01")
@@ -181,3 +181,52 @@ def test_form_signals_admit_when_the_run_is_last_season(conn):
     may = recent_form(conn, team_id, "E0", datetime(2026, 5, 12))
     assert not may.is_stale
     assert may.run_phrase() == f"their last {may.played}"
+
+
+def test_an_implausible_edge_is_treated_as_a_fault_not_a_windfall(league):
+    """A 60% edge on a market a dozen books price is a bug, not value.
+
+    Left in, it goes straight to the top of the card at maximum stake, which is
+    the worst possible outcome for a number that came from a mis-read line or a
+    one-sided book.
+    """
+    bank = ModelBank(league)
+    match = league.execute(
+        "SELECT * FROM matches WHERE league_code = 'E3' AND status = 'scheduled' LIMIT 1"
+    ).fetchone()
+    fixture = build_fixture(league, match, bank, with_players=False)
+    league.execute("DELETE FROM odds WHERE match_id = ?", (fixture.match_id,))
+    for selection in ("home", "draw", "away"):
+        fair = 1 / fixture.probs.probability("h2h", selection)
+        for book in ("bet365", "skybet", "paddypower"):
+            upsert_odds(league, fixture.match_id, book, "h2h", selection, fair,
+                        taken_at="2020-01-01")
+    home_fair = 1 / fixture.probs.probability("h2h", "home")
+    upsert_odds(league, fixture.match_id, "coral", "h2h", "home", home_fair * 1.6,
+                taken_at="2020-01-01")
+    assert not [c for c in scan_fixture(league, fixture) if c.bookmaker == "coral"]
+
+
+def test_an_exchange_price_is_never_the_recommendation(league):
+    """Exchanges set the benchmark; they are not the bet.
+
+    Their margin is a fraction of a sportsbook's, so an exchange is almost
+    always the best price on the board — and it is also weighted as the sharp
+    reference when fair value is calculated. Recommending one measures a price
+    against itself and reports the difference as value.
+    """
+    bank = ModelBank(league)
+    match = league.execute(
+        "SELECT * FROM matches WHERE league_code = 'E3' AND status = 'scheduled' "
+        "LIMIT 1 OFFSET 1").fetchone()
+    fixture = build_fixture(league, match, bank, with_players=False)
+    league.execute("DELETE FROM odds WHERE match_id = ?", (fixture.match_id,))
+    for selection in ("home", "draw", "away"):
+        fair = 1 / fixture.probs.probability("h2h", selection)
+        upsert_odds(league, fixture.match_id, "bet365", "h2h", selection, fair * 0.97,
+                    taken_at="2020-01-01")
+        # The exchange is the best price on every selection, as it usually is.
+        upsert_odds(league, fixture.match_id, "matchbook", "h2h", selection,
+                    fair * 1.08, taken_at="2020-01-01")
+    found = scan_fixture(league, fixture)
+    assert not [c for c in found if c.bookmaker == "matchbook"]

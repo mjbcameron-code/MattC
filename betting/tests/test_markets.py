@@ -93,3 +93,64 @@ def test_booking_points_match_card_lines_when_no_reds():
     # A tiny gap remains because "no reds" is modelled as a Poisson with a
     # near-zero mean rather than a hard zero.
     assert counts.booking_points_over(25.5, 0.0) == pytest.approx(counts.over(2.5), abs=1e-5)
+
+
+# ---------------------------------------------------------------------------
+# Asian handicaps: one line convention, or the market cannot be devigged
+# ---------------------------------------------------------------------------
+def test_both_sides_of_a_handicap_share_one_line(probs):
+    """`line` is the handicap on the home team, for both selections.
+
+    Storing the away side under the mirrored line split every handicap into two
+    one-sided books. Devigging needs a complete market, so it declined to touch
+    them, and every handicap was priced on the raw model with nothing to blend
+    against — the exact over-confidence the blending exists to correct.
+    """
+    for line in (-2.75, -1.5, -0.5, 0.0, 0.75, 2.0):
+        home = probs.probability("ah", "home", line)
+        away = probs.probability("ah", "away", line)
+        assert home + away == pytest.approx(1.0), f"line {line} does not pair up"
+
+
+def test_giving_a_bigger_start_makes_the_away_side_likelier(probs):
+    """Sanity of direction: the more the home team concedes, the better away is."""
+    generous = probs.probability("ah", "away", -2.5)   # home gives 2.5
+    stingy = probs.probability("ah", "away", 0.5)      # home receives 0.5
+    assert generous > stingy
+
+
+def test_a_handicap_market_can_now_be_devigged(conn):
+    from vb.market.odds import consensus_fair, latest_quotes
+    from vb.repo import upsert_match, upsert_odds
+
+    match_id = upsert_match(conn, "SP1", "2026/27", "2026-08-31T20:00:00",
+                            "Barcelona", "Rayo Vallecano", status="scheduled")
+    for book, home_price, away_price in (("bet365", 1.95, 1.87),
+                                         ("skybet", 1.92, 1.90)):
+        upsert_odds(conn, match_id, book, "ah", "home", home_price, -2.75)
+        upsert_odds(conn, match_id, book, "ah", "away", away_price, -2.75)
+
+    fair = consensus_fair(latest_quotes(conn, match_id, "ah", -2.75))
+    assert set(fair) == {"home", "away"}, "both sides must be in one market"
+    assert sum(fair.values()) == pytest.approx(1.0)
+
+
+def test_an_old_database_has_its_handicap_lines_repaired(tmp_path):
+    """Rows written under the old convention are flipped once, and only once."""
+    from vb.db import repair_ah_lines, session
+    from vb.repo import upsert_match, upsert_odds
+
+    path = tmp_path / "old.db"
+    with session(path) as conn:
+        match_id = upsert_match(conn, "E0", "2026/27", "2026-08-29T15:00:00",
+                                "Liverpool", "Everton", status="scheduled")
+        conn.execute("DELETE FROM kv WHERE key = 'fix.ah_line_convention'")
+        upsert_odds(conn, match_id, "bet365", "ah", "home", 1.90, -1.0)
+        conn.execute("UPDATE odds SET line = 1.0 WHERE selection = 'home'")
+        upsert_odds(conn, match_id, "bet365", "ah", "away", 1.90, 1.0)
+        conn.execute("DELETE FROM kv WHERE key = 'fix.ah_line_convention'")
+        assert repair_ah_lines(conn) == 1
+        away = conn.execute(
+            "SELECT line FROM odds WHERE selection = 'away'").fetchone()["line"]
+        assert away == pytest.approx(-1.0)
+        assert repair_ah_lines(conn) == 0, "running twice would undo the repair"

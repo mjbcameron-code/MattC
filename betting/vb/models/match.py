@@ -180,7 +180,11 @@ class MatchProbs:
         if market == "dnb":
             return self.draw_no_bet(selection)
         if market == "ah" and line is not None:
-            return self.ah_break_even(line, selection)
+            # Stored lines are always from the home team's point of view, so
+            # both sides of a market share one line and can be devigged as a
+            # pair. The away side takes the mirror image.
+            return self.ah_break_even(line if selection == "home" else -line,
+                                      selection)
         if market == "correct_score":
             try:
                 home_goals, away_goals = (int(x) for x in selection.split("-"))

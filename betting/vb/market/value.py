@@ -168,8 +168,10 @@ class Candidate:
         if self.market == "dnb":
             return f"{home if sel == 'home' else away} draw no bet"
         if self.market == "ah":
+            # Stored from the home team's view; shown from the backed team's.
             side = home if sel == "home" else away
-            return f"{side} {line:+g} (Asian handicap)"
+            shown = line if sel == "home" else -line
+            return f"{side} {shown:+g} (Asian handicap)"
         if self.market == "totals":
             return f"{sel.capitalize()} {line:g} goals"
         if self.market == "team_totals":
@@ -275,7 +277,9 @@ def scan_fixture(
     max_odds = float(settings.get("selection.max_odds", 26.0))
     min_prob = float(settings.get("selection.min_model_prob", 0.05))
     preferred = list(settings.get("bookmakers.preferred", []) or [])
-    sharp = list(settings.get("bookmakers.exchanges", []) or []) + ["pinnacle"]
+    exchanges = list(settings.get("bookmakers.exchanges", []) or [])
+    sharp = exchanges + ["pinnacle"]
+    max_edge = float(settings.get("selection.max_edge", 0.25))
     bankroll = float(settings.get("bankroll.starting_points", 100.0))
     kelly_frac = float(settings.get("bankroll.kelly_fraction", 0.25))
     max_stake = float(settings.get("bankroll.max_stake_pts", 3.0))
@@ -305,7 +309,16 @@ def scan_fixture(
         if not quotes:
             continue
         fair = consensus_fair(quotes, prefer_books=sharp)
-        best = best_prices(quotes, preferred or None) or best_prices(quotes)
+        # Exchanges set the benchmark for what a price should be; they are not
+        # the bet. Their margin is a fraction of a sportsbook's, so an exchange
+        # is nearly always the "best price" — and it is also weighted as the
+        # sharp reference when the fair price is calculated, so recommending one
+        # measures a price against itself and calls the difference value. The
+        # quoted price is pre-commission too.
+        bettable = [q for q in quotes if q.bookmaker not in exchanges]
+        if not bettable:
+            continue
+        best = best_prices(bettable, preferred or None) or best_prices(bettable)
 
         for selection, quote in best.items():
             subject = None
@@ -333,6 +346,11 @@ def scan_fixture(
                 expected_value = blended * quote.price - 1
 
             if expected_value < min_edge:
+                continue
+            if expected_value > max_edge:
+                # An edge this size on a real market is almost always a fault in
+                # the data — a mis-mapped line, a one-sided book, a stale price —
+                # rather than value nobody else has noticed.
                 continue
 
             fraction = kelly_fraction(

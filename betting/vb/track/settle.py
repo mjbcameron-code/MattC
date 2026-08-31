@@ -62,7 +62,11 @@ def grade_leg(match: sqlite3.Row, market: str, selection: str,
         side, _, _ = selection.partition("_")
         return over_under(home if side == "home" else away, line)
     if market == "ah" and line is not None:
-        return _grade_handicap(diff if selection == "home" else -diff, line)
+        # `line` is the handicap on the home team, so the away side takes both
+        # the mirrored margin and the mirrored line.
+        if selection == "home":
+            return _grade_handicap(diff, line)
+        return _grade_handicap(-diff, -line)
     if market == "correct_score":
         try:
             want_home, want_away = (int(x) for x in selection.split("-"))

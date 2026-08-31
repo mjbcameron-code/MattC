@@ -260,9 +260,29 @@ def migrate(conn: sqlite3.Connection) -> list[str]:
     return applied
 
 
+def repair_ah_lines(conn: sqlite3.Connection) -> int:
+    """Bring stored Asian handicaps onto one line convention.
+
+    Early versions stored the away side under the mirrored line, which split
+    every handicap into two one-sided books. Devigging needs both sides of a
+    market together, so those bets were priced with no market to blend against.
+    Existing rows are flipped once; the flag stops it running twice and undoing
+    itself.
+    """
+    if get_setting(conn, "fix.ah_line_convention"):
+        return 0
+    cur = conn.execute(
+        "UPDATE odds SET line = -line WHERE market = 'ah' AND selection = 'away' "
+        "AND line IS NOT NULL")
+    conn.execute(
+        "UPDATE bet_legs SET line = -line WHERE market = 'ah' AND selection = 'away' "
+        "AND line IS NOT NULL")
+    set_setting(conn, "fix.ah_line_convention", "done")
+    return cur.rowcount or 0
+
+
 def init_db(conn: sqlite3.Connection | None = None) -> sqlite3.Connection:
     """Create the schema (idempotent), apply migrations, seed the leagues."""
-    own = conn is None
     conn = conn or connect()
     migrate(conn)
     conn.executescript(SCHEMA)
@@ -273,9 +293,8 @@ def init_db(conn: sqlite3.Connection | None = None) -> sqlite3.Connection:
             "country=excluded.country, tier=excluded.tier",
             (lg.code, lg.name, lg.country, lg.tier),
         )
+    repair_ah_lines(conn)
     conn.commit()
-    if own:
-        return conn
     return conn
 
 

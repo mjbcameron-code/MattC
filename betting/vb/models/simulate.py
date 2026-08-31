@@ -110,8 +110,9 @@ class SimulatedMatch:
             goals = self.home_goals if side == "home" else self.away_goals
             return goals > line if direction != "under" else goals < line
         if market == "ah" and line is not None:
-            adjusted = (diff if selection == "home" else -diff) + line
-            return adjusted > 0
+            # `line` is the handicap on the home team; the away side mirrors it.
+            margin = diff if selection == "home" else -diff
+            return (margin + (line if selection == "home" else -line)) > 0
         if market == "correct_score":
             home_goals, away_goals = (int(x) for x in selection.split("-"))
             return (self.home_goals == home_goals) & (self.away_goals == away_goals)

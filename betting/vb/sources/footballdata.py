@@ -152,8 +152,13 @@ def _odds_from_row(row: dict[str, str]) -> list[tuple[str, str, str, float | Non
             ah_home = _num(row.get(f"{prefix}{closing}AHH"))
             ah_away = _num(row.get(f"{prefix}{closing}AHA"))
             if line is not None and ah_home and ah_away:
+                # Both sides under the home team's line, so the pair forms one
+                # market that can be devigged. Storing them under opposite
+                # lines split every handicap into two one-sided books, which
+                # devig silently declines to touch — leaving the model with no
+                # market to blend against.
                 out.append((name, "ah", "home", line, ah_home))
-                out.append((name, "ah", "away", -line, ah_away))
+                out.append((name, "ah", "away", line, ah_away))
     return out
 
 
