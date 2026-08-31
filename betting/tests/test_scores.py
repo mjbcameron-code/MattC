@@ -182,3 +182,22 @@ def test_fixtures_land_in_the_database(conn):
     assert priced >= 2, "prices should have come in with the fixture"
     assert conn.execute(
         "SELECT status FROM matches").fetchone()["status"] == "scheduled"
+
+
+def test_the_odds_quota_is_read_from_the_reply():
+    """The-odds-api reports the monthly allowance in every response header."""
+    from vb.sources import oddsapi
+
+    oddsapi.QUOTA.clear()
+    oddsapi._record_quota({"x-requests-remaining": "412", "x-requests-used": "88",
+                           "X-Requests-Last": "1"})
+    assert oddsapi.QUOTA["remaining"] == 412
+    assert oddsapi.QUOTA["used"] == 88
+    assert "412 requests left" in oddsapi.quota_summary()
+
+
+def test_an_unknown_quota_says_so_rather_than_guessing():
+    from vb.sources import oddsapi
+
+    oddsapi.QUOTA.clear()
+    assert "not yet known" in oddsapi.quota_summary()

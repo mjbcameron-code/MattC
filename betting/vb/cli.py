@@ -105,11 +105,28 @@ def cmd_update(args) -> int:
             except Exception as exc:                    # noqa: BLE001
                 problems.append(f"fixtures: {exc}")
 
-        if args.odds:
+        # A key that is set is a key that is meant to be used. It stays skippable
+        # with --no-odds, because each league costs a request against a monthly
+        # allowance, but leaving it behind a flag meant a configured key sat
+        # unused and nobody could tell.
+        import os
+
+        use_odds = not args.no_odds and bool(os.environ.get("ODDS_API_KEY"))
+        if args.odds and not os.environ.get("ODDS_API_KEY"):
+            problems.append("--odds was given but ODDS_API_KEY is not set")
+        if use_odds:
             from .sources import oddsapi
-            for code in codes:
-                if not load_leagues()[code].odds_api:
-                    continue
+
+            # Only ask about leagues that actually have a game coming up.
+            with_fixtures = {r["league_code"] for r in conn.execute(
+                "SELECT DISTINCT league_code FROM matches WHERE status = 'scheduled' "
+                "AND kickoff BETWEEN datetime('now') AND datetime('now', '+8 days')")}
+            targets = [c for c in codes
+                       if load_leagues()[c].odds_api
+                       and (not with_fixtures or c in with_fixtures)]
+            if not targets:
+                print("  live odds: no league has a fixture in the next week")
+            for code in targets:
                 try:
                     events, stored = oddsapi.load_league_odds(
                         conn, code, season, force=args.force)
@@ -117,6 +134,8 @@ def cmd_update(args) -> int:
                     print(f"  {code}: {events} events, {stored} live prices")
                 except Exception as exc:                # noqa: BLE001
                     problems.append(f"{code} odds: {exc}")
+            if oddsapi.QUOTA:
+                print(f"  odds API: {oddsapi.quota_summary()}")
 
         if args.scores:
             totals["scores"] = _fetch_scores(conn, codes, season, problems)
@@ -746,7 +765,21 @@ def cmd_doctor(args) -> int:
         print(f"  player records   {players}"
               + ("" if players else "   player markets stay off until some are imported"))
         import os
-        print(f"  odds API key     {'set' if os.environ.get('ODDS_API_KEY') else 'not set'}")
+        if os.environ.get("ODDS_API_KEY"):
+            live = conn.execute(
+                "SELECT COUNT(DISTINCT bookmaker) AS books, COUNT(*) AS n FROM odds "
+                "WHERE bookmaker NOT IN ('bet365','skybet','betvictor','betfair_ex',"
+                "'bwin','pinnacle','williamhill','market_max','market_avg')"
+            ).fetchone()
+            from .sources import oddsapi
+            state = (f"set — {live['n']} prices from {live['books']} book(s) via the API"
+                     if live["n"] else
+                     f"{BLUE}set, but no prices have come from it yet{RESET}")
+            print(f"  odds API key     {state}")
+            if oddsapi.QUOTA:
+                print(f"                   {oddsapi.quota_summary()}")
+        else:
+            print("  odds API key     not set")
         print(f"  API-Football key {'set' if os.environ.get('API_FOOTBALL_KEY') else 'not set'}")
 
         # ---- verdict -------------------------------------------------------
@@ -790,7 +823,11 @@ def build_parser() -> argparse.ArgumentParser:
     update.add_argument("--leagues", help="comma separated codes, e.g. E0,E1,SC0")
     update.add_argument("--season")
     update.add_argument("--history", type=int, default=3, help="seasons of results")
-    update.add_argument("--odds", action="store_true", help="also pull live odds-api prices")
+    update.add_argument("--odds", action="store_true",
+                        help="deprecated: live prices are pulled whenever "
+                             "ODDS_API_KEY is set")
+    update.add_argument("--no-odds", action="store_true",
+                        help="skip the live odds API even though a key is set")
     update.add_argument("--scores", action="store_true",
                         help="also pull finished scores from the odds API — far faster "
                              "than waiting for the football-data refresh (1 request "

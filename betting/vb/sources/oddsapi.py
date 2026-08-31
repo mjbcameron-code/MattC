@@ -50,6 +50,33 @@ class MissingApiKey(RuntimeError):
     pass
 
 
+# The-odds-api reports the monthly allowance in every reply. Without reading it
+# there is no way to know how close a run is to exhausting the free tier.
+QUOTA: dict[str, int] = {}
+
+
+def _record_quota(headers: dict) -> None:
+    for name, key in (("x-requests-remaining", "remaining"),
+                      ("x-requests-used", "used"),
+                      ("x-requests-last", "last_cost")):
+        for header, value in headers.items():
+            if header.lower() == name:
+                try:
+                    QUOTA[key] = int(float(str(value).strip()))
+                except (TypeError, ValueError):
+                    pass
+
+
+def quota_summary() -> str:
+    if not QUOTA:
+        return "allowance not yet known"
+    remaining = QUOTA.get("remaining")
+    used = QUOTA.get("used")
+    if remaining is None:
+        return f"{used} requests used this month"
+    return f"{remaining} requests left this month ({used or '?'} used)"
+
+
 def api_key() -> str:
     key = os.environ.get("ODDS_API_KEY", "").strip()
     if not key:
@@ -89,7 +116,8 @@ def verify_sport_keys() -> dict[str, str]:
 
 def _fetch_odds(sport_key: str, markets: Iterable[str], regions: str, force: bool):
     keys = ",".join(MARKET_KEYS[m] for m in markets if m in MARKET_KEYS)
-    return fetch_json(
+    headers: dict = {}
+    data = fetch_json(
         f"{API_BASE}/sports/{sport_key}/odds/",
         params={
             "apiKey": api_key(),
@@ -100,7 +128,10 @@ def _fetch_odds(sport_key: str, markets: Iterable[str], regions: str, force: boo
         },
         max_age=900,        # 15 minutes: fresh enough, kind to the quota
         force=force,
+        headers_out=headers,
     )
+    _record_quota(headers)
+    return data
 
 
 def _selection_for(outcome_name: str, home: str, away: str) -> str | None:

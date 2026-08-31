@@ -34,6 +34,7 @@ def fetch_text(
     suffix: str = ".txt",
     params: dict | None = None,
     force: bool = False,
+    headers_out: dict | None = None,
 ) -> str:
     """GET ``url`` as text, serving from cache when the copy is fresh enough.
 
@@ -70,15 +71,19 @@ def fetch_text(
     # plain utf-8 leaves on the front of the first column name. Every row then
     # has a "Div" that reads as None, and a whole fixture list is skipped in
     # silence.
+    if headers_out is not None:
+        headers_out.update(resp.headers)
     text = resp.content.decode("utf-8-sig", errors="replace")
     path.write_text(text, encoding="utf-8")
     return text
 
 
-def fetch_json(url: str, max_age: int = 900, params: dict | None = None, force: bool = False):
+def fetch_json(url: str, max_age: int = 900, params: dict | None = None,
+               force: bool = False, headers_out: dict | None = None):
     import json
 
-    return json.loads(fetch_text(url, max_age=max_age, suffix=".json", params=params, force=force))
+    return json.loads(fetch_text(url, max_age=max_age, suffix=".json", params=params,
+                                 force=force, headers_out=headers_out))
 
 
 def cached_copies() -> list[Path]:
