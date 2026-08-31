@@ -5,9 +5,11 @@ corners, fouls, cards, the referee, and the prices a dozen bookmakers went
 off at (opening and closing). That is enough to fit the match models, to
 build the corner and card models, and to measure closing line value.
 
-Note on books: these historical files carry Bet365, Pinnacle, William Hill,
-Bet&Win, Betfair, Betvictor and the market max/average — but *not* Sky Bet or
-Paddy Power. Live prices from those come from the odds API (vb/sources/oddsapi.py).
+Note on books: the set of bookmakers in these files changes over the years, so
+both the current columns (Bet365, Sky Bet, BetVictor, Betfair Exchange) and the
+older ones (Pinnacle, William Hill, Bet&Win) are read. Any column prefix not
+listed in BOOKS is ignored rather than guessed at — football-data.co.uk's
+notes.txt defines what each one means.
 """
 
 from __future__ import annotations
@@ -25,8 +27,13 @@ BASE = "https://www.football-data.co.uk/mmz4281"
 
 # CSV column prefix -> bookmaker name we store.
 BOOKS = {
+    # Current columns
     "B365": "bet365",
+    "SKB": "skybet",
+    "BV": "betvictor",
+    "BFE": "betfair_ex",
     "BW": "bwin",
+    # Older columns, still present in historical season files
     "BF": "betfair_ex",
     "PS": "pinnacle",
     "P": "pinnacle",
@@ -108,11 +115,19 @@ def parse_date(date_str: str, time_str: str | None = None) -> str:
 
 
 def iter_rows(text: str) -> Iterator[dict[str, str]]:
-    reader = csv.DictReader(io.StringIO(text))
+    """Rows with clean header names.
+
+    A file hand-downloaded into the cache, or fetched by something that does not
+    strip the byte-order mark, arrives with "\ufeffDiv" as its first column.
+    Normalising here means a stray mark can never silently cost a whole file
+    again.
+    """
+    reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff")))
     for row in reader:
-        if not (row.get("HomeTeam") or "").strip():
+        cleaned = {(k or "").strip().lstrip("\ufeff"): v for k, v in row.items()}
+        if not (cleaned.get("HomeTeam") or "").strip():
             continue          # trailing blank lines are common in these files
-        yield row
+        yield cleaned
 
 
 def _odds_from_row(row: dict[str, str]) -> list[tuple[str, str, str, float | None, float]]:

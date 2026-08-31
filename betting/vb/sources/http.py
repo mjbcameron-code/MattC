@@ -66,7 +66,11 @@ def fetch_text(
             return path.read_text(encoding="utf-8", errors="replace")
         raise FetchError(f"{url} returned HTTP {resp.status_code}")
 
-    text = resp.content.decode("utf-8", errors="replace")
+    # utf-8-sig, not utf-8: these files are served with a byte-order mark, which
+    # plain utf-8 leaves on the front of the first column name. Every row then
+    # has a "Div" that reads as None, and a whole fixture list is skipped in
+    # silence.
+    text = resp.content.decode("utf-8-sig", errors="replace")
     path.write_text(text, encoding="utf-8")
     return text
 
