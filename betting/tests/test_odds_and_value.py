@@ -102,3 +102,47 @@ def test_a_percentage_edge_is_not_a_fixed_amount_of_evidence():
     at_long = edge / 23.00
     assert at_short > 0.026 and at_long < 0.002
     assert at_short > 15 * at_long
+
+
+def test_the_trace_funnel_adds_up(conn):
+    """Every price is accounted for exactly once, and the two stages nest."""
+    from vb.market.value import Trace
+    from vb.sample import generate_all
+    from vb.tips.select import choose_singles, gather
+
+    generate_all(conn, season="2026/27", leagues=["E2", "E3"], seed=5)
+    trace = Trace()
+    candidates, _, _ = gather(conn, days=7, trace=trace)
+    chosen = choose_singles(candidates, trace=trace)
+
+    assert trace.leagues(), "nothing was traced at all"
+    for code in trace.leagues():
+        counts = dict(trace.rows(code))
+        priced = counts.get("priced up", 0)
+        cut = Trace.ORDER.index("priced up")
+        # The pricing stage accounts for every price exactly once.
+        assert trace.total(code) == sum(
+            counts.get(r, 0) for r in Trace.ORDER[:cut]) + priced
+        # And the discipline stage is a partition of what pricing let through.
+        assert sum(counts.get(r, 0) for r in Trace.ORDER[cut + 1:]) == priced
+
+    assert sum(dict(trace.rows(c)).get("tipped", 0)
+               for c in trace.leagues()) == len(chosen)
+    assert sum(dict(trace.rows(c)).get("priced up", 0)
+               for c in trace.leagues()) == len(candidates)
+
+
+def test_the_trace_tells_no_prices_apart_from_no_value(conn):
+    """The distinction the whole thing exists for."""
+    from vb.market.value import Trace
+    from vb.sample import generate_all
+    from vb.tips.select import gather
+
+    generate_all(conn, season="2026/27", leagues=["E2"], seed=5)
+    conn.execute("DELETE FROM odds")
+    trace = Trace()
+    gather(conn, days=7, trace=trace)
+    for code in trace.leagues():
+        reasons = dict(trace.rows(code))
+        assert reasons.get("no price on file", 0) > 0
+        assert reasons.get("priced up", 0) == 0

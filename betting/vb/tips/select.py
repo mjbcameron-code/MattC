@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from ..config import league as get_league, load_settings
-from ..market.value import Candidate, scan_fixture
+from ..market.value import Candidate, Trace, scan_fixture
 from ..models.fixture import FixtureModel, ModelBank, build_fixture
 from ..models.season import simulate_season
 from ..models.simulate import Leg, combined_probability, correlation_factor
@@ -113,6 +113,7 @@ def gather(
     as_of: datetime | None = None,
     with_players: bool = True,
     statuses: tuple[str, ...] = ("scheduled",),
+    trace: Trace | None = None,
 ) -> tuple[list[Candidate], dict[int, FixtureModel], ModelBank]:
     """Price up every fixture in the window and return everything with an edge.
 
@@ -138,9 +139,12 @@ def gather(
     for row in rows:
         fixture = build_fixture(conn, row, bank, with_players=with_players)
         if fixture is None:
+            if trace is not None:
+                trace.note(row["league_code"], "no model for this fixture")
             continue
         fixtures[fixture.match_id] = fixture
-        candidates.extend(scan_fixture(conn, fixture, as_of=as_of.isoformat()))
+        candidates.extend(
+            scan_fixture(conn, fixture, as_of=as_of.isoformat(), trace=trace))
     return candidates, fixtures, bank
 
 
@@ -152,14 +156,20 @@ def _passes_evidence(candidate: Candidate, min_signals: int) -> bool:
     return sum(1 for s in support if s.strength >= 0.75) * 2 >= min_signals
 
 
-def choose_singles(candidates: list[Candidate], settings=None) -> list[Candidate]:
+def choose_singles(candidates: list[Candidate], settings=None,
+                   trace: Trace | None = None) -> list[Candidate]:
     """Apply the discipline: evidence, one angle per match, caps."""
     settings = settings or load_settings()
     min_signals = int(settings.get("selection.min_signals", 2))
     max_tips = int(settings.get("selection.max_tips_per_week", 12))
     max_per_league = int(settings.get("selection.max_tips_per_league", 3))
 
-    eligible = [c for c in candidates if _passes_evidence(c, min_signals)]
+    eligible = []
+    for candidate in candidates:
+        if _passes_evidence(candidate, min_signals):
+            eligible.append(candidate)
+        elif trace is not None:
+            trace.note(candidate.league_code, "not enough supporting signals")
     eligible.sort(key=_score, reverse=True)
 
     chosen: list[Candidate] = []
@@ -171,12 +181,20 @@ def choose_singles(candidates: list[Candidate], settings=None) -> list[Candidate
         family = MARKET_FAMILY.get(candidate.market, candidate.market)
         key = (candidate.fixture.match_id, family)
         if key in seen_family:
+            if trace is not None:
+                trace.note(league_code, "same angle already taken")
             continue
         if seen_match.get(candidate.fixture.match_id, 0) >= 2:
+            if trace is not None:
+                trace.note(league_code, "two bets on that match already")
             continue
         if per_league.get(league_code, 0) >= max_per_league:
+            if trace is not None:
+                trace.note(league_code, "league is already at its cap")
             continue
         chosen.append(candidate)
+        if trace is not None:
+            trace.note(league_code, "tipped")
         seen_family.add(key)
         seen_match[candidate.fixture.match_id] = seen_match.get(candidate.fixture.match_id, 0) + 1
         per_league[league_code] = per_league.get(league_code, 0) + 1

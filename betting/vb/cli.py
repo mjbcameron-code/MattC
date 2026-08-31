@@ -215,6 +215,46 @@ def cmd_tips(args) -> int:
     return 0
 
 
+def cmd_why(args) -> int:
+    """Account for every quoted price: what became a bet, and what stopped it.
+
+    A card with nothing on it from a division looks the same whether the
+    engine judged the prices fair or never saw a price at all. This tells the
+    two apart.
+    """
+    from .config import load_leagues
+    from .market.value import Trace
+    from .tips.select import choose_singles, gather
+
+    names = {code: league.name for code, league in load_leagues().items()}
+    with session(args.db) as conn:
+        trace = Trace()
+        candidates, _, _ = gather(
+            conn, days=args.days,
+            leagues=_leagues(args) if args.leagues else None, trace=trace)
+        choose_singles(candidates, trace=trace)
+
+        codes = trace.leagues()
+        if args.leagues:
+            wanted = set(_leagues(args))
+            codes = [c for c in codes if c in wanted]
+        if not codes:
+            print("No fixtures in the window at all. Run `vb update` first.")
+            return 1
+
+        print(f"\n{BOLD}WHY — the last {args.days} days of fixtures{RESET}")
+        for code in codes:
+            rows = trace.rows(code)
+            tipped = dict(rows).get("tipped", 0)
+            print(f"\n{BOLD}{names.get(code, code)}{RESET} "
+                  f"{DIM}({trace.total(code)} prices considered, "
+                  f"{tipped} tipped){RESET}")
+            for reason, count in rows:
+                mark = "->" if reason == "tipped" else "  "
+                print(f"  {mark} {count:5d}  {reason}")
+    return 0
+
+
 def _print_sheet(sheet) -> None:
     print(f"\n{BOLD}THE CARD — week {sheet.week_ref}{RESET}")
     print(f"{DIM}{sheet.fixtures_scanned} fixtures priced, {sheet.candidates_found} "
@@ -941,6 +981,11 @@ def build_parser() -> argparse.ArgumentParser:
     tips.add_argument("--record", action="store_true", help="write them to the ledger")
     tips.add_argument("--no-outrights", action="store_true")
     tips.add_argument("--json", action="store_true")
+
+    why = add("why", cmd_why,
+              "account for every price: what was tipped and what stopped it")
+    why.add_argument("--days", type=int, default=7)
+    why.add_argument("--leagues")
 
     prices = add("prices", cmd_prices, "fair prices for a day's fixtures (no odds needed)")
     prices.add_argument("--date", help="YYYY-MM-DD, default tomorrow")

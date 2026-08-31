@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import math
 import sqlite3
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 
 from ..config import league as get_league, load_settings
@@ -253,6 +254,70 @@ class Candidate:
         return int(max(1, min(5, round(score))))
 
 
+class Trace:
+    """A tally of why prices did not become bets, kept per league.
+
+    The engine discards candidates silently, which makes the obvious question
+    — "why is there nothing from the National League this week?" — impossible
+    to answer. And the answer matters, because "no value there" and "no prices
+    there" produce an identical card. One is discipline working; the other is a
+    feed that has quietly stopped arriving.
+    """
+
+    #: Reasons in the order the engine applies them, so a report reads as a
+    #: funnel from every quoted price down to the ones that became bets.
+    ORDER = [
+        "no model for this fixture",
+        "market not modelled",
+        "no price on file",
+        "only unbettable prices (exchange or aggregate)",
+        "model has no view",
+        "model rates it below the floor",
+        "price outside the odds limits",
+        "edge below the minimum",
+        "edge above the maximum (treated as a data fault)",
+        "edge too thin in probability",
+        "stake rounds below the minimum",
+        # Everything above happens while pricing. Below is the second stage,
+        # where a priced-up candidate still has to survive the discipline.
+        "priced up",
+        "not enough supporting signals",
+        "same angle already taken",
+        "two bets on that match already",
+        "league is already at its cap",
+        "tipped",
+    ]
+
+    def __init__(self) -> None:
+        self.counts: dict[str, Counter] = defaultdict(Counter)
+
+    def note(self, league_code: str, reason: str, n: int = 1) -> None:
+        self.counts[league_code][reason] += n
+
+    def leagues(self) -> list[str]:
+        return sorted(self.counts)
+
+    def total(self, league_code: str) -> int:
+        """How many prices were looked at.
+
+        Only the pricing stage counts. The reasons below "priced up" are a
+        partition of it — every candidate that survives pricing is then either
+        tipped or dropped by the discipline — so adding both stages would
+        count those twice.
+        """
+        counts = self.counts[league_code]
+        cut = self.ORDER.index("priced up") + 1
+        return sum(counts[r] for r in self.ORDER[:cut]) + sum(
+            n for r, n in counts.items() if r not in self.ORDER)
+
+    def rows(self, league_code: str) -> list[tuple[str, int]]:
+        """Reasons for one league, in funnel order, skipping the empty ones."""
+        counts = self.counts[league_code]
+        known = [(r, counts[r]) for r in self.ORDER if counts[r]]
+        extra = [(r, n) for r, n in sorted(counts.items()) if r not in self.ORDER]
+        return known + extra
+
+
 def _price_line_key(quote: Quote) -> tuple:
     return (quote.market, quote.line)
 
@@ -263,6 +328,7 @@ def scan_fixture(
     settings=None,
     min_edge: float | None = None,
     as_of: str | None = None,
+    trace: Trace | None = None,
 ) -> list[Candidate]:
     """Price up every market this fixture has odds for and keep the value."""
     settings = settings or load_settings()
@@ -297,10 +363,17 @@ def scan_fixture(
         (fixture.match_id,),
     ).fetchall()
 
+    code = fixture.league_code
+
+    def drop(reason: str, n: int = 1) -> None:
+        if trace is not None:
+            trace.note(code, reason, n)
+
     out: list[Candidate] = []
     for group in groups:
         market, line = group["market"], group["line"]
         if market not in MODELLED_MARKETS:
+            drop("market not modelled")
             continue
         quotes = latest_quotes(conn, fixture.match_id, market, line, as_of=as_of)
         if not quotes and as_of and fixture.kickoff > as_of:
@@ -313,6 +386,7 @@ def scan_fixture(
             quotes = latest_quotes(conn, fixture.match_id, market, line,
                                    as_of=fixture.kickoff)
         if not quotes:
+            drop("no price on file")
             continue
         fair = consensus_fair(quotes, prefer_books=sharp)
         # Exchanges set the benchmark for what a price should be; they are not
@@ -323,6 +397,7 @@ def scan_fixture(
         # quoted price is pre-commission too.
         bettable = [q for q in quotes if q.bookmaker not in unbettable]
         if not bettable:
+            drop("only unbettable prices (exchange or aggregate)")
             continue
         best = best_prices(bettable, preferred or None) or best_prices(bettable)
 
@@ -332,9 +407,14 @@ def scan_fixture(
             if "|" in selection:
                 subject, sel = selection.split("|", 1)
             model_prob = fixture.probability(market, sel, line, subject)
-            if model_prob is None or model_prob < min_prob:
+            if model_prob is None:
+                drop("model has no view")
+                continue
+            if model_prob < min_prob:
+                drop("model rates it below the floor")
                 continue
             if not (min_odds <= quote.price <= max_odds):
+                drop("price outside the odds limits")
                 continue
 
             market_prob = fair.get(selection)
@@ -352,11 +432,13 @@ def scan_fixture(
                 expected_value = blended * quote.price - 1
 
             if expected_value < min_edge:
+                drop("edge below the minimum")
                 continue
             if expected_value > max_edge:
                 # An edge this size on a real market is almost always a fault in
                 # the data — a mis-mapped line, a one-sided book, a stale price —
                 # rather than value nobody else has noticed.
+                drop("edge above the maximum (treated as a data fault)")
                 continue
             # Expected value is a percentage of the stake, and that is not a
             # constant amount of evidence. At 1.50 a 4% edge means disagreeing
@@ -369,6 +451,7 @@ def scan_fixture(
             # probability points, pushes included:
             #     EV / price = p_win - (1 - p_push) / price
             if expected_value / quote.price < min_prob_edge:
+                drop("edge too thin in probability")
                 continue
 
             fraction = kelly_fraction(
@@ -378,6 +461,7 @@ def scan_fixture(
             stake = fraction * kelly_frac * bankroll
             stake = min(max_stake, round(stake / step) * step)
             if stake < min_stake:
+                drop("stake rounds below the minimum")
                 continue
 
             candidate = Candidate(
@@ -390,6 +474,7 @@ def scan_fixture(
             )
             candidate.signals = candidate.supporting_signals()
             candidate.blend_weight = weight
+            drop("priced up")
             out.append(candidate)
 
     out.sort(key=lambda c: -c.edge)
