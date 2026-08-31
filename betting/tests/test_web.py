@@ -198,3 +198,37 @@ def test_only_the_strongest_near_misses_are_kept(conn):
     kept = trace.near_misses("EC")
     assert len(kept) == Trace.KEEP
     assert [round(e, 3) for e, _ in kept] == [0.039, 0.038, 0.037, 0.036, 0.035]
+
+
+def test_a_record_from_an_older_build_says_so(conn, loaded_app, client):
+    """Rendered silently, a stale record is indistinguishable from a fresh one.
+
+    Both show counts and nothing else, so the reader concludes the engine had
+    nothing more to say rather than that they are looking at yesterday.
+    """
+    from vb.db import set_setting
+
+    set_setting(conn, "coverage.trace", '{"EC": {"edge below the minimum": 83}}')
+    set_setting(conn, "coverage.built_at", "2026-08-31T09:15:00")
+    conn.commit()
+
+    body = client.get("/").get_data(as_text=True)
+    assert "saved by an older version" in body
+    assert "31 August, 09:15" in body
+
+
+def test_a_fresh_record_carries_no_warning(conn, loaded_app, client):
+    from vb.db import set_setting
+    from vb.market.value import Trace
+    from vb.tips.select import build_tipsheet
+
+    trace = Trace()
+    build_tipsheet(conn, days=7, season="2026/27", include_outrights=False,
+                   trace=trace)
+    set_setting(conn, "coverage.trace", trace.to_json())
+    set_setting(conn, "coverage.built_at", "2026-08-31T09:15:00")
+    conn.commit()
+
+    body = client.get("/").get_data(as_text=True)
+    assert "saved by an older version" not in body
+    assert "Recorded 31 August, 09:15" in body

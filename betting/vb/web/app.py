@@ -101,7 +101,7 @@ def home():
             "SELECT COUNT(*) AS matches, "
             "SUM(status = 'scheduled') AS ahead FROM matches").fetchone()
         placed_summary = _placed_summary(conn)
-        coverage = _coverage(conn, leagues)
+        coverage, coverage_built, coverage_stale = _coverage(conn, leagues)
     return render_template(
         "app.html",
         title=settings.get("report.title", "The Value Ledger"),
@@ -109,12 +109,13 @@ def home():
         summary=summary, placed=placed_summary, bets=bets, open_tips=open_tips,
         placed_by_ref=placed_by_ref, curve=curve, by_league=by_league,
         matches=counts["matches"] or 0, ahead=counts["ahead"] or 0,
-        coverage=coverage,
+        coverage=coverage, coverage_built=coverage_built,
+        coverage_stale=coverage_stale,
         generated=datetime.now().strftime("%d %B %Y, %H:%M"),
     )
 
 
-def _coverage(conn, leagues) -> list[dict[str, Any]]:
+def _coverage(conn, leagues) -> tuple[list[dict[str, Any]], str, bool]:
     """What the engine saw last time it priced up, and what stopped each price.
 
     Silence from a division reads the same on the card whether the prices were
@@ -124,6 +125,12 @@ def _coverage(conn, leagues) -> list[dict[str, Any]]:
     from ..market.value import Trace
 
     trace = Trace.from_json(get_setting(conn, "coverage.trace"))
+    built = get_setting(conn, "coverage.built_at") or ""
+    if built:
+        try:
+            built = datetime.fromisoformat(built).strftime("%d %B, %H:%M")
+        except ValueError:
+            pass
     out = []
     for code in trace.leagues():
         rows = trace.rows(code)
@@ -141,7 +148,11 @@ def _coverage(conn, leagues) -> list[dict[str, Any]]:
                      for e, lbl in trace.near_misses(code)],
         })
     out.sort(key=lambda r: (-r["tipped"], -r["considered"]))
-    return out
+    # A record saved by an older build carries the counts but none of the
+    # detail. Rendering it silently looks exactly like a fresh run that found
+    # nothing to say, so it has to announce itself.
+    stale = bool(out) and all(r["weight"] is None for r in out)
+    return out, built, stale
 
 
 def _placed_summary(conn) -> dict[str, float]:
