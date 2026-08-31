@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+:root {
+  --paper:#F2F3F7; --card:#FFF; --sunk:#FAFBFD; --ink:#161A23; --ink-2:#3A4152;
+  --muted:#5C6377; --rule:#DDE1EA; --rule-soft:#EBEEF4; --accent:#2A4FCB;
+  --accent-soft:#E7EBFB; --accent-fg:#FFF;
+  --profit:#0B6B45; --profit-soft:#E3F0EA; --loss:#E0654A;
+  --loss-soft:#FCEAE5; --hero-bg:#161A23; --hero-fg:#FFF;
+  --hero-muted:rgba(255,255,255,.62); --hero-up:#7BE0AE; --hero-down:#FFB79E;
+  --shadow:0 1px 2px rgba(22,26,35,.06), 0 8px 24px rgba(22,26,35,.05);
+  --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  --serif:"Source Serif 4",Georgia,serif;
+  --display:"Archivo","Helvetica Neue",Arial,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#0E1017; --card:#161A24; --sunk:#12151E; --ink:#E9ECF3; --ink-2:#C2C8D6;
+  --muted:#8F97AA; --rule:#242A38; --rule-soft:#1C212C; --accent:#8AA0FF;
+  --accent-soft:#1D2440; --accent-fg:#0E1017;
+  --profit:#2E9E74; --profit-soft:#12271F; --loss:#FFA98C;
+  --loss-soft:#2C1C18; --hero-bg:#1D2331;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);}}
+:root[data-theme="dark"]{
+  --paper:#0E1017; --card:#161A24; --sunk:#12151E; --ink:#E9ECF3; --ink-2:#C2C8D6;
+  --muted:#8F97AA; --rule:#242A38; --rule-soft:#1C212C; --accent:#8AA0FF;
+  --accent-soft:#1D2440; --accent-fg:#0E1017;
+  --profit:#2E9E74; --profit-soft:#12271F; --loss:#FFA98C;
+  --loss-soft:#2C1C18; --hero-bg:#1D2331;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--display);
+  font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px;margin:0 auto;padding:26px 20px 72px}
+h1,h2,h3{margin:0;letter-spacing:-.015em;text-wrap:balance}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.eyebrow{font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--muted)}
+/* masthead + actions */
+.top{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;
+  justify-content:space-between;padding-bottom:16px;border-bottom:2px solid var(--ink)}
+.top h1{font-size:clamp(26px,4vw,36px);font-weight:700;line-height:1.05}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+button,.btn{font-family:var(--display);font-size:13.5px;font-weight:600;
+  padding:9px 14px;border-radius:8px;border:1px solid var(--rule);
+  background:var(--card);color:var(--ink);cursor:pointer;box-shadow:var(--shadow)}
+button:hover{border-color:var(--accent);color:var(--accent)}
+/* The accent is dark in light mode and light in dark mode, so the text on it
+   has to flip too — white on a pale blue button fails contrast badly. */
+button.primary{background:var(--accent);border-color:var(--accent);
+  color:var(--accent-fg)}
+button.primary:hover{filter:brightness(1.08);color:var(--accent-fg)}
+button[disabled]{opacity:.5;cursor:not-allowed}
+/* job log */
+#job{display:none;margin-top:16px;background:var(--hero-bg);color:var(--hero-fg);
+  border-radius:10px;padding:14px 16px;font-family:var(--mono);font-size:12.5px;
+  max-height:220px;overflow:auto}
+#job.on{display:block}
+#job .head{color:var(--hero-muted);margin-bottom:6px}
+/* stats */
+.stats{display:grid;gap:12px;margin-top:22px;grid-template-columns:repeat(6,minmax(0,1fr))}
+@media(max-width:900px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.stat{background:var(--card);border:1px solid var(--rule);border-radius:10px;
+  padding:13px 15px;box-shadow:var(--shadow)}
+.stat .v{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:23px;
+  font-weight:700;margin-top:3px}
+.stat .note{font-size:12px;color:var(--muted);margin-top:2px}
+.stat.hero{grid-column:span 2;background:var(--hero-bg);border-color:var(--hero-bg)}
+.stat.hero .eyebrow,.stat.hero .note{color:var(--hero-muted)}
+.stat.hero .v{font-size:36px;color:var(--hero-fg)}
+.stat.hero.up .v{color:var(--hero-up)} .stat.hero.down .v{color:var(--hero-down)}
+@media(max-width:900px){.stat.hero{grid-column:1/-1}}
+.up{color:var(--profit)} .down{color:var(--loss)}
+/* tabs */
+.tabs{display:flex;gap:4px;margin:26px 0 0;border-bottom:1px solid var(--rule)}
+.tabs button{border:0;background:none;box-shadow:none;border-radius:0;
+  border-bottom:2px solid transparent;padding:10px 14px;color:var(--muted)}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+.panel{background:var(--card);border:1px solid var(--rule);border-top:0;
+  border-radius:0 0 10px 10px;box-shadow:var(--shadow);padding:18px}
+/* tip cards */
+.tips{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(330px,1fr))}
+.tip{border:1px solid var(--rule);border-radius:10px;padding:15px 17px;
+  display:flex;flex-direction:column;gap:9px;background:var(--card)}
+.tip.botw{grid-column:1/-1;border-color:var(--accent);
+  box-shadow:inset 4px 0 0 var(--accent);padding-left:23px}
+.tip.done{background:var(--sunk);opacity:.62}
+.tip h3{font-size:16.5px;font-weight:600;line-height:1.32}
+.tip.botw h3{font-size:20px}
+.prose{font-family:var(--serif);font-size:15px;line-height:1.6;color:var(--ink-2);
+  max-width:64ch;margin:0}
+.terms{display:flex;flex-wrap:wrap;gap:7px}
+.pill{font-family:var(--mono);font-size:12px;padding:3px 8px;border-radius:999px;
+  border:1px solid var(--rule);background:var(--sunk);color:var(--ink-2)}
+.pill.stake{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.tip form{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin-top:2px}
+.tip input{width:76px;font-family:var(--mono);font-size:13px;padding:7px 9px;
+  border-radius:7px;border:1px solid var(--rule);background:var(--card);color:var(--ink)}
+.tip label{font-size:12px;color:var(--muted)}
+.flag{font-size:12.5px;font-weight:600;color:var(--profit)}
+/* tables */
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;font-size:11px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--muted);font-weight:600;padding:9px 11px;border-bottom:1px solid var(--rule);
+  white-space:nowrap}
+td{padding:9px 11px;border-bottom:1px solid var(--rule-soft);vertical-align:top}
+tbody tr:hover{background:var(--sunk)}
+td.n,th.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;
+  white-space:nowrap}
+.badge{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;
+  border-radius:999px;border:1px solid var(--rule);white-space:nowrap}
+.badge.won{color:var(--profit);border-color:var(--profit);background:var(--profit-soft)}
+.badge.lost{color:var(--loss);border-color:var(--loss);background:var(--loss-soft)}
+.badge.pending{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+.foot{margin-top:30px;padding-top:14px;border-top:1px solid var(--rule);
+  font-size:12px;color:var(--muted);max-width:70ch}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div>
+      <div class="eyebrow">Season {{ season }}</div>
+      <h1>{{ title }}</h1>
+    </div>
+    <div class="actions">
+      <form method="post" action="/act/refresh"><button class="primary">Refresh &amp; settle</button></form>
+      <form method="post" action="/act/card"><button>Build this week's card</button></form>
+    </div>
+  </header>
+
+  <div id="job"><div class="head"></div><div class="body"></div></div>
+
+  <section class="stats">
+    <div class="stat hero {{ 'up' if placed.pnl > 0 else 'down' if placed.pnl < 0 else '' }}">
+      <div class="eyebrow">Your points</div>
+      <div class="v">{{ '%+.2f' % placed.pnl }}</div>
+      <div class="note">{{ placed.bets }} bets backed · {{ '%.2f' % placed.staked }} pts staked</div>
+    </div>
+    <div class="stat">
+      <div class="eyebrow">Your ROI</div>
+      <div class="v {{ 'up' if placed.roi > 0 else 'down' if placed.roi < 0 else '' }}">{{ '%+.1f' % (placed.roi * 100) }}%</div>
+      <div class="note">{{ placed.pending }} still running</div>
+    </div>
+    <div class="stat">
+      <div class="eyebrow">Tips advised</div>
+      <div class="v {{ 'up' if summary.pnl > 0 else 'down' if summary.pnl < 0 else '' }}">{{ '%+.2f' % summary.pnl }}</div>
+      <div class="note">{{ summary.settled }} settled, all advice</div>
+    </div>
+    <div class="stat">
+      <div class="eyebrow">Strike rate</div>
+      <div class="v">{{ '%.0f' % (summary.strike_rate * 100) }}%</div>
+      <div class="note">{{ summary.won }}W · {{ summary.lost }}L</div>
+    </div>
+    <div class="stat">
+      <div class="eyebrow">Beating the close</div>
+      <div class="v {{ 'up' if summary.clv_average > 0 else 'down' if summary.clv_average < 0 else '' }}">{{ '%+.1f' % (summary.clv_average * 100) }}%</div>
+      <div class="note">on {{ summary.clv_measured }} bets</div>
+    </div>
+  </section>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" aria-selected="true" data-tab="card">This week's card</button>
+    <button role="tab" aria-selected="false" data-tab="ledger">Ledger</button>
+    <button role="tab" aria-selected="false" data-tab="health">Health</button>
+  </nav>
+
+  <div class="panel" id="card">
+    {% if open_tips %}
+    <p class="prose" style="margin-bottom:16px">
+      Mark what you actually backed. The advised record stands either way — this
+      is so your own figures reflect the prices you got rather than the ones
+      that were showing when the card was built.
+    </p>
+    <div class="tips">
+      {% for bet in open_tips %}
+      {% set state = placed_by_ref.get(bet.ref, {}) %}
+      <article class="tip {{ 'done' if state.placed }}">
+        <div class="eyebrow">{{ bet.league }} · {{ bet.date }}</div>
+        <h3>{{ bet.selection }}</h3>
+        <div class="terms">
+          <span class="pill stake">{{ bet.stake }} pt{{ 's' if bet.stake != 1 }}</span>
+          <span class="pill">{{ '%.2f' % bet.price }}</span>
+          <span class="pill">Edge {{ '%.0f' % (bet.edge * 100) }}%</span>
+          {% if bet.book %}<span class="pill">{{ bet.book }}</span>{% endif %}
+        </div>
+        <p class="prose">{{ bet.reasoning }}</p>
+        {% if state.placed %}
+          <div class="flag">Backed at {{ '%.2f' % state.placed_price }}
+            for {{ '%g' % state.placed_stake }}
+            pt{{ 's' if state.placed_stake != 1 }}</div>
+          <form method="post" action="/bet/{{ bet.ref }}/passed">
+            <button>Undo</button>
+          </form>
+        {% else %}
+          <form method="post" action="/bet/{{ bet.ref }}/placed">
+            <label>at <input name="price" type="number" step="0.01"
+                             value="{{ '%.2f' % bet.price }}"></label>
+            <label>for <input name="stake" type="number" step="0.25"
+                              value="{{ bet.stake }}"></label>
+            <button class="primary">I backed this</button>
+          </form>
+          <form method="post" action="/bet/{{ bet.ref }}/passed">
+            <button>Passed</button>
+          </form>
+        {% endif %}
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="prose">No open bets. Press <strong>Build this week's card</strong>
+      to price up the coming week — or if that returns nothing, there was
+      nothing worth backing, which is a result in itself.</p>
+    {% endif %}
+  </div>
+
+  <div class="panel" id="ledger" hidden>
+    <div class="scroll">
+      <table>
+        <thead><tr>
+          <th>Ref</th><th>Date</th><th>Selection</th><th class="n">Price</th>
+          <th class="n">Stake</th><th>Backed</th><th>Result</th>
+          <th class="n">± pts</th><th class="n">Running</th>
+        </tr></thead>
+        <tbody>
+          {% for bet in bets %}
+          {% set state = placed_by_ref.get(bet.ref, {}) %}
+          <tr>
+            <td class="num" style="font-size:11.5px;color:var(--muted)">{{ bet.ref }}</td>
+            <td class="num">{{ bet.date }}</td>
+            <td><strong>{{ bet.selection }}</strong>
+              <div style="font-size:12px;color:var(--muted)">{{ bet.market }}</div></td>
+            <td class="n">{{ '%.2f' % bet.price }}</td>
+            <td class="n">{{ '%.2f' % bet.stake }}</td>
+            <td class="n">{% if state.placed %}{{ '%.2f' % state.placed_price }}{% else %}—{% endif %}</td>
+            <td><span class="badge {{ bet.status if bet.status in ['won','lost','pending'] else 'lost' }}">{{ bet.status_label }}</span></td>
+            <td class="n {{ 'up' if bet.pnl and bet.pnl > 0 else 'down' if bet.pnl and bet.pnl < 0 else '' }}">
+              {% if bet.pnl is not none %}{{ '%+.2f' % bet.pnl }}{% else %}—{% endif %}</td>
+            <td class="n">{% if bet.running is not none %}{{ '%+.2f' % bet.running }}{% else %}—{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel" id="health" hidden>
+    <p class="prose" style="margin-top:0">
+      {{ matches }} matches loaded, {{ ahead }} fixtures still to come.
+      Press <strong>Refresh &amp; settle</strong> to bring both up to date.
+    </p>
+    <table>
+      <thead><tr><th>Competition</th><th class="n">Bets</th><th class="n">± pts</th><th class="n">ROI</th></tr></thead>
+      <tbody>
+        {% for row in by_league %}
+        <tr><td>{{ row.name }}</td><td class="n">{{ row.bets }}</td>
+          <td class="n {{ 'up' if row.pnl > 0 else 'down' if row.pnl < 0 else '' }}">{{ '%+.2f' % row.pnl }}</td>
+          <td class="n">{{ '%+.1f' % (row.roi * 100) }}%</td></tr>
+        {% else %}
+        <tr><td colspan="4" style="color:var(--muted)">Nothing settled yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="foot">
+    Updated {{ generated }}. Stakes are points, never money. Betting has a
+    negative expected return for almost everyone who does it — bet only what you
+    can afford to lose, and if it stops being fun, stop.
+    GambleAware: 0808 8020 133.
+  </p>
+</div>
+
+<script>
+document.querySelectorAll('.tabs button').forEach(function (tab) {
+  tab.addEventListener('click', function () {
+    document.querySelectorAll('.tabs button').forEach(function (other) {
+      other.setAttribute('aria-selected', String(other === tab));
+      document.getElementById(other.dataset.tab).hidden = other !== tab;
+    });
+  });
+});
+
+// Poll while a background job runs, so a multi-minute refresh shows progress
+// instead of an unresponsive page.
+(function () {
+  var box = document.getElementById('job');
+  var head = box.querySelector('.head');
+  var body = box.querySelector('.body');
+  function tick() {
+    fetch('/job').then(function (r) { return r.json(); }).then(function (state) {
+      if (!state.name) { return; }
+      var active = state.running;
+      box.classList.toggle('on', active || state.lines.length > 0);
+      head.textContent = active ? state.name + '…' : state.name + ' — finished';
+      body.textContent = state.lines.join('\n');
+      body.scrollTop = body.scrollHeight;
+      document.querySelectorAll('.actions button').forEach(function (b) {
+        b.disabled = active;
+      });
+      if (active) { setTimeout(tick, 900); }
+    }).catch(function () {});
+  }
+  tick();
+})();
+</script>
+</body>
+</html>

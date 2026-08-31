@@ -408,6 +408,17 @@ def cmd_weekly(args) -> int:
         synthetic=False, open=not args.no_open))
 
 
+def cmd_app(args) -> int:
+    """Run the local web app."""
+    try:
+        from .web.app import serve
+    except ImportError:
+        print("Flask is not installed. Run:  pip3 install -r requirements.txt")
+        return 1
+    serve(db_path=args.db, port=args.port, open_browser=not args.no_open)
+    return 0
+
+
 def cmd_ledger(args) -> int:
     with session(args.db) as conn:
         rows = dashboard.ledger_rows(conn, limit=args.limit)
@@ -927,6 +938,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help="show the card without writing it to the ledger")
     weekly.add_argument("--no-odds", action="store_true")
     weekly.add_argument("--no-open", action="store_true")
+
+    web = add("app", cmd_app, "run the local web app in your browser")
+    web.add_argument("--port", type=int, default=5137)
+    web.add_argument("--no-open", action="store_true")
 
     led = add("ledger", cmd_ledger, "print the bet ledger")
     led.add_argument("--limit", type=int, default=40)

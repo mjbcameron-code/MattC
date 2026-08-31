@@ -94,38 +94,36 @@ def test_an_older_database_gains_new_columns(tmp_path):
     exists, so without a migration step an upgraded install keeps the old
     schema. The schema also indexes one of the new columns, which is why the
     migration has to run before the schema script rather than after it.
+
+    The "old" database is built by creating the current schema and dropping the
+    new columns back off, which leaves a table genuinely lacking them — rather
+    than by editing the SQL text, which is easy to get subtly wrong.
     """
-    import re
     import sqlite3
 
     from vb.db import LATER_COLUMNS, SCHEMA, migrate, session
 
-    def without(schema: str, table: str, column: str) -> str:
-        """Drop one column from one table's CREATE block, and any index on it.
-
-        Scoped to the table on purpose: several tables have a column called
-        "source", and a blanket removal takes out the wrong ones.
-        """
-        pattern = re.compile(rf"(CREATE TABLE IF NOT EXISTS {table} \(.*?\n\);)",
-                             re.S)
-        block = pattern.search(schema)
-        assert block, f"{table} not found in the schema"
-        trimmed = re.sub(rf"^\s*{column}\b.*$\n", "", block.group(1), flags=re.M)
-        schema = schema.replace(block.group(1), trimmed)
-        return re.sub(rf"^.*CREATE INDEX.*\({column}\).*$\n?", "", schema, flags=re.M)
-
-    old_schema = SCHEMA
-    for table, columns in LATER_COLUMNS.items():
-        for column in columns:
-            old_schema = without(old_schema, table, column)
-            assert f"{column} " not in old_schema.split(f"CREATE TABLE IF NOT EXISTS {table}")[1].split(");")[0]
+    if sqlite3.sqlite_version_info < (3, 35):
+        pytest.skip("ALTER TABLE DROP COLUMN needs SQLite 3.35 or newer")
 
     path = tmp_path / "old.db"
     old = sqlite3.connect(path)
-    old.executescript(old_schema)
+    old.executescript(SCHEMA)
+    for table, columns in LATER_COLUMNS.items():
+        for column in columns:
+            # Any index over the column has to go before the column can.
+            for row in old.execute(
+                    "SELECT name, sql FROM sqlite_master WHERE type = 'index'"
+            ).fetchall():
+                if row[1] and column in row[1]:
+                    old.execute(f"DROP INDEX {row[0]}")
+            old.execute(f'ALTER TABLE {table} DROP COLUMN "{column}"')
     old.execute("INSERT INTO leagues (code, name, country, tier) "
                 "VALUES ('E0','Premier League','England',1)")
     old.commit()
+    for table, columns in LATER_COLUMNS.items():
+        present = {r[1] for r in old.execute(f"PRAGMA table_info({table})")}
+        assert not (set(columns) & present), f"{table} still has the new columns"
     old.close()
 
     with session(path) as conn:

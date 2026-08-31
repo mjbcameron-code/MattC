@@ -111,3 +111,34 @@ def void_bet(conn: sqlite3.Connection, ref: str, note: str = "") -> bool:
         (datetime.now().isoformat(timespec="seconds"), note, row["id"]),
     )
     return True
+
+
+def mark_placed(conn: sqlite3.Connection, ref: str, price: float | None = None,
+                stake: float | None = None) -> bool:
+    """Record that a tip was actually backed, and at what.
+
+    Advice and action are tracked separately: the tipping record stands whether
+    or not you struck the bet, and your own record only counts the ones you did.
+    Prices move, so the price taken is rarely the price advised.
+    """
+    row = conn.execute("SELECT id, price, stake_pts FROM bets WHERE ref = ?",
+                       (ref,)).fetchone()
+    if not row:
+        return False
+    conn.execute(
+        "UPDATE bets SET placed = 1, placed_price = ?, placed_stake = ? WHERE id = ?",
+        (price if price is not None else row["price"],
+         stake if stake is not None else row["stake_pts"], row["id"]),
+    )
+    return True
+
+
+def mark_passed(conn: sqlite3.Connection, ref: str) -> bool:
+    """Record that a tip was advised but deliberately not backed."""
+    row = conn.execute("SELECT id FROM bets WHERE ref = ?", (ref,)).fetchone()
+    if not row:
+        return False
+    conn.execute(
+        "UPDATE bets SET placed = 0, placed_price = NULL, placed_stake = NULL "
+        "WHERE id = ?", (row["id"],))
+    return True

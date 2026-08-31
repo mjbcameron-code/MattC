@@ -164,7 +164,16 @@ CREATE TABLE IF NOT EXISTS league_params (
 );
 
 -- ---------------------------------------------------------------------------
--- The tip ledger
+-- The tip ledger.
+--
+-- What was advised and what was actually backed are kept apart: the tipping
+-- record stands whether or not a bet was struck, and the `placed` columns say
+-- whether it was and on what terms. Prices move, so the price taken is rarely
+-- the price advised.
+--
+-- Comments live outside the CREATE blocks on purpose. A comment sitting between
+-- the last column and the closing bracket dangles when SQLite rebuilds the
+-- statement after an ALTER TABLE, and the table becomes unreadable.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS bets (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -192,7 +201,10 @@ CREATE TABLE IF NOT EXISTS bets (
     closing_price REAL,
     clv          REAL,                     -- closing line value
     settled_at   TEXT,
-    notes        TEXT
+    notes        TEXT,
+    placed       INTEGER NOT NULL DEFAULT 0,   -- was the bet actually struck
+    placed_price REAL,                         -- and at what price
+    placed_stake REAL                          -- and for how much
 );
 
 CREATE INDEX IF NOT EXISTS idx_bets_status ON bets(status, event_date);
@@ -234,6 +246,8 @@ def connect(path: Path | str | None = None) -> sqlite3.Connection:
 LATER_COLUMNS = {
     "matches": {"api_fixture_id": "INTEGER"},
     "odds": {"source": "TEXT"},
+    "bets": {"placed": "INTEGER NOT NULL DEFAULT 0",
+             "placed_price": "REAL", "placed_stake": "REAL"},
 }
 
 

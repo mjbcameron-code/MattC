@@ -54,6 +54,22 @@ priced by playing the rest of the season out several thousand times.
 
 ## Using it week to week
 
+**Betting App** — double-click it, and the ledger opens in your browser with
+buttons rather than commands: refresh and settle, build this week's card, and
+mark which tips you actually backed and at what price.
+
+That last part is the reason the app exists rather than just the report. Two
+records are kept and they answer different questions. The **advised** record is
+every tip at the price and stake recommended, and says how good the tipping is.
+**Your** record is only the bets you struck, at the prices you actually got,
+and says how you are doing. Prices move between a card being built and a bet
+being placed, and a record that quietly assumes otherwise flatters itself.
+
+Leave the Terminal window that opens running while you use the app; closing it
+stops the server.
+
+## Or from the command line
+
 Two files in this folder are double-clickable on a Mac:
 
 * **Betting Tips** — refreshes the data, settles last week's bets, produces this
@@ -165,6 +181,7 @@ keeps saying 65% and getting 55%, lower the `market_blend` weights in
 
 | Command | What it does |
 |---|---|
+| `vb app` | the local web app, with buttons instead of commands |
 | `vb weekly` | the whole cycle: refresh, settle, tip, open the dashboard |
 | `vb update` | pull results, fixtures, opening prices and xG (`--scores` for same-day results) |
 | `vb tips` | this week's card (`--record` to write it to the ledger) |
