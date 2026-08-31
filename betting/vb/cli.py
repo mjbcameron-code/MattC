@@ -463,6 +463,22 @@ def cmd_apifootball(args) -> int:
         return 1
 
     season = _season(args)
+    try:
+        return _apifootball_action(args, client, season)
+    except af.BudgetExhausted as exc:
+        print(f"{RED}{exc}{RESET}")
+        print(f"\n{client.budget.describe()}")
+        return 1
+    except af.ApiFootballError as exc:
+        # These carry the API's own words and what to do about them. A stack
+        # trace on top of that helps nobody.
+        print(f"{RED}{exc}{RESET}")
+        return 1
+
+
+def _apifootball_action(args, client, season: str) -> int:
+    from .sources import apifootball as af
+
     with session(args.db) as conn:
         if args.action == "check":
             report = af.check(conn, client, season)
@@ -506,14 +522,9 @@ def cmd_apifootball(args) -> int:
             print(f"fixtures/results written: {sum(counts.values())} "
                   f"({', '.join(f'{k} {v}' for k, v in sorted(counts.items())) or 'none'})")
         elif args.action == "injuries":
-            try:
-                counts = af.load_injuries(
-                    conn, client, season,
-                    codes=_leagues(args) if args.leagues else None)
-            except af.ApiFootballError as exc:
-                print(f"{RED}{exc}{RESET}")
-                print(f"\n{client.budget.describe()}")
-                return 1
+            counts = af.load_injuries(
+                conn, client, season,
+                codes=_leagues(args) if args.leagues else None)
             total = sum(counts.values())
             print(f"team news written: {total} absences across "
                   f"{sum(1 for v in counts.values() if v)} leagues")
