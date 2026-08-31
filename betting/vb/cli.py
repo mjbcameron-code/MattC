@@ -594,6 +594,24 @@ def cmd_prune(args) -> int:
                 print(f"  {group['selection'][:50]}  {', '.join(group['refs'])}")
             print(f"\nRemoved {drop_open_bets(conn, refs=extra)}.")
             return 0
+        if args.backtest:
+            # Replays used to run in place, leaving their invented bets in the
+            # ledger — settled, so the ordinary prune will not touch them.
+            rows = conn.execute(
+                "SELECT COUNT(*) FROM bets WHERE ref LIKE 'BT%-%'").fetchone()[0]
+            if not rows:
+                print("No backtest bets on the record.")
+                return 0
+            if not args.yes:
+                print(f"{rows} bet(s) left behind by a backtest would be "
+                      f"removed. Real advice is never touched — these are the "
+                      f"ones with a BT reference. Re-run with --yes to do it.")
+                return 0
+            conn.execute("DELETE FROM bet_legs WHERE bet_id IN "
+                         "(SELECT id FROM bets WHERE ref LIKE 'BT%-%')")
+            conn.execute("DELETE FROM bets WHERE ref LIKE 'BT%-%'")
+            print(f"Removed {rows} backtest bet(s) from the ledger.")
+            return 0
         open_count = conn.execute(
             "SELECT COUNT(*) FROM bets WHERE status = 'pending'").fetchone()[0]
         if not args.yes:
@@ -634,7 +652,31 @@ def cmd_ledger(args) -> int:
 
 
 def cmd_backtest(args) -> int:
-    with session(args.db) as conn:
+    """Replay a season against a throwaway copy of the database.
+
+    Never against the real one. The replay records its invented bets in the
+    ledger and settles them, so run in place it would leave hundreds of them
+    sitting among real advice — and, because a bet already on the record is
+    refused, every later run would quietly do nothing and reprint the first
+    one's figures.
+    """
+    import shutil
+    import tempfile
+    from pathlib import Path
+
+    source = Path(args.db) if args.db else DB_PATH
+    if not source.exists():
+        print(f"No database at {source}. Run `vb update` first.")
+        return 1
+
+    with tempfile.TemporaryDirectory() as tmp:
+        scratch = Path(tmp) / "backtest.db"
+        shutil.copy(source, scratch)
+        return _run_backtest(scratch, args)
+
+
+def _run_backtest(db_path, args) -> int:
+    with session(db_path) as conn:
         def progress(cursor, n, total):
             print(f"  {cursor.date()}  {n:2d} tips  ({total} so far)", flush=True)
 
@@ -1162,6 +1204,8 @@ def build_parser() -> argparse.ArgumentParser:
     prune.add_argument("--before", help="only those recorded before this timestamp")
     prune.add_argument("--duplicates", action="store_true",
                        help="remove only bets recorded twice, keeping the first")
+    prune.add_argument("--backtest", action="store_true",
+                       help="remove bets a backtest left in the ledger (BT refs)")
     prune.add_argument("--yes", action="store_true", help="actually do it")
 
     web = add("app", cmd_app, "run the local web app in your browser")

@@ -442,3 +442,44 @@ def test_the_refusal_names_a_season_that_would_work(conn):
     result = backtest.run(conn, season="2026/27", warmup_weeks=8)
     assert "Nothing was tested" in result.note
     assert "2024/25" in result.note, "a season that would work has to be named"
+
+
+def test_a_backtest_starts_from_an_empty_ledger(conn):
+    """Otherwise the second run of a season silently does nothing.
+
+    record_tipsheet refuses a bet whose legs are already on the record, so a
+    replay over the same weeks records zero and the summary reports the *first*
+    run's settled rows — every figure identical, including ones a code change
+    was meant to move. It reads as a confirmed result and is a no-op.
+    """
+    from vb import backtest
+    from vb.sample import generate_all
+    from vb.track.ledger import all_bets
+
+    generate_all(conn, season="2026/27", leagues=["E2"], seed=6)
+    first = backtest.run(conn, season="2026/27", warmup_weeks=2)
+    assert first.tips > 0
+
+    second = backtest.run(conn, season="2026/27", warmup_weeks=2)
+    assert second.tips == first.tips, "a re-run must redo the work, not skip it"
+    assert second.summary.bets == first.summary.bets
+    assert len(all_bets(conn)) == second.summary.bets, \
+        "the ledger must hold this run's bets, not two runs stacked up"
+
+
+def test_a_backtest_does_not_count_advice_it_did_not_make(conn):
+    """Real tips sitting in the ledger must not enter the backtest's figures."""
+    from vb import backtest
+    from vb.sample import generate_all
+    from vb.tips.select import build_tipsheet
+    from vb.track.ledger import record_tipsheet
+
+    generate_all(conn, season="2026/27", leagues=["E2"], seed=6)
+    sheet = build_tipsheet(conn, days=7, season="2026/27", include_outrights=False)
+    record_tipsheet(conn, sheet)
+    real = len(sheet.all_tips)
+    assert real > 0
+
+    result = backtest.run(conn, season="2026/27", warmup_weeks=2)
+    assert result.summary.bets == result.tips, \
+        f"{result.summary.bets} bets summarised but only {result.tips} tipped"

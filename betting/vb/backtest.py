@@ -82,8 +82,22 @@ def run(
     step_days: int = 7,
     include_outrights: bool = False,
     progress=None,
+    reset_ledger: bool = True,
 ) -> BacktestResult:
-    """Replay the season a week at a time, tipping and settling as it goes."""
+    """Replay the season a week at a time, tipping and settling as it goes.
+
+    The ledger is cleared first, and that is not a convenience. A backtest
+    writes its bets into the same table real advice lives in, and the summary
+    at the end reads the whole table — so without this the figures mix invented
+    bets with real ones. Worse, record_tipsheet refuses to store a bet whose
+    legs are already on the record, so a second run of the same season records
+    nothing at all and reports the *first* run's settled rows as though they
+    were fresh. That is a silent no-op wearing the costume of a result: every
+    number identical, including the ones a code change was meant to move.
+
+    Callers that must not touch the real ledger should run against a copy of
+    the database; `vb backtest` does exactly that.
+    """
     window = season_window(conn, season)
     if window is None:
         return BacktestResult()
@@ -92,6 +106,10 @@ def run(
     finish = end or last
     settings = load_settings()
     season = season or settings.get("report.season", "2025/26")
+
+    if reset_ledger:
+        conn.execute("DELETE FROM bet_legs")
+        conn.execute("DELETE FROM bets")
 
     result = BacktestResult(first_date=cursor.date().isoformat(),
                             last_date=finish.date().isoformat())
