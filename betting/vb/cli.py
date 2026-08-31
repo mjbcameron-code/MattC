@@ -741,6 +741,78 @@ def _run_backtest(db_path, args) -> int:
     return 0
 
 
+def cmd_calibrate(args) -> int:
+    """Fit the over-confidence correction, and report it on unseen bets.
+
+    A correction fitted and judged on the same games always looks good, so the
+    record is split by date: the earlier half fits the line, the later half is
+    never touched by it and is the only number worth reading.
+    """
+    import shutil
+    import tempfile
+    from pathlib import Path
+
+    from . import calibrate
+
+    source = Path(args.db) if args.db else DB_PATH
+    if not source.exists():
+        print(f"No database at {source}. Run `vb update` first.")
+        return 1
+
+    with tempfile.TemporaryDirectory() as tmp:
+        scratch = Path(tmp) / "calibrate.db"
+        shutil.copy(source, scratch)
+        with session(scratch) as conn:
+            season = None if (args.season or "all").lower() == "all" \
+                else _season(args)
+            print("Replaying the record. This takes a few minutes…")
+            result = backtest_mod.run(conn, season=season,
+                                      warmup_weeks=args.warmup)
+            if result.note:
+                print(f"\n{result.note}")
+                return 1
+            graded = calibrate.settled_bets(conn)
+
+    if len(graded) < 60:
+        print(f"Only {len(graded)} graded bets. Too few to fit anything "
+              f"honest — run `--season all`, or wait for more football.")
+        return 1
+
+    half = len(graded) // 2
+    train = [(p, won) for _, p, won in graded[:half]]
+    holdout = [(p, won) for _, p, won in graded[half:]]
+
+    fitted = calibrate.fit(train)
+    print(f"\n{BOLD}Calibration{RESET}")
+    print(f"  fitted on {len(train)} bets, held back {len(holdout)}")
+    print(f"  corrected_logit = {fitted.slope:.3f} x logit(p) "
+          f"{fitted.intercept:+.3f}")
+
+    before_e, before_a, before_z = calibrate.gap(holdout)
+    corrected = [(calibrate.apply(p, fitted.slope, fitted.intercept), won)
+                 for p, won in holdout]
+    after_e, after_a, after_z = calibrate.gap(corrected)
+
+    print(f"\n  {BOLD}On the half it never saw{RESET}")
+    print(f"  {'':<12}{'expected':>10}{'actual':>9}{'z':>8}")
+    print(f"  {'as it is':<12}{before_e:>10.1f}{before_a:>9.0f}{before_z:>8.2f}")
+    print(f"  {'corrected':<12}{after_e:>10.1f}{after_a:>9.0f}{after_z:>8.2f}")
+
+    if abs(after_z) < abs(before_z):
+        print(f"\n  The correction helps out of sample. To use it, put this in "
+              f"config/settings.yaml under `model:`\n")
+        print(f"    calibration:\n      slope: {fitted.slope:.3f}\n"
+              f"      intercept: {fitted.intercept:.3f}\n")
+        print(f"  {DIM}Expect far fewer tips afterwards, and treat that as the "
+              f"point rather than a fault: an edge that only existed because "
+              f"the probability was too high should stop being advised.{RESET}")
+    else:
+        print(f"\n  It does not help out of sample — {after_z:+.2f} against "
+              f"{before_z:+.2f}. Leave the identity in place; a wrong "
+              f"correction is worse than none.")
+    return 0
+
+
 def cmd_outlook(args) -> int:
     from .models.ratings import fit_league
     from .models.season import simulate_season
@@ -1192,6 +1264,11 @@ def build_parser() -> argparse.ArgumentParser:
     tips.add_argument("--record", action="store_true", help="write them to the ledger")
     tips.add_argument("--no-outrights", action="store_true")
     tips.add_argument("--json", action="store_true")
+
+    cal = add("calibrate", cmd_calibrate,
+              "fit the over-confidence correction and test it on unseen bets")
+    cal.add_argument("--season", help='a season, or "all" (the default)')
+    cal.add_argument("--warmup", type=int, default=8)
 
     why = add("why", cmd_why,
               "account for every price: what was tipped and what stopped it")

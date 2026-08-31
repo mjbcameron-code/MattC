@@ -104,6 +104,19 @@ model:
   # Matches in a new division before a promoted club is judged on that record
   # alone rather than on what it did in the division below.
   promoted_blend_matches: 10
+  # Correcting the model against its own record. Every probability it produces
+  # is mapped through a straight line in log-odds before an edge is taken from
+  # it: corrected_logit = slope x logit(p) + intercept.
+  #
+  # Defaults are the identity — no correction — because a wrong one is worse
+  # than none. Fit your own with `vb calibrate`, which splits the record in
+  # half and reports the half it did not learn from.
+  #
+  # A slope near 1 with a negative intercept means the model is not mis-shaped,
+  # only uniformly over-confident. That is what two seasons of this one showed.
+  calibration:
+    slope: 1.0
+    intercept: 0.0
   # Shrinkage of a team's rating toward the league mean when it has few games.
   shrinkage_matches: 10
   # How much a team's strength is moved by missing players. A squad reported as

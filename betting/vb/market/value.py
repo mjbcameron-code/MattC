@@ -27,6 +27,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 
 from ..config import league as get_league, load_settings
+from .. import calibrate
 from ..features.form import Signal
 from ..models.fixture import FixtureModel
 from .odds import Quote, best_prices, consensus_fair, latest_quotes
@@ -436,6 +437,8 @@ def scan_fixture(
     max_odds = float(settings.get("selection.max_odds", 26.0))
     min_prob = float(settings.get("selection.min_model_prob", 0.05))
     min_prob_edge = float(settings.get("selection.min_prob_edge", 0.02))
+    cal_slope = float(settings.get("model.calibration.slope", 1.0))
+    cal_intercept = float(settings.get("model.calibration.intercept", 0.0))
     preferred = list(settings.get("bookmakers.preferred", []) or [])
     exchanges = list(settings.get("bookmakers.exchanges", []) or [])
     aggregates = list(settings.get("bookmakers.aggregates", []) or [])
@@ -521,6 +524,12 @@ def scan_fixture(
 
             market_prob = fair.get(selection)
             blended = blend(model_prob, market_prob, weight)
+            # Correct the blend against the model's own record before any edge
+            # is computed from it. Measured over two seasons the model is
+            # uniformly too confident, and an inflated probability produces an
+            # inflated edge at every price — so this has to happen before the
+            # thresholds, not as a haircut on the stake afterwards.
+            blended = calibrate.apply(blended, cal_slope, cal_intercept)
 
             push_prob = 0.0
             if market == "ah" and line is not None:
