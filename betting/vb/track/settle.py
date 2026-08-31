@@ -12,6 +12,8 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime
 
+from ..config import load_settings
+
 
 # The value of one settled leg, as a multiple of the stake on it.
 MULTIPLIERS = {"won": None, "lost": 0.0, "void": 1.0,
@@ -132,22 +134,51 @@ def leg_multiplier(status: str, price: float) -> float:
     return MULTIPLIERS.get(status, 1.0) or 0.0
 
 
+def _unbettable_books() -> list[str]:
+    """Books a bet was never taken at, closing variants included.
+
+    Closing rows are stored under the same name with "_close" appended, so both
+    spellings have to be excluded.
+    """
+    settings = load_settings()
+    names = (list(settings.get("bookmakers.exchanges", []) or [])
+             + list(settings.get("bookmakers.aggregates", []) or []))
+    return names + [f"{name}_close" for name in names]
+
+
 def closing_price(conn: sqlite3.Connection, match_id: int, market: str,
                   selection: str, line: float | None) -> float | None:
-    """The price the market finished at, for measuring closing line value."""
+    """The price the market finished at, for measuring closing line value.
+
+    Drawn from the same universe the bet was taken in — real sportsbooks — and
+    that restriction is the whole point. A bet is placed at the best price
+    among books you can actually use; comparing it against the best price
+    across *everything* at the close measures it against a benchmark it was
+    never eligible to reach. "market_max" is the maximum of the panel by
+    construction, so it beats every individual book's close automatically, and
+    an exchange carries a fraction of a sportsbook's margin. Include either and
+    closing line value is negative before a single bet is struck.
+    """
+    excluded = _unbettable_books()
+    holes = ",".join("?" * len(excluded))
+    filter_sql = f" AND o.bookmaker NOT IN ({holes})" if excluded else ""
+
     row = conn.execute(
-        "SELECT price FROM odds WHERE match_id = ? AND market = ? AND selection = ? "
-        "AND (line IS ? OR line = ?) AND is_closing = 1 ORDER BY price DESC LIMIT 1",
-        (match_id, market, selection, line, line),
+        "SELECT o.price FROM odds o "
+        "WHERE o.match_id = ? AND o.market = ? AND o.selection = ? "
+        "AND (o.line IS ? OR o.line = ?) AND o.is_closing = 1" + filter_sql
+        + " ORDER BY o.price DESC LIMIT 1",
+        (match_id, market, selection, line, line, *excluded),
     ).fetchone()
     if row:
         return float(row["price"])
     row = conn.execute(
-        "SELECT price FROM odds o JOIN matches m ON m.id = o.match_id "
+        "SELECT o.price FROM odds o JOIN matches m ON m.id = o.match_id "
         "WHERE o.match_id = ? AND o.market = ? AND o.selection = ? "
-        "AND (o.line IS ? OR o.line = ?) AND o.taken_at <= m.kickoff "
-        "ORDER BY o.taken_at DESC, o.price DESC LIMIT 1",
-        (match_id, market, selection, line, line),
+        "AND (o.line IS ? OR o.line = ?) AND o.taken_at <= m.kickoff"
+        + filter_sql
+        + " ORDER BY o.taken_at DESC, o.price DESC LIMIT 1",
+        (match_id, market, selection, line, line, *excluded),
     ).fetchone()
     return float(row["price"]) if row else None
 

@@ -87,3 +87,41 @@ def test_multipliers_pay_out_correctly():
     assert leg_multiplier("void", 2.5) == 1.0
     assert leg_multiplier("half_won", 2.5) == 1.75   # half at 2.5, half returned
     assert leg_multiplier("half_lost", 2.5) == 0.5   # half lost, half returned
+
+
+def test_closing_line_value_is_measured_against_books_you_could_use(conn):
+    """A benchmark the bet was never eligible to reach is not a benchmark.
+
+    "market_max" is the maximum of the whole panel by construction, so it beats
+    every individual book's close automatically, and an exchange carries a
+    fraction of a sportsbook's margin. Leave either in and closing line value is
+    negative before a single bet is struck.
+    """
+    from vb.repo import upsert_match, upsert_odds
+    from vb.track.settle import closing_price
+
+    match_id = upsert_match(conn, league_code="E0", season="2025/26",
+                            kickoff="2026-01-10T15:00:00", home="Arsenal",
+                            away="Chelsea", status="played")
+    for book, price in (("bet365_close", 2.10), ("skybet_close", 2.15),
+                        ("betfair_ex_close", 2.32), ("market_max_close", 2.40)):
+        upsert_odds(conn, match_id, book, "h2h", "home", price, None,
+                    taken_at="2026-01-10", is_closing=True)
+
+    assert closing_price(conn, match_id, "h2h", "home", None) == 2.15, \
+        "the exchange and the panel maximum must not set the benchmark"
+
+
+def test_the_closing_benchmark_falls_back_to_a_real_book(conn):
+    from vb.repo import upsert_match, upsert_odds
+    from vb.track.settle import closing_price
+
+    match_id = upsert_match(conn, league_code="E0", season="2025/26",
+                            kickoff="2026-01-10T15:00:00", home="Spurs",
+                            away="Everton", status="played")
+    # No closing rows at all — only pre-match prices, one of them unbettable.
+    upsert_odds(conn, match_id, "market_max", "h2h", "home", 3.00, None,
+                taken_at="2026-01-09")
+    upsert_odds(conn, match_id, "bet365", "h2h", "home", 2.80, None,
+                taken_at="2026-01-09")
+    assert closing_price(conn, match_id, "h2h", "home", None) == 2.80
