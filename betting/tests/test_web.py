@@ -255,3 +255,29 @@ def test_a_fresh_record_carries_no_warning(conn, loaded_app, client):
     body = client.get("/").get_data(as_text=True)
     assert "saved by an older version" not in body
     assert "Recorded 31 August, 09:15" in body
+
+
+def test_the_health_tab_names_the_calibration_in_force(conn, loaded_app, client):
+    """A correction reshapes every edge on the page.
+
+    A card thinned by one, with nothing on the page to say so, reads as a
+    fault. Same rule as the backtest header: name the input in the output.
+    """
+    import vb.config as config
+
+    body = client.get("/").get_data(as_text=True)
+    assert "calibration correction is in force" not in body
+
+    settings = config.load_settings()
+    model = settings.raw.setdefault("model", {})
+    before = model.get("calibration")
+    model["calibration"] = {"slope": 1.0, "intercept": -0.253}
+    try:
+        body = client.get("/").get_data(as_text=True)
+        assert "calibration correction is in force" in body
+        assert "-0.253" in body
+    finally:
+        if before is None:
+            model.pop("calibration", None)
+        else:
+            model["calibration"] = before

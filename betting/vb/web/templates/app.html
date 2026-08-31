@@ -292,6 +292,18 @@ td.n,th.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-
       </tbody>
     </table>
 
+    {% if calibration %}
+    <p class="prose">
+      <strong>A calibration correction is in force</strong>
+      ({{ '%.3f' % calibration.slope }} &times; logit(p)
+      {{ '%+.3f' % calibration.intercept }}), fitted on this database's own
+      record by <code>vb calibrate</code>. It lowers every probability the
+      model produces before any edge is taken from it, so the card is
+      deliberately much shorter than it would otherwise be. Some weeks it will
+      be empty. That is the correction working, not a fault.
+    </p>
+    {% endif %}
+
     <h3 style="margin:32px 0 6px">What the engine saw</h3>
     <p class="prose" style="margin-top:0">
       Nothing from a division looks the same on the card whether its prices

@@ -102,6 +102,12 @@ def home():
             "SUM(status = 'scheduled') AS ahead FROM matches").fetchone()
         placed_summary = _placed_summary(conn)
         coverage, coverage_built, coverage_stale = _coverage(conn, leagues)
+    # Name the correction the card was built under. It reshapes every edge on
+    # the page, and a thin card with no explanation on it reads as a fault.
+    slope = float(settings.get("model.calibration.slope", 1.0))
+    intercept = float(settings.get("model.calibration.intercept", 0.0))
+    calibration = None if (slope, intercept) == (1.0, 0.0) else {
+        "slope": slope, "intercept": intercept}
     return render_template(
         "app.html",
         title=settings.get("report.title", "The Value Ledger"),
@@ -110,6 +116,7 @@ def home():
         placed_by_ref=placed_by_ref, curve=curve, by_league=by_league,
         matches=counts["matches"] or 0, ahead=counts["ahead"] or 0,
         coverage=coverage, coverage_built=coverage_built,
+        calibration=calibration,
         coverage_stale=coverage_stale,
         generated=datetime.now().strftime("%d %B %Y, %H:%M"),
     )
