@@ -451,7 +451,7 @@ def cmd_apifootball(args) -> int:
         if args.action == "check":
             report = af.check(conn, client, season)
             print(f"\n{BOLD}API-Football{RESET}")
-            print(f"  shopfront detected : {report['shopfront']}")
+            print(f"  shopfront          : {report['shopfront']}")
             if not report.get("ok"):
                 for line in report["errors"]:
                     print(f"  {RED}{line}{RESET}")

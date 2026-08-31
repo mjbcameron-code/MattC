@@ -145,7 +145,8 @@ class Client:
             )
         self.budget = budget or Budget()
         self.timeout = timeout
-        if via in ("direct", "rapidapi"):
+        self.forced = via in ("direct", "rapidapi")
+        if self.forced:
             self.via_rapidapi = via == "rapidapi"
         else:
             self.via_rapidapi = _looks_like_rapidapi(self.key)
@@ -154,7 +155,8 @@ class Client:
 
     @property
     def shopfront(self) -> str:
-        return "RapidAPI" if self.via_rapidapi else "api-football.com (direct)"
+        name = "RapidAPI" if self.via_rapidapi else "api-football.com (direct)"
+        return f"{name} [forced]" if self.forced else name
 
     def headers(self) -> dict[str, str]:
         # Identify ourselves properly. The default python-requests user agent is
@@ -212,6 +214,25 @@ class Client:
         _write_cache(endpoint, params, data)
         return data
 
+    # What each shopfront says, and what it means. These messages are specific
+    # enough to identify the problem exactly, which beats a list of guesses.
+    KNOWN_MESSAGES = [
+        ("not subscribed", 
+         "that is RapidAPI's wording for a key it does not recognise as subscribed. "
+         "Either this key is from api-football.com — in which case run with "
+         "--via direct — or it is a RapidAPI key whose free plan you have not "
+         "subscribed to yet (open the API-Football page on RapidAPI and press "
+         "Subscribe; the Basic plan is free)"),
+        ("invalid api key",
+         "the key itself was not accepted — check .env against your dashboard"),
+        ("missing application key",
+         "no key reached the API, so .env is not being read; check it sits in the "
+         "betting folder and the line has no spaces around the ="),
+        ("account is not active",
+         "the account exists but is not activated — confirm the address in the "
+         "sign-up email"),
+    ]
+
     def _explain(self, response) -> str:
         """Turn a failed reply into something actionable.
 
@@ -223,7 +244,11 @@ class Client:
         code = response.status_code
         lines = [f"HTTP {code} from {self.shopfront}"]
         if detail:
-            lines.append(f"the API said: {detail}")
+            lines.append(f"the API said: {detail.rstrip('.')}")
+        for needle, advice in self.KNOWN_MESSAGES:
+            if needle in detail.lower():
+                lines.append(advice)
+                return ". ".join(lines)
         if code == 401:
             lines.append("that is a missing or invalid key — check .env for a typo, "
                          "and that you copied the whole thing")

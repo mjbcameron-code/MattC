@@ -370,3 +370,21 @@ def test_only_matches_with_a_fixture_id_and_no_stats_are_queued(mapped):
                  fthg=1, ftag=0, source="football-data")   # no fixture id
     queued = af.matches_needing_statistics(mapped)
     assert [m for m, _ in queued] == [wanted]
+
+
+def test_the_not_subscribed_message_names_the_actual_fix(client, monkeypatch):
+    """RapidAPI's wording for a key that is not one of theirs at all."""
+    stub(monkeypatch, {"message": "You are not subscribed to this API."}, status=403)
+    with pytest.raises(af.ApiFootballError) as exc:
+        client.get("status")
+    text = str(exc.value)
+    assert "--via direct" in text
+    assert "Subscribe" in text
+    assert "email" not in text, "the generic guesses should be replaced, not appended"
+
+
+def test_a_forced_shopfront_is_labelled_as_forced(monkeypatch):
+    """When diagnosing, 'detected' and 'you told me' are different facts."""
+    monkeypatch.setenv("API_FOOTBALL_KEY", "short-direct-key-123456")
+    assert "forced" in af.Client(via="rapidapi").shopfront
+    assert "forced" not in af.Client().shopfront
