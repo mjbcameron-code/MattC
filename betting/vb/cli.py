@@ -441,7 +441,7 @@ def cmd_apifootball(args) -> int:
     from .sources import apifootball as af
 
     try:
-        client = af.Client(budget=af.Budget(max_this_run=args.budget))
+        client = af.Client(budget=af.Budget(max_this_run=args.budget), via=args.via)
     except af.MissingKey as exc:
         print(exc)
         return 1
@@ -683,6 +683,9 @@ def build_parser() -> argparse.ArgumentParser:
     apif.add_argument("--budget", type=int, default=40,
                       help="stop after this many requests (default 40)")
     apif.add_argument("--limit", type=int, default=20)
+    apif.add_argument("--via", choices=["direct", "rapidapi"],
+                      help="force which shopfront the key belongs to, instead of "
+                           "letting it be guessed from the key")
 
     add("doctor", cmd_doctor, "check what is loaded and what is missing")
     return parser

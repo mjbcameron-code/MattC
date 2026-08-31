@@ -91,11 +91,56 @@ def test_errors_in_the_body_are_raised_even_with_a_200(client, monkeypatch):
     assert "invalid api key" in str(exc.value)
 
 
-def test_a_rejected_key_explains_the_shopfront(client, monkeypatch):
-    stub(monkeypatch, {}, status=401)
+def test_a_401_says_the_key_is_wrong(client, monkeypatch):
+    stub(monkeypatch, {"message": "Invalid API key"}, status=401)
     with pytest.raises(af.ApiFootballError) as exc:
         client.get("status")
-    assert "rejected the key" in str(exc.value)
+    text = str(exc.value)
+    assert "Invalid API key" in text, "the API's own reason must survive"
+    assert "typo" in text
+
+
+def test_a_403_lists_the_likely_causes_in_order(client, monkeypatch):
+    """403 is not the same as 401, and the difference is what to do next."""
+    stub(monkeypatch, {"message": "Forbidden"}, status=403)
+    with pytest.raises(af.ApiFootballError) as exc:
+        client.get("status")
+    text = str(exc.value)
+    assert "Forbidden" in text
+    assert "not been confirmed" in text
+    assert "--via rapidapi" in text
+
+
+def test_an_html_page_is_identified_as_an_intermediary(client, monkeypatch):
+    """An HTML body means something in front of the API answered, not the API."""
+    class HtmlResponse:
+        status_code = 403
+        headers = {}
+
+        @staticmethod
+        def json():
+            raise ValueError("not json")
+
+        text = "<!DOCTYPE html><html><body>Access denied</body></html>"
+
+    monkeypatch.setattr(af.requests, "get",
+                        lambda *a, **k: HtmlResponse())
+    with pytest.raises(af.ApiFootballError) as exc:
+        client.get("status")
+    assert "between you and the API" in str(exc.value)
+
+
+def test_we_identify_ourselves_to_the_cdn(client):
+    """A bare python-requests user agent is a common blanket-403 trigger."""
+    assert "python-requests" not in client.headers().get("User-Agent", "")
+    assert client.headers()["User-Agent"]
+
+
+def test_the_shopfront_can_be_forced(monkeypatch):
+    monkeypatch.setenv("API_FOOTBALL_KEY", "short-direct-key-123456")
+    assert af.Client(via="rapidapi").via_rapidapi is True
+    assert af.Client(via="direct").via_rapidapi is False
+    assert af.Client().via_rapidapi is False          # falls back to the guess
 
 
 def test_the_key_never_appears_in_an_error(client, monkeypatch):

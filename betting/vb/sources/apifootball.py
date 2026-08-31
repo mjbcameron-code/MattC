@@ -43,6 +43,7 @@ from ..repo import resolve_team, token_similarity
 DIRECT_BASE = "https://v3.football.api-sports.io"
 RAPID_BASE = "https://api-football-v1.p.rapidapi.com/v3"
 RAPID_HOST = "api-football-v1.p.rapidapi.com"
+USER_AGENT = "value-bets/1.0 (personal betting research)"
 
 LEAGUE_MAP_KEY = "apifootball.league_map"
 BUDGET_KEY = "apifootball.budget"
@@ -130,7 +131,7 @@ class Client:
     """Thin wrapper over the API, with caching, budgeting and clear errors."""
 
     def __init__(self, key: str | None = None, budget: Budget | None = None,
-                 timeout: int = 25):
+                 timeout: int = 25, via: str | None = None):
         import os
 
         self.key = (key or os.environ.get("API_FOOTBALL_KEY", "")).strip()
@@ -144,7 +145,10 @@ class Client:
             )
         self.budget = budget or Budget()
         self.timeout = timeout
-        self.via_rapidapi = _looks_like_rapidapi(self.key)
+        if via in ("direct", "rapidapi"):
+            self.via_rapidapi = via == "rapidapi"
+        else:
+            self.via_rapidapi = _looks_like_rapidapi(self.key)
         self.base = RAPID_BASE if self.via_rapidapi else DIRECT_BASE
         self.last_errors: list[str] = []
 
@@ -153,9 +157,13 @@ class Client:
         return "RapidAPI" if self.via_rapidapi else "api-football.com (direct)"
 
     def headers(self) -> dict[str, str]:
+        # Identify ourselves properly. The default python-requests user agent is
+        # a common trigger for a blanket 403 from the CDN in front of this API,
+        # long before the key is ever looked at.
+        common = {"User-Agent": USER_AGENT, "Accept": "application/json"}
         if self.via_rapidapi:
-            return {"x-rapidapi-key": self.key, "x-rapidapi-host": RAPID_HOST}
-        return {"x-apisports-key": self.key}
+            return {**common, "x-rapidapi-key": self.key, "x-rapidapi-host": RAPID_HOST}
+        return {**common, "x-apisports-key": self.key}
 
     def get(self, endpoint: str, params: dict | None = None,
             max_age: int = 0, label: str | None = None) -> list[dict]:
@@ -176,16 +184,10 @@ class Client:
 
         self.budget.record(dict(response.headers))
 
-        if response.status_code == 401 or response.status_code == 403:
-            raise ApiFootballError(
-                f"the API rejected the key (HTTP {response.status_code}). If you "
-                f"signed up through {'api-football.com' if self.via_rapidapi else 'RapidAPI'} "
-                "rather than the one detected, say so and I will switch the header format."
-            )
         if response.status_code == 429:
             raise BudgetExhausted("the API says you are out of requests for now (HTTP 429)")
         if response.status_code != 200:
-            raise ApiFootballError(f"{endpoint} returned HTTP {response.status_code}")
+            raise ApiFootballError(self._explain(response))
 
         try:
             payload = response.json()
@@ -209,6 +211,53 @@ class Client:
             data = [data]
         _write_cache(endpoint, params, data)
         return data
+
+    def _explain(self, response) -> str:
+        """Turn a failed reply into something actionable.
+
+        The reason is almost always in the body, and throwing it away in favour
+        of a status code — as this first did — leaves nothing to act on. 401 and
+        403 mean different things here and get different advice.
+        """
+        detail = self._body_message(response)
+        code = response.status_code
+        lines = [f"HTTP {code} from {self.shopfront}"]
+        if detail:
+            lines.append(f"the API said: {detail}")
+        if code == 401:
+            lines.append("that is a missing or invalid key — check .env for a typo, "
+                         "and that you copied the whole thing")
+        elif code == 403:
+            lines.append(
+                "403 usually means the key is real but not yet usable. In order of "
+                "likelihood: the account email has not been confirmed; the key was "
+                "regenerated and .env still holds the old one; the account is "
+                "actually a RapidAPI one (re-run with --via rapidapi); or something "
+                "on your network is blocking the host"
+            )
+        return ". ".join(lines)
+
+    @staticmethod
+    def _body_message(response) -> str:
+        """Pull a human-readable reason out of whatever the server returned."""
+        try:
+            payload = response.json()
+        except ValueError:
+            text = (response.text or "").strip()
+            # An HTML error page means something in front of the API answered,
+            # not the API itself.
+            if text.lower().startswith(("<!doctype", "<html")):
+                return "an HTML error page, so something between you and the API " \
+                       "answered rather than the API itself"
+            return text[:200]
+        if isinstance(payload, dict):
+            for key in ("message", "error", "errors"):
+                value = payload.get(key)
+                if isinstance(value, dict):
+                    value = "; ".join(f"{k}: {v}" for k, v in value.items())
+                if value:
+                    return str(value)[:200]
+        return ""
 
     def status(self) -> dict:
         """Account and quota, and the cheapest possible check that the key works."""
