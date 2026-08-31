@@ -295,7 +295,7 @@ class Trace:
     def __init__(self) -> None:
         self.counts: dict[str, Counter] = defaultdict(Counter)
         self.best: dict[str, list[tuple[float, str]]] = defaultdict(list)
-        self.setup: dict[str, dict[str, float]] = {}
+        self.setup: dict[str, list[list[float]]] = {}
 
     def note(self, league_code: str, reason: str, n: int = 1) -> None:
         self.counts[league_code][reason] += n
@@ -314,15 +314,17 @@ class Trace:
         del top[self.KEEP:]
 
     def note_setup(self, league_code: str, weight: float, matches_seen: int) -> None:
-        """How much say the model had, and how much football it had seen.
+        """How much say the model had, and how much football stood behind it.
 
-        Early in a season these are the numbers behind a quiet card: the model
-        is deliberately shaded down until it has evidence, so its edges shrink
-        toward nothing and the thresholds stop everything. That is the design
-        working, but it is indistinguishable from a broken model unless the
-        weight is on the page.
+        Recorded per fixture and reported as a spread, which matters more than
+        it sounds. These numbers vary enormously within one division — an
+        established club carries three seasons of matches while a relegated one
+        carries three games — so a single value is not a property of the league
+        at all. Keeping only the last fixture's, as this did at first, reports
+        whichever club happened to be scanned last and reads like a fact about
+        the competition. It sent me to the wrong conclusion once already.
         """
-        self.setup[league_code] = {"weight": weight, "matches_seen": matches_seen}
+        self.setup.setdefault(league_code, []).append([weight, matches_seen])
 
     def leagues(self) -> list[str]:
         return sorted(self.counts)
@@ -359,14 +361,36 @@ class Trace:
                 trace.note(code, reason, count)
         for code, pairs in raw.get("best", {}).items():
             trace.best[code] = [(float(e), str(lbl)) for e, lbl in pairs]
-        trace.setup = {c: dict(v) for c, v in raw.get("setup", {}).items()}
+        for code, rows in raw.get("setup", {}).items():
+            # A record from before this was a spread holds one dict per league.
+            if isinstance(rows, dict):
+                rows = [[rows.get("weight", 0.0), rows.get("matches_seen", 0)]]
+            trace.setup[code] = [[float(w), float(m)] for w, m in rows]
         return trace
 
     def near_misses(self, league_code: str) -> list[tuple[float, str]]:
         return self.best.get(league_code, [])
 
     def weight(self, league_code: str) -> dict[str, float] | None:
-        return self.setup.get(league_code)
+        """The spread of model weight and evidence across a league's fixtures."""
+        rows = self.setup.get(league_code) or []
+        if not rows:
+            return None
+        weights = sorted(float(w) for w, _ in rows)
+        seen = sorted(float(m) for _, m in rows)
+
+        def mid(values: list[float]) -> float:
+            half = len(values) // 2
+            if len(values) % 2:
+                return values[half]
+            return (values[half - 1] + values[half]) / 2
+
+        return {
+            "fixtures": len(rows),
+            "weight_low": weights[0], "weight_mid": mid(weights),
+            "weight_high": weights[-1],
+            "seen_low": seen[0], "seen_mid": mid(seen), "seen_high": seen[-1],
+        }
 
     def rows(self, league_code: str) -> list[tuple[str, int]]:
         """Reasons for one league, in funnel order, skipping the empty ones."""

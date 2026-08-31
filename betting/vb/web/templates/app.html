@@ -322,13 +322,18 @@ td.n,th.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-
           {% endfor %}
         </tbody>
       </table>
-      {% if league.weight is not none %}
+      {% if league.weight %}
+      {% set w = league.weight %}
       <p class="fnote">
-        The model had <strong>{{ '%.0f' % (league.weight * 100) }}%</strong> of
-        the say against the market here, on
-        {{ '%.0f' % league.matches_seen }} matches per club so far. It is held
-        down on purpose until it has seen enough football — so a low number
-        early in a season means small edges and a quiet card, by design.
+        Across {{ w.fixtures }} fixtures the model had between
+        <strong>{{ '%.0f' % (w.weight_low * 100) }}%</strong> and
+        <strong>{{ '%.0f' % (w.weight_high * 100) }}%</strong> of the say
+        against the market, typically {{ '%.0f' % (w.weight_mid * 100) }}%,
+        standing on {{ '%.0f' % w.seen_low }}–{{ '%.0f' % w.seen_high }}
+        matches per club. It is held down on purpose until it has seen enough
+        football, so where that range dips low the edges shrink with it — by
+        design, not by fault. A wide range means the two ends of this division
+        are being judged very differently.
       </p>
       {% endif %}
       {% if league.best %}

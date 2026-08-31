@@ -338,3 +338,62 @@ def test_explain_is_honest_when_it_has_nothing(loaded, tmp_path, capsys):
     assert cmd_explain(SimpleNamespace(db=str(db), team="Nonexistent Rovers",
                                        market=None)) == 1
     assert "No upcoming fixture found" in capsys.readouterr().out
+
+
+def test_explain_ignores_a_fixture_that_has_already_kicked_off(loaded, tmp_path,
+                                                              capsys):
+    """"Scheduled" is not "upcoming".
+
+    A match whose result never arrived keeps that status indefinitely and,
+    being the earliest, sorts to the front — so the command answered about
+    last week's game while the one being asked about was still to come.
+    """
+    import shutil
+    from datetime import datetime, timedelta
+    from types import SimpleNamespace
+
+    from vb.cli import cmd_explain
+
+    row = loaded.execute(
+        "SELECT m.id, t.name FROM matches m JOIN teams t ON t.id = m.home_id "
+        "WHERE m.status = 'scheduled' ORDER BY m.kickoff LIMIT 1").fetchone()
+    stale = (datetime.now() - timedelta(days=3)).isoformat(timespec="seconds")
+    loaded.execute("UPDATE matches SET kickoff = ? WHERE id = ?",
+                   (stale, row["id"]))
+    loaded.commit()
+
+    source = loaded.execute("PRAGMA database_list").fetchone()["file"]
+    db = tmp_path / "stale.db"
+    shutil.copy(source, db)
+
+    args = SimpleNamespace(db=str(db), team=row["name"], market="h2h")
+    cmd_explain(args)
+    out = capsys.readouterr().out
+    assert stale[:10] not in out, "answered about a match already played"
+
+
+def test_explain_says_when_a_result_never_arrived(loaded, tmp_path, capsys):
+    import shutil
+    from datetime import datetime, timedelta
+    from types import SimpleNamespace
+
+    from vb.cli import cmd_explain
+
+    name = loaded.execute(
+        "SELECT t.name FROM matches m JOIN teams t ON t.id = m.home_id "
+        "WHERE m.status = 'scheduled' LIMIT 1").fetchone()["name"]
+    past = (datetime.now() - timedelta(days=3)).isoformat(timespec="seconds")
+    loaded.execute(
+        "UPDATE matches SET kickoff = ? WHERE status = 'scheduled' "
+        "AND (home_id IN (SELECT id FROM teams WHERE name = ?) "
+        "  OR away_id IN (SELECT id FROM teams WHERE name = ?))",
+        (past, name, name))
+    loaded.commit()
+
+    source = loaded.execute("PRAGMA database_list").fetchone()["file"]
+    db = tmp_path / "gone.db"
+    shutil.copy(source, db)
+
+    assert cmd_explain(SimpleNamespace(db=str(db), team=name, market=None)) == 1
+    out = capsys.readouterr().out
+    assert "already kicked off" in out and "vb update" in out

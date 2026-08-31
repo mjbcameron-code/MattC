@@ -148,3 +148,63 @@ def test_the_trace_tells_no_prices_apart_from_no_value(conn):
     reasons = dict(trace.rows("E2"))
     assert reasons.get("no price on file", 0) > 0
     assert reasons.get("priced up", 0) == 0
+
+
+def test_the_weight_summary_is_a_spread_not_the_last_fixture():
+    """One number per league is not a property of the league.
+
+    An established club carries three seasons; a relegated one carries three
+    games. Reporting whichever was scanned last reads as a fact about the
+    competition and is not one — it sent me to a wrong conclusion once.
+    """
+    from vb.market.value import Trace
+
+    trace = Trace()
+    trace.note_setup("EC", 0.10, 3)
+    trace.note_setup("EC", 0.35, 95)
+    trace.note_setup("EC", 0.30, 40)
+    summary = trace.weight("EC")
+    assert summary["fixtures"] == 3
+    assert summary["weight_low"] == 0.10 and summary["weight_high"] == 0.35
+    assert summary["weight_mid"] == 0.30
+    assert summary["seen_low"] == 3 and summary["seen_high"] == 95
+
+
+def test_an_older_single_value_weight_record_still_loads():
+    from vb.market.value import Trace
+
+    back = Trace.from_json(
+        '{"counts": {}, "best": {}, '
+        '"setup": {"EC": {"weight": 0.35, "matches_seen": 95}}}')
+    summary = back.weight("EC")
+    assert summary["fixtures"] == 1 and summary["weight_mid"] == 0.35
+
+
+def test_the_weight_summary_is_a_spread_not_the_last_fixture():
+    """One number per league is not a property of the league.
+
+    An established club carries three seasons; a relegated one carries three
+    games. Reporting whichever was scanned last reads as a fact about the
+    competition and is not one — it sent me to a wrong conclusion once.
+    """
+    from vb.market.value import Trace
+
+    trace = Trace()
+    trace.note_setup("EC", 0.10, 3)
+    trace.note_setup("EC", 0.35, 95)
+    trace.note_setup("EC", 0.30, 40)
+    summary = trace.weight("EC")
+    assert summary["fixtures"] == 3
+    assert summary["weight_low"] == 0.10 and summary["weight_high"] == 0.35
+    assert summary["weight_mid"] == 0.30
+    assert summary["seen_low"] == 3 and summary["seen_high"] == 95
+
+
+def test_an_older_single_value_weight_record_still_loads():
+    from vb.market.value import Trace
+
+    back = Trace.from_json(
+        '{"counts": {}, "best": {}, '
+        '"setup": {"EC": {"weight": 0.35, "matches_seen": 95}}}')
+    summary = back.weight("EC")
+    assert summary["fixtures"] == 1 and summary["weight_mid"] == 0.35

@@ -254,8 +254,11 @@ def cmd_why(args) -> int:
                 print(f"  {mark} {count:5d}  {reason}")
             setup = trace.weight(code)
             if setup:
-                print(f"{DIM}     model weight {setup['weight']:.0%} on "
-                      f"{setup['matches_seen']:.0f} matches per club{RESET}")
+                print(f"{DIM}     model weight {setup['weight_low']:.0%}"
+                      f"–{setup['weight_high']:.0%} "
+                      f"(typically {setup['weight_mid']:.0%}) on "
+                      f"{setup['seen_low']:.0f}–{setup['seen_high']:.0f} "
+                      f"matches per club{RESET}")
             for edge, label in trace.near_misses(code):
                 print(f"{DIM}     {edge:+6.1%}  {label}{RESET}")
     return 0
@@ -303,14 +306,32 @@ def cmd_explain(args) -> int:
     settings = load_settings()
     with session(args.db) as conn:
         like = f"%{args.team}%"
-        row = conn.execute(
-            "SELECT m.* FROM matches m "
-            "JOIN teams h ON h.id = m.home_id "
-            "JOIN teams a ON a.id = m.away_id "
-            "WHERE (h.name LIKE ? OR a.name LIKE ?) AND m.status = 'scheduled' "
-            "ORDER BY m.kickoff LIMIT 1", (like, like)).fetchone()
+        find = ("SELECT m.*, h.name AS home_name, a.name AS away_name "
+                "FROM matches m "
+                "JOIN teams h ON h.id = m.home_id "
+                "JOIN teams a ON a.id = m.away_id "
+                "WHERE (h.name LIKE ? OR a.name LIKE ?) "
+                "AND m.status = 'scheduled' ")
+        now = datetime.now().isoformat(timespec="seconds")
+        # Only fixtures that have not kicked off. "Scheduled" is not the same
+        # thing: a match whose result has not been ingested keeps that status
+        # indefinitely and, being the earliest, sorts to the front — so without
+        # this the command answers about last week's game.
+        row = conn.execute(find + "AND m.kickoff >= ? ORDER BY m.kickoff LIMIT 1",
+                           (like, like, now)).fetchone()
         if row is None:
-            print(f"No upcoming fixture found for '{args.team}'.")
+            stale = conn.execute(
+                find + "AND m.kickoff < ? ORDER BY m.kickoff DESC LIMIT 1",
+                (like, like, now)).fetchone()
+            if stale is not None:
+                print(f"No upcoming fixture for '{args.team}'.\n"
+                      f"{stale['home_name']} v {stale['away_name']} on "
+                      f"{stale['kickoff'][:10]} has already kicked off but is "
+                      f"still marked as not played — its result never arrived, "
+                      f"so it will not settle and the model has not learned "
+                      f"from it. Run `vb update` to bring results in.")
+            else:
+                print(f"No upcoming fixture found for '{args.team}'.")
             return 1
 
         bank = ModelBank(conn, as_of=datetime.now())

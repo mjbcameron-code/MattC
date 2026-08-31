@@ -164,8 +164,7 @@ def test_the_health_tab_shows_how_far_short_a_price_fell(conn, loaded_app, clien
 
     body = client.get("/").get_data(as_text=True)
     assert "Strongest edges found" in body
-    assert "of\n        the say against the market" in body or \
-           "the say against the market" in body
+    assert "of the say" in body and "matches per club" in body
 
 
 def test_the_magnitudes_survive_the_database(conn):
@@ -176,7 +175,9 @@ def test_the_magnitudes_survive_the_database(conn):
     trace.note_setup("EC", 0.127, 4)
     back = Trace.from_json(trace.to_json())
     assert back.near_misses("EC") == [(0.039, "Woking v Barnet: h2h home at 2.10")]
-    assert back.weight("EC") == {"weight": 0.127, "matches_seen": 4}
+    summary = back.weight("EC")
+    assert summary["fixtures"] == 1
+    assert summary["weight_mid"] == 0.127 and summary["seen_mid"] == 4
 
 
 def test_a_trace_saved_before_magnitudes_existed_still_loads(conn):

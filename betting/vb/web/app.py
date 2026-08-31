@@ -135,15 +135,13 @@ def _coverage(conn, leagues) -> tuple[list[dict[str, Any]], str, bool]:
     for code in trace.leagues():
         rows = trace.rows(code)
         counts = dict(rows)
-        setup = trace.weight(code) or {}
         out.append({
             "name": leagues[code].name if code in leagues else code,
             "considered": trace.total(code),
             "tipped": counts.get("tipped", 0),
             "reasons": [{"reason": r, "count": n} for r, n in rows
                         if r != "tipped"],
-            "weight": setup.get("weight"),
-            "matches_seen": setup.get("matches_seen"),
+            "weight": trace.weight(code),
             "best": [{"edge": e, "label": lbl}
                      for e, lbl in trace.near_misses(code)],
         })

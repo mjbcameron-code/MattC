@@ -94,7 +94,7 @@ class ModelBank:
         borrowed = self._borrow(league_code, team_id)
         if borrowed is None:
             return home_attack, home_defence, league_code
-        other_attack, other_defence, other_league = borrowed
+        other_attack, other_defence, other_league, _ = borrowed
 
         # Weight the new division's evidence in as it arrives.
         weight = seen / (seen + self._settled_matches)
@@ -122,8 +122,33 @@ class ModelBank:
             shift = self.league_strength(row["league_code"]) - shift_to
             return (other.attack[team_id] + shift,
                     other.defence[team_id] + shift,
-                    row["league_code"])
+                    row["league_code"], int(row["n"]))
         return None
+
+    #: A borrowed match counts for this much of a native one. Carrying a
+    #: rating across a division boundary is real evidence, but it travels
+    #: through the league_strength priors and picks up their error on the way.
+    BORROWED_WEIGHT = 0.5
+
+    def evidence(self, league_code: str, team_id: int) -> int:
+        """How much football actually stands behind a club's rating.
+
+        Not the same as its record in this division, and the difference is the
+        whole point. A relegated club's rating is borrowed from the division it
+        came from and shifted — so the model knows a great deal about it while
+        its new-league record is three games long. Counting only the latter
+        shades the model down for having no evidence when the evidence is
+        merely filed elsewhere, which is how a fixture between a settled club
+        and a relegated one ends up giving the model a tenth of the say.
+        """
+        model = self.ratings(league_code)
+        seen = model.matches_per_team.get(team_id, 0) if model else 0
+        if seen >= self._settled_matches:
+            return seen
+        borrowed = self._borrow(league_code, team_id)
+        if borrowed is None:
+            return seen
+        return seen + int(borrowed[3] * self.BORROWED_WEIGHT)
 
     @property
     def _settled_matches(self) -> int:
@@ -336,8 +361,12 @@ def _uefa_rates(conn: sqlite3.Connection, bank: ModelBank, home_id: int,
 
 
 def _matches_seen(bank: ModelBank, league_code: str, home_id: int, away_id: int) -> int:
-    model = bank.ratings(league_code)
-    if model is None:
+    """Evidence behind the weaker-known of the two clubs.
+
+    The minimum rather than the average, because a fixture is only as well
+    understood as its less familiar side.
+    """
+    if bank.ratings(league_code) is None:
         return 0
-    return min(model.matches_per_team.get(home_id, 0),
-               model.matches_per_team.get(away_id, 0))
+    return min(bank.evidence(league_code, home_id),
+               bank.evidence(league_code, away_id))
