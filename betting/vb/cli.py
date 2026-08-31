@@ -463,10 +463,10 @@ def cmd_apifootball(args) -> int:
                   f"({'active' if report.get('plan_active') else 'inactive'})")
             print(f"  requests today     : {report.get('requests_today')} of "
                   f"{report.get('requests_limit')}")
-            print(f"\n  {'league':6}{'matched to':34}{'id':>8}{'season':>8}{'score':>7}")
+            print(f"\n  {'league':8}{'matched to':34}{'id':>8}{'season':>8}{'score':>7}")
             for code, match in report["leagues"].items():
                 colour = GREEN if match.confident else RED
-                print(f"  {code:6}{colour}{(match.api_name or '— no match')[:33]:34}{RESET}"
+                print(f"  {code:8}{colour}{(match.api_name or '— no match')[:33]:34}{RESET}"
                       f"{str(match.api_id or '—'):>8}{str(match.season or '—'):>8}"
                       f"{match.score:>7.2f}")
                 if match.note:

@@ -422,7 +422,10 @@ def discover_leagues(client: Client, codes: list[str] | None = None,
     weak one is reported rather than used.
     """
     catalogue = client.get("leagues", max_age=7 * 24 * 3600, label="the league list")
-    wanted = codes or [lg.code for lg in enabled_leagues()]
+    # Every configured league, not only the enabled ones: the second tiers are
+    # carried to rate promoted clubs, and need ids just the same. The catalogue
+    # arrives in one request, so covering them costs nothing.
+    wanted = codes or list(load_leagues())
     leagues = load_leagues()
     out: dict[str, LeagueMatch] = {}
 

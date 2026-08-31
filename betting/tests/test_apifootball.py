@@ -429,3 +429,11 @@ def test_a_wrong_length_key_is_flagged_before_it_is_blamed(conn, monkeypatch):
     monkeypatch.setattr(af, "discover_leagues", lambda *a, **k: {})
     report = af.check(conn, client, "2026/27")
     assert "32 characters" in report["key_warning"]
+
+
+def test_discovery_covers_the_ratings_only_divisions(client, monkeypatch):
+    """D2/I2/SP2 are not tipped, but promoted clubs are rated from them."""
+    stub(monkeypatch, envelope(CATALOGUE))
+    found = af.discover_leagues(client)
+    assert "D2" in found, "a division we never tip still needs an id"
+    assert found["D2"].api_id == 79
