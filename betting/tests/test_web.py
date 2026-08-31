@@ -281,3 +281,61 @@ def test_the_health_tab_names_the_calibration_in_force(conn, loaded_app, client)
             model.pop("calibration", None)
         else:
             model["calibration"] = before
+
+
+def test_a_league_with_no_fixtures_is_named_rather_than_omitted(conn, loaded_app,
+                                                                client):
+    """Silence and "not playing this week" are different claims.
+
+    A league with no fixtures in the window is touched by nothing, so it
+    appears nowhere — which looks exactly like a league whose fixture feed
+    failed. Only one of those is a reason to investigate.
+    """
+    from vb.db import set_setting
+    from vb.market.value import Trace
+    from vb.tips.select import build_tipsheet
+
+    trace = Trace()
+    build_tipsheet(conn, days=7, season="2026/27", include_outrights=False,
+                   trace=trace)
+    set_setting(conn, "coverage.trace", trace.to_json())
+    conn.commit()
+
+    body = client.get("/").get_data(as_text=True)
+    # The fixture only generates E2, so every other enabled league is absent.
+    assert "no fixtures in the next 7 days" in body
+    assert "not scanned" in body
+    # And a league that was scanned still reports normally.
+    assert "prices" in body
+    assert "saved by an older version" not in body
+
+
+def test_with_no_scan_at_all_it_asks_for_one(conn, loaded_app, client):
+    """Absent-from-a-record and no-record-at-all are different states.
+
+    Listing every configured league as "no fixtures" before anything has been
+    scanned answers a question nobody asked and hides the one that matters.
+    """
+    body = client.get("/").get_data(as_text=True)
+    assert "Build the card" in body
+    assert "no fixtures in the next 7 days" not in body
+
+
+def test_a_scanned_league_is_not_marked_absent(conn, loaded_app, client):
+    from vb.config import load_leagues
+    from vb.db import set_setting
+    from vb.market.value import Trace
+    from vb.tips.select import build_tipsheet
+
+    trace = Trace()
+    build_tipsheet(conn, days=7, season="2026/27", include_outrights=False,
+                   trace=trace)
+    set_setting(conn, "coverage.trace", trace.to_json())
+    conn.commit()
+
+    from vb.web.app import _coverage
+    rows, _, _ = _coverage(conn, load_leagues())
+    scanned = [r for r in rows if not r["absent"]]
+    assert scanned, "the generated league must be reported as scanned"
+    for row in scanned:
+        assert row["considered"] > 0

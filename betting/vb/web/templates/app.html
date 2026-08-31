@@ -322,14 +322,16 @@ td.n,th.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-
     <details class="funnel">
       <summary>
         <span class="fname">{{ league.name }}</span>
-        <span class="fmeta">{{ league.considered }} prices &middot;
+        <span class="fmeta">
+          {%- if league.absent %}<span class="none">not scanned</span>
+          {%- else %}{{ league.considered }} prices &middot;
           {% if league.tipped %}<strong>{{ league.tipped }} tipped</strong>
-          {% else %}<span class="none">none tipped</span>{% endif %}</span>
+          {% else %}<span class="none">none tipped</span>{% endif %}{% endif %}</span>
       </summary>
       <table class="reasons">
         <tbody>
           {% for row in league.reasons %}
-          <tr><td class="n">{{ row.count }}</td><td>{{ row.reason }}</td></tr>
+          <tr><td class="n">{{ row.count or '' }}</td><td>{{ row.reason }}</td></tr>
           {% endfor %}
         </tbody>
       </table>

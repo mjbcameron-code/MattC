@@ -151,7 +151,34 @@ def _coverage(conn, leagues) -> tuple[list[dict[str, Any]], str, bool]:
             "weight": trace.weight(code),
             "best": [{"edge": e, "label": lbl}
                      for e, lbl in trace.near_misses(code)],
+            "absent": False,
         })
+    # Leagues the trace never mentions. A league with no fixtures in the window
+    # is touched by nothing and so appears nowhere — which looks exactly like a
+    # league whose fixture feed failed. Saying "not playing" and saying nothing
+    # are different claims, and only one of them is a reason to call me.
+    from datetime import timedelta
+
+    horizon = (datetime.now() + timedelta(days=7)).isoformat()
+    ahead = {r["league_code"]: r["n"] for r in conn.execute(
+        "SELECT league_code, COUNT(*) AS n FROM matches "
+        "WHERE status = 'scheduled' AND kickoff BETWEEN ? AND ? "
+        "GROUP BY league_code", (datetime.now().isoformat(), horizon))}
+    # Only once there is a record to be absent from. With no scan at all, the
+    # honest message is "press Build the card", not a fixture list for every
+    # league in the config.
+    for code, league in (leagues.items() if out else []):
+        if code in trace.counts or not getattr(league, "enabled", True):
+            continue
+        fixtures = ahead.get(code, 0)
+        out.append({
+            "name": league.name, "considered": 0, "tipped": 0,
+            "reasons": [{"reason": (
+                f"{fixtures} fixture(s) in the window, none reached pricing"
+                if fixtures else "no fixtures in the next 7 days"), "count": 0}],
+            "weight": None, "best": [], "absent": True,
+        })
+
     out.sort(key=lambda r: (-r["tipped"], -r["considered"]))
     # Rendering a record from an older build silently looks exactly like a
     # fresh run that found nothing to say, so it has to announce itself. The
