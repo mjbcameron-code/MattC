@@ -483,3 +483,29 @@ def test_a_backtest_does_not_count_advice_it_did_not_make(conn):
     result = backtest.run(conn, season="2026/27", warmup_weeks=2)
     assert result.summary.bets == result.tips, \
         f"{result.summary.bets} bets summarised but only {result.tips} tipped"
+
+
+def test_the_backtest_separates_singles_from_multiples(conn):
+    """Closing line value only exists for singles, so ROI and CLV can diverge.
+
+    A multiple has no one closing price to compare against, so it is absent
+    from the CLV and present in the ROI. Without the split, a card whose
+    accumulators are bleeding can still report a healthy CLV over the third of
+    it that is singles.
+    """
+    from vb import backtest
+    from vb.sample import generate_all
+
+    generate_all(conn, season="2026/27", leagues=["E2", "E3"], seed=6)
+    result = backtest.run(conn, season="2026/27", warmup_weeks=2)
+
+    assert result.by_type, "no breakdown by bet type"
+    kinds = {row["name"] for row in result.by_type}
+    assert "single" in kinds
+    assert sum(row["bets"] for row in result.by_type) == result.summary.settled
+
+    # The coverage figure is what makes the divergence legible.
+    assert result.summary.clv_measured <= result.summary.settled
+    singles = next(r for r in result.by_type if r["name"] == "single")
+    assert result.summary.clv_measured <= singles["bets"], \
+        "closing line value cannot be measured on a multiple"

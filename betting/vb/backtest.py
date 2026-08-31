@@ -33,6 +33,7 @@ class BacktestResult:
     summary: metrics.Summary = field(default_factory=metrics.Summary)
     by_market: list[dict] = field(default_factory=list)
     by_league: list[dict] = field(default_factory=list)
+    by_type: list[dict] = field(default_factory=list)
     calibration: list[dict] = field(default_factory=list)
     curve: list[tuple[str, float, float]] = field(default_factory=list)
     first_date: str = ""
@@ -153,6 +154,7 @@ def run(
     result.summary = metrics.summarise(conn)
     result.by_market = metrics.by_market(conn)
     result.by_league = metrics.by_league(conn)
+    result.by_type = metrics.by_type(conn)
     result.calibration = metrics.calibration(conn)
     result.curve = metrics.running_pnl(conn)
     return result

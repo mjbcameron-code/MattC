@@ -694,9 +694,21 @@ def _run_backtest(db_path, args) -> int:
     colour = GREEN if s.pnl >= 0 else RED
     print(f"  {colour}{s.pnl:+.2f} pts{RESET}  ROI {s.roi:+.1%}  strike {s.strike_rate:.1%}"
           f"  avg price {s.average_odds:.2f}")
-    print(f"  CLV {s.clv_average:+.2%} (beat the close {s.clv_beat_rate:.0%} of the time)")
+    # How many bets the CLV covers, not just the average. Closing line value is
+    # only measurable on a single: a multiple has no one closing price to
+    # compare against. So a card full of accumulators can show a healthy CLV
+    # over the third of it that is singles while the rest quietly loses.
+    print(f"  CLV {s.clv_average:+.2%} (beat the close {s.clv_beat_rate:.0%} "
+          f"of the time, measured on {s.clv_measured} of {s.settled} settled)")
     print(f"  expected {s.expected_pnl:+.1f} pts against {s.pnl:+.1f} actual"
           f"  ·  worst drawdown {s.max_drawdown:.1f} pts")
+    if result.by_type:
+        print(f"\n  {'bet type':>12}{'bets':>7}{'staked':>9}{'pts':>9}{'ROI':>8}")
+        for row in sorted(result.by_type, key=lambda r: r["pnl"]):
+            tint = GREEN if row["pnl"] >= 0 else RED
+            print(f"  {row['name']:>12}{row['bets']:>7}{row['staked']:>9.1f}"
+                  f"{tint}{row['pnl']:>9.2f}{RESET}{row['roi']:>+8.1%}")
+
     print(f"\n  {'model said':>12}{'bets':>7}{'predicted':>11}{'actual':>9}")
     for row in result.calibration:
         print(f"  {row['range']:>12}{row['bets']:>7}{row['predicted']:>11.1%}"
