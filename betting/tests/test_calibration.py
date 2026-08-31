@@ -100,3 +100,92 @@ def test_the_engine_applies_the_correction_before_taking_an_edge(conn):
         f"got {len(shaded)} against {len(plain)}")
     for candidate in shaded:
         assert candidate.blended_prob < 1.0
+
+
+def test_a_local_override_is_merged_over_the_shipped_settings(tmp_path, monkeypatch):
+    """A calibration is a fact about one database, not about the code.
+
+    Put this database's fitted numbers in settings.yaml and the demo — whose
+    generator is honest by construction — is corrected for a fault it does not
+    have and advises nothing at all. So the fit lives beside the settings.
+    """
+    import yaml
+
+    import vb.config as config
+
+    (tmp_path / "settings.yaml").write_text(yaml.safe_dump({
+        "model": {"calibration": {"slope": 1.0, "intercept": 0.0},
+                  "half_life_days": 180},
+        "selection": {"min_edge": 0.04},
+    }))
+    monkeypatch.setattr(config, "CONFIG_DIR", tmp_path)
+    config.load_settings.cache_clear()
+
+    plain = config.load_settings()
+    assert plain.get("model.calibration.intercept") == 0.0
+
+    (tmp_path / "settings.local.yaml").write_text(yaml.safe_dump({
+        "model": {"calibration": {"slope": 0.819, "intercept": -0.281}}}))
+
+    config.load_settings.cache_clear()
+    merged = config.load_settings()
+    assert merged.get("model.calibration.slope") == 0.819
+    assert merged.get("model.calibration.intercept") == -0.281
+    # Merged leaf by leaf: neighbours in the same branch must survive.
+    assert merged.get("model.half_life_days") == 180
+    assert merged.get("selection.min_edge") == 0.04
+
+
+def test_the_shipped_settings_carry_no_fitted_correction():
+    """Shipping one database's fit as a default silently corrupts every other."""
+    import vb.config as config
+
+    config.load_settings.cache_clear()
+    settings = config.load_settings()
+    assert settings.get("model.calibration.slope", 1.0) == 1.0
+    assert settings.get("model.calibration.intercept", 0.0) == 0.0
+
+
+def test_applying_a_fit_writes_a_file_the_loader_can_read(tmp_path, monkeypatch):
+    """The round trip: what --apply writes must be what load_settings reads."""
+    import yaml
+
+    import vb.config as config
+    from vb.calibrate import Fit
+    from vb.cli import _write_local_calibration
+
+    (tmp_path / "settings.yaml").write_text(yaml.safe_dump({
+        "model": {"calibration": {"slope": 1.0, "intercept": 0.0},
+                  "half_life_days": 180}}))
+    monkeypatch.setattr(config, "CONFIG_DIR", tmp_path)
+
+    _write_local_calibration(Fit(slope=0.819, intercept=-0.281, bets=444))
+
+    config.load_settings.cache_clear()
+    settings = config.load_settings()
+    assert settings.get("model.calibration.slope") == 0.819
+    assert settings.get("model.calibration.intercept") == -0.281
+    assert settings.get("model.half_life_days") == 180
+    config.load_settings.cache_clear()
+
+    written = (tmp_path / "settings.local.yaml").read_text()
+    assert written.startswith("#"), "it has to explain itself to whoever opens it"
+    assert "Git-ignored" in written
+
+
+def test_applying_twice_does_not_stack_up(tmp_path, monkeypatch):
+    import yaml
+
+    import vb.config as config
+    from vb.calibrate import Fit
+    from vb.cli import _write_local_calibration
+
+    (tmp_path / "settings.yaml").write_text(yaml.safe_dump({"model": {}}))
+    monkeypatch.setattr(config, "CONFIG_DIR", tmp_path)
+
+    _write_local_calibration(Fit(slope=0.9, intercept=-0.2))
+    _write_local_calibration(Fit(slope=0.819, intercept=-0.281))
+
+    data = yaml.safe_load((tmp_path / "settings.local.yaml").read_text())
+    assert data["model"]["calibration"] == {"slope": 0.819, "intercept": -0.281}
+    config.load_settings.cache_clear()

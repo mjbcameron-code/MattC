@@ -799,10 +799,16 @@ def cmd_calibrate(args) -> int:
     print(f"  {'corrected':<12}{after_e:>10.1f}{after_a:>9.0f}{after_z:>8.2f}")
 
     if abs(after_z) < abs(before_z):
-        print(f"\n  The correction helps out of sample. To use it, put this in "
-              f"config/settings.yaml under `model:`\n")
-        print(f"    calibration:\n      slope: {fitted.slope:.3f}\n"
-              f"      intercept: {fitted.intercept:.3f}\n")
+        print(f"\n  The correction helps out of sample.")
+        if args.apply:
+            _write_local_calibration(fitted)
+            print(f"  Written to config/settings.local.yaml. It applies from "
+                  f"the next card and survives a `git pull`.")
+        else:
+            print(f"  Re-run with {BOLD}--apply{RESET} to use it, or put this "
+                  f"in config/settings.local.yaml under `model:`\n")
+            print(f"    calibration:\n      slope: {fitted.slope:.3f}\n"
+                  f"      intercept: {fitted.intercept:.3f}\n")
         print(f"  {DIM}Expect far fewer tips afterwards, and treat that as the "
               f"point rather than a fault: an edge that only existed because "
               f"the probability was too high should stop being advised.{RESET}")
@@ -811,6 +817,35 @@ def cmd_calibrate(args) -> int:
               f"{before_z:+.2f}. Leave the identity in place; a wrong "
               f"correction is worse than none.")
     return 0
+
+
+def _write_local_calibration(fitted) -> None:
+    """Store the fit beside the settings, not in them.
+
+    A calibration is a fact about one database's record, not about the code.
+    The local file is git-ignored, so it survives a pull and never travels to
+    anyone whose model has a different fault — or none.
+    """
+    import yaml
+
+    from .config import CONFIG_DIR
+
+    path = CONFIG_DIR / "settings.local.yaml"
+    data = {}
+    if path.exists():
+        with open(path) as fh:
+            data = yaml.safe_load(fh) or {}
+    data.setdefault("model", {})["calibration"] = {
+        "slope": round(fitted.slope, 4),
+        "intercept": round(fitted.intercept, 4),
+    }
+    header = (
+        "# Settings for THIS database, merged over config/settings.yaml.\n"
+        "# Written by `vb calibrate --apply`. Git-ignored on purpose: a\n"
+        "# calibration is fitted on one betting record and is wrong applied\n"
+        "# to another. Re-fit as more football accumulates.\n"
+    )
+    path.write_text(header + yaml.safe_dump(data, sort_keys=True))
 
 
 def cmd_outlook(args) -> int:
@@ -1269,6 +1304,8 @@ def build_parser() -> argparse.ArgumentParser:
               "fit the over-confidence correction and test it on unseen bets")
     cal.add_argument("--season", help='a season, or "all" (the default)')
     cal.add_argument("--warmup", type=int, default=8)
+    cal.add_argument("--apply", action="store_true",
+                     help="write the fit to config/settings.local.yaml")
 
     why = add("why", cmd_why,
               "account for every price: what was tipped and what stopped it")

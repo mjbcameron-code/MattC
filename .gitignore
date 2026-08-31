@@ -17,3 +17,6 @@ betting/data/cache/
 betting/data/*.csv
 betting/reports/
 .pytest_cache/
+
+# Fitted calibration and any other per-database override.
+betting/config/settings.local.yaml

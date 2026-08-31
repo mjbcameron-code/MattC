@@ -105,10 +105,38 @@ def load_leagues() -> dict[str, League]:
     return out
 
 
+def _merge(base: dict, over: dict) -> dict:
+    """Deep-merge `over` onto `base`, leaf by leaf."""
+    out = dict(base)
+    for key, value in (over or {}).items():
+        if isinstance(value, dict) and isinstance(out.get(key), dict):
+            out[key] = _merge(out[key], value)
+        else:
+            out[key] = value
+    return out
+
+
 @lru_cache(maxsize=1)
 def load_settings() -> Settings:
+    """settings.yaml, with settings.local.yaml merged over it if it exists.
+
+    The local file holds what is true of *this* database rather than of the
+    code — above all the calibration correction, which is fitted on one
+    person's betting record and would be wrong applied anywhere else. Shipping
+    a fitted constant as a default proves it: drop this database's numbers into
+    settings.yaml and the demo, whose generator is honest by construction, is
+    corrected for a fault it does not have and advises nothing at all.
+
+    It is in .gitignore, so a fitted correction survives a pull and never
+    reaches a commit.
+    """
     with open(CONFIG_DIR / "settings.yaml") as fh:
-        return Settings(yaml.safe_load(fh))
+        data = yaml.safe_load(fh)
+    local = CONFIG_DIR / "settings.local.yaml"
+    if local.exists():
+        with open(local) as fh:
+            data = _merge(data, yaml.safe_load(fh) or {})
+    return Settings(data)
 
 
 def enabled_leagues() -> list[League]:
