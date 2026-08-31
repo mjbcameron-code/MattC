@@ -731,6 +731,20 @@ def _run_backtest(db_path, args) -> int:
     print(f"  {colour}{s.pnl:+.2f} pts{RESET}  ROI {s.roi:+.1%} "
           f"± {s.roi_stderr:.1%}  strike {s.strike_rate:.1%}"
           f"  avg price {s.average_odds:.2f}")
+    # Thin and concentrated samples need saying regardless of the error bar.
+    # Seventeen bets returning +60.9% ± 22.6% clears two standard errors and
+    # means nothing: the normal approximation is unreliable at that size, one
+    # accumulator supplied 27% of the profit, and every threshold in the engine
+    # was tuned while looking at these same seasons. That combination is how a
+    # backtest congratulates you.
+    if 0 < s.settled < 50:
+        print(f"  {DIM}Only {s.settled} bets. Too few for the ROI to mean "
+              f"anything, error bar or not — and the thresholds that selected "
+              f"them were tuned on this same record.{RESET}")
+    if s.top_bet_share > 0.25 and s.settled > 1:
+        print(f"  {DIM}One bet supplied {s.top_bet_share:.0%} of that profit. "
+              f"A headline resting on a single result is not a record of a "
+              f"method.{RESET}")
     if s.roi_stderr and abs(s.roi) < 2 * s.roi_stderr:
         # Long odds make profit and loss a very noisy measure. Saying so is the
         # difference between "this loses money" and "this cannot yet be told
@@ -864,7 +878,19 @@ def cmd_calibrate(args) -> int:
     if abs(after_z) < abs(before_z):
         print(f"\n  The correction helps out of sample.")
         if args.apply:
-            _write_local_calibration(fitted)
+            # Validated on the half it never saw; now fit the number that will
+            # actually be used on the whole record. The split exists to test
+            # whether the correction generalises, not to throw away half the
+            # evidence once it has.
+            everything = calibrate.fit(
+                [(p, won) for _, p, won in graded],
+                shift_only=fitted.slope == 1.0)
+            if everything.raises_anywhere():
+                everything = calibrate.fit(
+                    [(p, won) for _, p, won in graded], shift_only=True)
+            print(f"  Refitted on all {everything.bets} bets: "
+                  f"{everything.slope:.3f} x logit(p) {everything.intercept:+.3f}")
+            _write_local_calibration(everything)
             print(f"  Written to config/settings.local.yaml. It applies from "
                   f"the next card and survives a `git pull`.")
         else:

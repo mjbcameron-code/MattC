@@ -36,6 +36,9 @@ class Summary:
     #: support: at these prices the noise is wider than any edge a
     #: model of this kind could plausibly have.
     roi_stderr: float = 0.0
+    #: The largest single contribution to the profit, as a share of it.
+    #: A headline resting on one bet is not a record of a method.
+    top_bet_share: float = 0.0
     clv_measured: int = 0
     clv_average: float = 0.0
     clv_beat_rate: float = 0.0
@@ -128,6 +131,8 @@ def summarise(conn: sqlite3.Connection, season_start: str | None = None,
         summary.average_odds = odds_total / stake_total
         summary.average_edge = edge_total / stake_total
         summary.average_stake = stake_total / summary.settled if summary.settled else 0.0
+    if pnls and summary.pnl:
+        summary.top_bet_share = max(abs(v) for v in pnls) / abs(summary.pnl)
     if len(pnls) > 1 and summary.staked:
         mean = sum(pnls) / len(pnls)
         variance = sum((v - mean) ** 2 for v in pnls) / (len(pnls) - 1)

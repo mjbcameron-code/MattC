@@ -296,3 +296,36 @@ def test_a_price_we_invented_does_not_count_as_a_measurement(conn):
     assert everything.settled == 20 and measured.settled == 10
     assert measured.pnl > everything.pnl, "the invented bets must be excluded"
     assert measured.staked == 10.0
+
+
+def test_a_headline_resting_on_one_bet_is_flagged(conn):
+    """+60.9% ROI over 17 bets, 27% of it from a single accumulator.
+
+    That clears two standard errors and still means nothing, so the error bar
+    alone is not enough of a warning.
+    """
+    from vb.track import metrics
+
+    for i in range(16):
+        _settled_bet(conn, f"N{i:03d}", 2.0, won=(i % 2 == 0))
+    _settled_bet(conn, "BIG", 12.0, won=True)
+    conn.commit()
+
+    summary = metrics.summarise(conn)
+    assert summary.settled == 17
+    assert summary.top_bet_share > 0.25, summary.top_bet_share
+
+
+def test_a_broad_record_is_not_flagged(conn):
+    from vb.track import metrics
+
+    for i in range(80):
+        _settled_bet(conn, f"B{i:03d}", 2.0, won=(i % 2 == 0))
+    conn.commit()
+    assert metrics.summarise(conn).top_bet_share < 0.25
+
+
+def test_no_share_is_claimed_when_nothing_was_won_or_lost(conn):
+    from vb.track import metrics
+
+    assert metrics.summarise(conn).top_bet_share == 0.0
