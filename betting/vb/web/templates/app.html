@@ -111,6 +111,7 @@ button[disabled]{opacity:.5;cursor:not-allowed}
 .funnel summary{display:flex;justify-content:space-between;align-items:baseline;
   gap:12px;padding:9px 2px;cursor:pointer;list-style:none}
 .funnel summary::-webkit-details-marker{display:none}
+.funnel.flat{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:9px 2px 9px 22px}
 .funnel summary::before{content:"\25B8";color:var(--muted);font-size:11px;
   margin-right:8px;transition:transform .12s}
 .funnel[open] summary::before{transform:rotate(90deg);display:inline-block}
@@ -319,11 +320,19 @@ td.n,th.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-
     </p>
     {% endif %}
     {% for league in coverage %}
+    {% if league.absent %}
+    {# One line of detail, so hiding it behind a disclosure triangle is friction
+       rather than tidiness. The whole point of the row is the reason. #}
+    <div class="funnel flat">
+      <span class="fname">{{ league.name }}</span>
+      <span class="fmeta"><span class="none">{{ league.reasons[0].reason }}</span></span>
+    </div>
+    {% else %}
     <details class="funnel">
       <summary>
         <span class="fname">{{ league.name }}</span>
         <span class="fmeta">
-          {%- if league.absent %}<span class="none">not scanned</span>
+          {%- if false %}
           {%- else %}{{ league.considered }} prices &middot;
           {% if league.tipped %}<strong>{{ league.tipped }} tipped</strong>
           {% else %}<span class="none">none tipped</span>{% endif %}{% endif %}</span>
@@ -361,6 +370,7 @@ td.n,th.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-
       </table>
       {% endif %}
     </details>
+    {% endif %}
     {% else %}
     <p class="prose" style="color:var(--muted)">
       No account yet — press <strong>Build the card</strong> and it will be

@@ -303,8 +303,11 @@ def test_a_league_with_no_fixtures_is_named_rather_than_omitted(conn, loaded_app
 
     body = client.get("/").get_data(as_text=True)
     # The fixture only generates E2, so every other enabled league is absent.
+    # The reason reads on the row itself, not behind a disclosure triangle.
     assert "no fixtures in the next 7 days" in body
-    assert "not scanned" in body
+    head, _, _ = body.partition("no fixtures in the next 7 days")
+    assert "<details" not in head.rsplit("funnel", 1)[-1], \
+        "a one-line reason must not be hidden behind an expander"
     # And a league that was scanned still reports normally.
     assert "prices" in body
     assert "saved by an older version" not in body
@@ -319,6 +322,7 @@ def test_with_no_scan_at_all_it_asks_for_one(conn, loaded_app, client):
     body = client.get("/").get_data(as_text=True)
     assert "Build the card" in body
     assert "no fixtures in the next 7 days" not in body
+    assert "not scanned" not in body
 
 
 def test_a_scanned_league_is_not_marked_absent(conn, loaded_app, client):
