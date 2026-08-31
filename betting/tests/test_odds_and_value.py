@@ -208,3 +208,67 @@ def test_an_older_single_value_weight_record_still_loads():
         '"setup": {"EC": {"weight": 0.35, "matches_seen": 95}}}')
     summary = back.weight("EC")
     assert summary["fixtures"] == 1 and summary["weight_mid"] == 0.35
+
+
+def _settled_bet(conn, ref: str, price: float, won: bool, stake: float = 1.0):
+    """One graded bet, with every column the schema insists on."""
+    conn.execute(
+        "INSERT INTO bets (ref, placed_at, event_date, bet_type, headline, "
+        "selection, market, league_code, price, stake_pts, model_prob, edge, "
+        "reasoning, confidence, status, returned_pts, pnl_pts) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (ref, "2026-01-09", "2026-01-10", "single", f"{ref} headline",
+         "Arsenal", "h2h", "E0", price, stake, 1 / price, 0.0, "because", 3,
+         "won" if won else "lost",
+         stake * price if won else 0.0,
+         stake * (price - 1) if won else -stake))
+
+
+def test_the_roi_carries_its_own_uncertainty(conn):
+    """A headline ROI over a couple of hundred bets invites a false conclusion.
+
+    At these prices the noise is wider than any edge a model of this kind could
+    plausibly have, so the standard error has to travel with the number.
+    """
+    from vb.track import metrics
+
+    # Twenty-eight bets at 4.00, seven of them winners. Break-even at that
+    # price is a one-in-four strike, so this book is exactly level: +21, -21.
+    for i in range(28):
+        _settled_bet(conn, f"T{i:03d}", 4.0, won=(i % 4 == 0))
+    conn.commit()
+
+    summary = metrics.summarise(conn)
+    assert summary.settled == 28
+    assert summary.pnl == pytest.approx(0.0, abs=1e-9)
+    assert summary.roi == pytest.approx(0.0, abs=1e-9)
+    # Returns of +3 or -1 have a spread of about 1.76 per unit staked, so a
+    # dead-level book still carries a standard error of a third of the stake.
+    # That is the whole point: -9% over 181 bets says almost nothing.
+    assert summary.roi_stderr == pytest.approx(0.333, abs=0.01)
+
+
+def test_a_short_priced_book_is_much_less_noisy(conn):
+    """The point of the number: the same ROI means more at 1.5 than at 8.0."""
+    from vb.track import metrics
+
+    for i in range(30):
+        _settled_bet(conn, f"S{i:03d}", 1.5, won=(i % 3 != 0))
+    conn.commit()
+    tight = metrics.summarise(conn).roi_stderr
+
+    conn.execute("DELETE FROM bets")
+    for i in range(30):
+        _settled_bet(conn, f"L{i:03d}", 8.0, won=(i % 8 == 0))
+    conn.commit()
+    loose = metrics.summarise(conn).roi_stderr
+
+    assert loose > tight * 2, f"{loose:.3f} should dwarf {tight:.3f}"
+
+
+def test_no_uncertainty_is_claimed_from_a_single_bet(conn):
+    from vb.track import metrics
+
+    _settled_bet(conn, "T1", 4.0, won=True)
+    conn.commit()
+    assert metrics.summarise(conn).roi_stderr == 0.0

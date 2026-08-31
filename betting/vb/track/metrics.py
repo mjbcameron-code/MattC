@@ -31,6 +31,11 @@ class Summary:
     average_stake: float = 0.0
     average_edge: float = 0.0
     expected_pnl: float = 0.0
+    #: One standard error on the ROI. Without it a headline ROI over a
+    #: couple of hundred bets invites a conclusion the sample cannot
+    #: support: at these prices the noise is wider than any edge a
+    #: model of this kind could plausibly have.
+    roi_stderr: float = 0.0
     clv_measured: int = 0
     clv_average: float = 0.0
     clv_beat_rate: float = 0.0
@@ -67,6 +72,7 @@ def summarise(conn: sqlite3.Connection, season_start: str | None = None) -> Summ
     summary = Summary(bets=len(rows))
     odds_total = stake_total = edge_total = 0.0
     clv_values: list[float] = []
+    pnls: list[float] = []
     running = 0.0
     peak = 0.0
     streak = 0
@@ -95,6 +101,7 @@ def summarise(conn: sqlite3.Connection, season_start: str | None = None) -> Summ
             streak = streak - 1 if streak <= 0 else -1
         summary.best_run = max(summary.best_run, streak)
         summary.worst_run = min(summary.worst_run, streak)
+        pnls.append(float(row["pnl_pts"] or 0))
         if row["clv"] is not None:
             clv_values.append(float(row["clv"]))
 
@@ -107,6 +114,10 @@ def summarise(conn: sqlite3.Connection, season_start: str | None = None) -> Summ
         summary.average_odds = odds_total / stake_total
         summary.average_edge = edge_total / stake_total
         summary.average_stake = stake_total / summary.settled if summary.settled else 0.0
+    if len(pnls) > 1 and summary.staked:
+        mean = sum(pnls) / len(pnls)
+        variance = sum((v - mean) ** 2 for v in pnls) / (len(pnls) - 1)
+        summary.roi_stderr = (variance ** 0.5) * (len(pnls) ** 0.5) / summary.staked
     if clv_values:
         summary.clv_measured = len(clv_values)
         summary.clv_average = sum(clv_values) / len(clv_values)

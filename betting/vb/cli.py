@@ -680,8 +680,12 @@ def _run_backtest(db_path, args) -> int:
         def progress(cursor, n, total):
             print(f"  {cursor.date()}  {n:2d} tips  ({total} so far)", flush=True)
 
+        # "all" walks every season on file. One season is around 180 bets, and
+        # at these prices that is not enough to tell a losing engine from a
+        # break-even one — the sample is the limiting factor, not the model.
+        season = None if (args.season or "").lower() == "all" else _season(args)
         result = backtest_mod.run(
-            conn, season=_season(args),
+            conn, season=season,
             leagues=_leagues(args) if args.leagues else None,
             warmup_weeks=args.warmup, progress=progress if args.verbose else None,
         )
@@ -692,8 +696,17 @@ def _run_backtest(db_path, args) -> int:
     print(f"\n{BOLD}Backtest {result.first_date} → {result.last_date}{RESET}")
     print(f"  {result.weeks} weeks, {result.tips} bets, {s.staked:.1f} pts staked")
     colour = GREEN if s.pnl >= 0 else RED
-    print(f"  {colour}{s.pnl:+.2f} pts{RESET}  ROI {s.roi:+.1%}  strike {s.strike_rate:.1%}"
+    print(f"  {colour}{s.pnl:+.2f} pts{RESET}  ROI {s.roi:+.1%} "
+          f"± {s.roi_stderr:.1%}  strike {s.strike_rate:.1%}"
           f"  avg price {s.average_odds:.2f}")
+    if s.roi_stderr and abs(s.roi) < 2 * s.roi_stderr:
+        # Long odds make profit and loss a very noisy measure. Saying so is the
+        # difference between "this loses money" and "this cannot yet be told
+        # apart from break-even", which are different findings entirely.
+        low, high = s.roi - 2 * s.roi_stderr, s.roi + 2 * s.roi_stderr
+        print(f"  {DIM}That ROI is inside the noise: anything from {low:+.0%} "
+              f"to {high:+.0%} fits this many bets at these prices. "
+              f"Calibration and CLV are the numbers to read.{RESET}")
     # How many bets the CLV covers, not just the average. Closing line value is
     # only measurable on a single: a multiple has no one closing price to
     # compare against. So a card full of accumulators can show a healthy CLV
