@@ -643,6 +643,9 @@ def cmd_backtest(args) -> int:
             leagues=_leagues(args) if args.leagues else None,
             warmup_weeks=args.warmup, progress=progress if args.verbose else None,
         )
+    if result.note:
+        print(f"\n{BOLD}Backtest: nothing to test{RESET}\n  {result.note}")
+        return 1
     s = result.summary
     print(f"\n{BOLD}Backtest {result.first_date} → {result.last_date}{RESET}")
     print(f"  {result.weeks} weeks, {result.tips} bets, {s.staked:.1f} pts staked")

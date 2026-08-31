@@ -37,6 +37,10 @@ class BacktestResult:
     curve: list[tuple[str, float, float]] = field(default_factory=list)
     first_date: str = ""
     last_date: str = ""
+    #: Why nothing ran, when nothing ran. A backtest that walks zero weeks
+    #: prints as "0 bets, +0.00 pts, ROI +0.0%", which is the shape of a
+    #: finished run rather than of a refusal to start one.
+    note: str = ""
 
 
 def season_window(conn: sqlite3.Connection, season: str | None = None
@@ -51,6 +55,21 @@ def season_window(conn: sqlite3.Connection, season: str | None = None
         return None
     return (datetime.fromisoformat(row["first"][:19]),
             datetime.fromisoformat(row["last"][:19]))
+
+
+def seasons_available(conn: sqlite3.Connection) -> list[tuple[str, float]]:
+    """Seasons with played football, and how many weeks of it, longest first."""
+    rows = conn.execute(
+        "SELECT season, MIN(kickoff) AS first, MAX(kickoff) AS last "
+        "FROM matches WHERE status = 'played' GROUP BY season").fetchall()
+    out = []
+    for row in rows:
+        if not row["first"]:
+            continue
+        span = (datetime.fromisoformat(row["last"][:19])
+                - datetime.fromisoformat(row["first"][:19])).days / 7
+        out.append((row["season"], span))
+    return sorted(out, key=lambda pair: -pair[1])
 
 
 def run(
@@ -76,6 +95,24 @@ def run(
 
     result = BacktestResult(first_date=cursor.date().isoformat(),
                             last_date=finish.date().isoformat())
+    if cursor > finish:
+        # The warm-up is longer than the football on file. Walking zero weeks
+        # is not a result, and reporting it as one is worse than failing.
+        span = (last - first).days / 7
+        others = [f"{code} ({weeks:.0f} weeks)"
+                  for code, weeks in seasons_available(conn)
+                  if weeks > warmup_weeks + 2 and code != season]
+        if others:
+            advice = ("Try a completed season instead: --season "
+                      + ", ".join(others[:3]))
+        else:
+            advice = (f"Either lower --warmup below {span:.0f}, or wait for "
+                      f"more of the season to be played.")
+        result.note = (
+            f"{season} has {span:.0f} weeks of played football on file and the "
+            f"warm-up alone is {warmup_weeks} weeks, so there is nothing to "
+            f"walk through. Nothing was tested.\n  {advice}")
+        return result
     week = 0
     while cursor <= finish:
         sheet = build_tipsheet(

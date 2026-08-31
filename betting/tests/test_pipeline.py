@@ -397,3 +397,48 @@ def test_explain_says_when_a_result_never_arrived(loaded, tmp_path, capsys):
     assert cmd_explain(SimpleNamespace(db=str(db), team=name, market=None)) == 1
     out = capsys.readouterr().out
     assert "already kicked off" in out and "vb update" in out
+
+
+def test_a_backtest_with_no_room_to_run_refuses_instead_of_reporting_zeros(conn):
+    """Walking zero weeks is not a result.
+
+    Printed, it reads "0 bets, +0.00 pts, ROI +0.0%" — the shape of a finished
+    run rather than of one that never started. Four weeks into a season with an
+    eight week warm-up, that is exactly what came out.
+    """
+    from vb import backtest
+    from vb.sample import generate_all
+
+    generate_all(conn, season="2026/27", leagues=["E2"], seed=4)
+    result = backtest.run(conn, season="2026/27", warmup_weeks=400)
+
+    assert result.weeks == 0 and result.tips == 0
+    assert result.note, "silence about doing nothing is the bug"
+    assert "Nothing was tested" in result.note
+    assert "warm-up" in result.note
+
+
+def test_a_backtest_that_can_run_carries_no_excuse(conn):
+    from vb import backtest
+    from vb.sample import generate_all
+
+    generate_all(conn, season="2026/27", leagues=["E2"], seed=4)
+    result = backtest.run(conn, season="2026/27", warmup_weeks=2)
+    assert result.note == ""
+    assert result.weeks > 0
+
+
+def test_the_refusal_names_a_season_that_would_work(conn):
+    """The real case: four weeks into a season, with an eight week warm-up."""
+    from vb import backtest
+    from vb.sample import generate_all
+
+    generate_all(conn, season="2024/25", leagues=["E2"], seed=4)
+    generate_all(conn, season="2026/27", leagues=["E3"], seed=4)
+    conn.execute(
+        "UPDATE matches SET status = 'scheduled' WHERE season = '2026/27' "
+        "AND kickoff > datetime((SELECT MIN(kickoff) FROM matches "
+        "                        WHERE season = '2026/27'), '+21 days')")
+    result = backtest.run(conn, season="2026/27", warmup_weeks=8)
+    assert "Nothing was tested" in result.note
+    assert "2024/25" in result.note, "a season that would work has to be named"
