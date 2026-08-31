@@ -696,6 +696,7 @@ def load_injuries(
     codes = codes or [lg.code for lg in enabled_leagues()]
     counts: dict[str, int] = {}
     today = date or datetime.now().date().isoformat()
+    first_failure: str | None = None
 
     for code in codes:
         api_id = league_id(conn, code)
@@ -708,11 +709,17 @@ def load_injuries(
         except BudgetExhausted:
             client.budget.note_skip(f"{code} injuries")
             break
-        except ApiFootballError:
-            # Some plans do not serve injuries for every competition; that is a
-            # coverage limit, not a failure of the run.
-            client.budget.note_skip(f"{code} injuries (not covered)")
-            continue
+        except ApiFootballError as exc:
+            # Report what the API actually said, and stop. An earlier version
+            # labelled every failure "not covered" — a guess — and carried on
+            # through the whole list, spending a request per league to be told
+            # the same thing fourteen times.
+            first_failure = str(exc)
+            client.budget.note_skip(
+                f"{code} injuries and everything after it, because the API "
+                f"refused: {first_failure}"
+            )
+            break
 
         written = 0
         for entry in rows:
@@ -743,6 +750,12 @@ def load_injuries(
             )
             written += 1
         counts[code] = written
+    if first_failure and not any(counts.values()):
+        raise ApiFootballError(
+            f"no injury data was returned. The API said: {first_failure}. "
+            "The injuries endpoint is not included in every plan — check what "
+            "yours covers on the api-football.com dashboard."
+        )
     return counts
 
 

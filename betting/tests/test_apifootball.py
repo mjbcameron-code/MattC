@@ -437,3 +437,20 @@ def test_discovery_covers_the_ratings_only_divisions(client, monkeypatch):
     found = af.discover_leagues(client)
     assert "D2" in found, "a division we never tip still needs an id"
     assert found["D2"].api_id == 79
+
+
+def test_a_refusal_stops_the_run_instead_of_repeating_it(mapped, client, monkeypatch):
+    """One refusal means the rest will refuse too. Do not pay to find out.
+
+    The first version labelled every failure "not covered" and carried on
+    through fourteen leagues, spending a request each to be told the same
+    thing, and never showing what the API had said.
+    """
+    stub(monkeypatch, {"message": "This endpoint is not available for your plan"},
+         status=403)
+    client.budget.used_this_run = 0          # discount the mapping call
+    with pytest.raises(af.ApiFootballError) as exc:
+        af.load_injuries(mapped, client, "2026/27",
+                         codes=["E0", "E1", "E2", "E3", "EC"])
+    assert "not available for your plan" in str(exc.value), "say what the API said"
+    assert client.budget.used_this_run == 1, "one request, not one per league"

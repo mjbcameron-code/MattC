@@ -490,8 +490,14 @@ def cmd_apifootball(args) -> int:
             print(f"fixtures/results written: {sum(counts.values())} "
                   f"({', '.join(f'{k} {v}' for k, v in sorted(counts.items())) or 'none'})")
         elif args.action == "injuries":
-            counts = af.load_injuries(conn, client, season,
-                                      codes=_leagues(args) if args.leagues else None)
+            try:
+                counts = af.load_injuries(
+                    conn, client, season,
+                    codes=_leagues(args) if args.leagues else None)
+            except af.ApiFootballError as exc:
+                print(f"{RED}{exc}{RESET}")
+                print(f"\n{client.budget.describe()}")
+                return 1
             total = sum(counts.values())
             print(f"team news written: {total} absences across "
                   f"{sum(1 for v in counts.values() if v)} leagues")
