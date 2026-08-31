@@ -56,11 +56,7 @@ def fetch_text(
     except requests.RequestException as exc:
         if path.exists():
             return path.read_text(encoding="utf-8", errors="replace")
-        raise FetchError(
-            f"could not reach {url}: {exc}. If this machine sits behind a "
-            f"restrictive proxy, download the file by hand and drop it in "
-            f"{CACHE_DIR}."
-        ) from exc
+        raise FetchError(f"could not reach {_host(url)} ({_reason(exc)})") from exc
 
     if resp.status_code != 200:
         if path.exists():
@@ -84,6 +80,28 @@ def fetch_json(url: str, max_age: int = 900, params: dict | None = None,
 
     return json.loads(fetch_text(url, max_age=max_age, suffix=".json", params=params,
                                  force=force, headers_out=headers_out))
+
+
+def _host(url: str) -> str:
+    return url.split("/")[2] if "//" in url else url
+
+
+def _reason(exc: Exception) -> str:
+    """The gist of a connection failure, without the library's internals.
+
+    A wall of near-identical urllib3 tracebacks — one per league — buries the
+    single fact that matters, which is usually that one host is unreachable.
+    """
+    text = str(exc).lower()
+    if "tunnel connection failed" in text or "proxyerror" in text:
+        return "blocked by a proxy on this network"
+    if "name or service not known" in text or "nodename nor servname" in text:
+        return "no such host, or no internet connection"
+    if "timed out" in text:
+        return "timed out"
+    if "certificate" in text:
+        return "the TLS certificate was rejected"
+    return "connection failed"
 
 
 def cached_copies() -> list[Path]:

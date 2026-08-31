@@ -17,7 +17,8 @@ import json
 import sys
 
 from . import backtest as backtest_mod
-from .config import DB_PATH, enabled_leagues, load_leagues, load_settings
+from .config import (CACHE_DIR, DB_PATH, enabled_leagues, load_leagues,
+                     load_settings)
 from .db import session
 from .report import dashboard
 from .sources import footballdata, manual, understat
@@ -151,11 +152,23 @@ def cmd_update(args) -> int:
           f"{totals['prices']} live prices, {totals['xg']} xG rows"
           + (f", {totals['scores']} recent scores." if args.scores else "."))
     if problems:
+        # Group by the reason rather than listing every league separately.
+        grouped: dict[str, list[str]] = {}
+        for line in problems:
+            label, _, reason = line.partition(": ")
+            grouped.setdefault(reason or line, []).append(label)
         print(f"\n{len(problems)} source(s) could not be read:")
-        for line in problems[:12]:
-            print(f"  - {line}")
-        if len(problems) > 12:
-            print(f"  … and {len(problems) - 12} more")
+        for reason, labels in grouped.items():
+            if len(labels) == 1:
+                print(f"  - {labels[0]}: {reason}")
+            else:
+                shown = ", ".join(labels[:6])
+                more = f" and {len(labels) - 6} more" if len(labels) > 6 else ""
+                print(f"  - {reason}")
+                print(f"    affects {shown}{more}")
+        if any("proxy" in r or "no such host" in r for r in grouped):
+            print("  A file can also be downloaded by hand and dropped into "
+                  f"{CACHE_DIR}.")
     return 0
 
 
@@ -357,7 +370,42 @@ def cmd_report(args) -> int:
                                    include_outrights=False)
         path = dashboard.write(conn, args.out, sheet=sheet, synthetic=args.synthetic)
     print(f"Dashboard written to {path}")
+    if getattr(args, "open", False):
+        import webbrowser
+
+        webbrowser.open(path.resolve().as_uri())
     return 0
+
+
+def cmd_weekly(args) -> int:
+    """The whole cycle: refresh, settle last week, tip this week, open the ledger.
+
+    The individual commands exist because each one is sometimes wanted alone.
+    This is the one to run when what you actually want is "bring it up to date
+    and show me".
+    """
+    steps = [
+        ("Refreshing results, fixtures and prices", cmd_update,
+         {"leagues": None, "season": None, "history": args.history, "odds": False,
+          "no_odds": args.no_odds, "scores": False, "no_fixtures": False,
+          "fixtures_only": False, "no_xg": False, "force": False}),
+        ("Settling anything whose result is in", cmd_settle,
+         {"fetch": not args.no_odds, "season": None}),
+    ]
+    for title, func, extra in steps:
+        print(f"\n{BOLD}{title}…{RESET}")
+        func(argparse.Namespace(db=args.db, **extra))
+
+    print(f"\n{BOLD}This week's card{RESET}")
+    tips_args = argparse.Namespace(
+        db=args.db, days=args.days, leagues=None, season=None,
+        record=not args.dry_run, no_outrights=False, json=False)
+    cmd_tips(tips_args)
+
+    print(f"\n{BOLD}Building the dashboard{RESET}")
+    return cmd_report(argparse.Namespace(
+        db=args.db, out=args.out, days=args.days, season=None, no_tips=False,
+        synthetic=False, open=not args.no_open))
 
 
 def cmd_ledger(args) -> int:
@@ -867,6 +915,18 @@ def build_parser() -> argparse.ArgumentParser:
     report.add_argument("--season")
     report.add_argument("--no-tips", action="store_true")
     report.add_argument("--synthetic", action="store_true")
+    report.add_argument("--open", action="store_true",
+                        help="open the dashboard in your browser when it is built")
+
+    weekly = add("weekly", cmd_weekly,
+                 "the whole cycle: refresh, settle, tip, open the dashboard")
+    weekly.add_argument("--days", type=int, default=7)
+    weekly.add_argument("--history", type=int, default=3)
+    weekly.add_argument("--out")
+    weekly.add_argument("--dry-run", action="store_true",
+                        help="show the card without writing it to the ledger")
+    weekly.add_argument("--no-odds", action="store_true")
+    weekly.add_argument("--no-open", action="store_true")
 
     led = add("ledger", cmd_ledger, "print the bet ledger")
     led.add_argument("--limit", type=int, default=40)

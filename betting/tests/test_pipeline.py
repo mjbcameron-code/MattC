@@ -170,3 +170,46 @@ def test_a_real_misspelling_is_still_caught(conn, capsys):
     out = capsys.readouterr().out
     assert "probably the same club as Hellas Verona" in out
     assert "spelling mismatch" in out
+
+
+def test_the_weekly_cycle_runs_end_to_end(loaded, tmp_path, monkeypatch, capsys):
+    """One command has to survive every step, including a dead data source."""
+    import argparse
+
+    from vb.cli import cmd_weekly
+
+    monkeypatch.setenv("VB_REPORT_DIR", str(tmp_path))
+    monkeypatch.delenv("ODDS_API_KEY", raising=False)
+    loaded.commit()
+    path = loaded.execute("PRAGMA database_list").fetchone()["file"]
+
+    status = cmd_weekly(argparse.Namespace(
+        db=path, days=7, history=1, out=str(tmp_path / "dash.html"),
+        dry_run=True, no_odds=True, no_open=True))
+    assert status == 0
+    out = capsys.readouterr().out
+    assert "THE CARD" in out
+    assert (tmp_path / "dash.html").exists()
+
+
+def test_one_dead_host_is_reported_once_not_per_league(capsys, tmp_path,
+                                                       monkeypatch):
+    """A wall of identical tracebacks buries the single fact that matters."""
+    import argparse
+
+    from vb.cli import cmd_update
+    from vb.sources import footballdata, http
+
+    def refuse(*args, **kwargs):
+        raise http.FetchError("could not reach www.football-data.co.uk "
+                              "(blocked by a proxy on this network)")
+
+    monkeypatch.setattr(footballdata, "load_season", refuse)
+    monkeypatch.setattr(footballdata, "load_fixtures", refuse)
+    cmd_update(argparse.Namespace(
+        db=str(tmp_path / "x.db"), leagues="E0,E1,E2,E3", season=None, history=1,
+        odds=False, no_odds=True, scores=False, no_fixtures=False,
+        fixtures_only=False, no_xg=True, force=False))
+    out = capsys.readouterr().out
+    assert out.count("blocked by a proxy") == 1, "the same cause, reported once"
+    assert "affects E0" in out

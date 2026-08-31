@@ -52,6 +52,25 @@ by simulation, because same-game legs are correlated and multiplying them is
 wrong), and long-term outrights — title, top four, promotion, relegation —
 priced by playing the rest of the season out several thousand times.
 
+## Using it week to week
+
+Two files in this folder are double-clickable on a Mac:
+
+* **Betting Tips** — refreshes the data, settles last week's bets, produces this
+  week's card and opens the ledger in your browser. This is the one to run.
+* **Betting Dashboard** — opens the ledger without fetching anything, for when
+  you just want to look at the record.
+
+The same thing from a terminal, if you prefer:
+
+```bash
+python3 -m vb weekly            # the whole cycle, then opens the dashboard
+python3 -m vb report --open     # just look at the ledger
+```
+
+Everything the cycle does is available as its own command — `update`, `tips`,
+`settle`, `report` — for when you want one step rather than all of them.
+
 ## Getting started
 
 ```bash
@@ -146,6 +165,7 @@ keeps saying 65% and getting 55%, lower the `market_blend` weights in
 
 | Command | What it does |
 |---|---|
+| `vb weekly` | the whole cycle: refresh, settle, tip, open the dashboard |
 | `vb update` | pull results, fixtures, opening prices and xG (`--scores` for same-day results) |
 | `vb tips` | this week's card (`--record` to write it to the ledger) |
 | `vb settle` | grade everything whose result is in (`--fetch` pulls results first) |
