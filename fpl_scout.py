@@ -18,6 +18,13 @@ from __future__ import annotations
 
 import argparse
 import sys
+
+if sys.version_info < (3, 9):  # pragma: no cover - guard for old interpreters
+    sys.exit(
+        f"FPL Scout needs Python 3.9 or newer; this is "
+        f"{sys.version_info.major}.{sys.version_info.minor}.\n"
+        "On macOS, try python3.11 or install a newer Python from python.org."
+    )
 import webbrowser
 from pathlib import Path
 
