@@ -45,6 +45,10 @@ RAPID_BASE = "https://api-football-v1.p.rapidapi.com/v3"
 RAPID_HOST = "api-football-v1.p.rapidapi.com"
 USER_AGENT = "value-bets/1.0 (personal betting research)"
 
+# What .env.example ships with. Someone copying the file and forgetting to edit
+# it produces a key-shaped string that is not a key.
+PLACEHOLDER_VALUES = {"paste-your-key-here", "your-key-here", "changeme", ""}
+
 LEAGUE_MAP_KEY = "apifootball.league_map"
 BUDGET_KEY = "apifootball.budget"
 
@@ -145,6 +149,13 @@ class Client:
             )
         self.budget = budget or Budget()
         self.timeout = timeout
+        self.key_source = "the environment" if _key_from_environment() else ".env"
+        if self.key.lower() in PLACEHOLDER_VALUES:
+            raise MissingKey(
+                f"API_FOOTBALL_KEY is still the placeholder from .env.example "
+                f"({self.key!r}). Open .env and replace it with the key from your "
+                "api-football.com dashboard."
+            )
         self.forced = via in ("direct", "rapidapi")
         if self.forced:
             self.via_rapidapi = via == "rapidapi"
@@ -152,6 +163,21 @@ class Client:
             self.via_rapidapi = _looks_like_rapidapi(self.key)
         self.base = RAPID_BASE if self.via_rapidapi else DIRECT_BASE
         self.last_errors: list[str] = []
+
+    def key_fingerprint(self) -> str:
+        """Enough of the key to recognise it, not enough to use it.
+
+        The commonest cause of a rejected key is the file holding a different
+        one from the dashboard — an old key after regenerating, a half-paste, a
+        stray character. Showing the first and last few characters and the
+        length settles that in a glance, and is safe to share when asking for
+        help.
+        """
+        key = self.key
+        shape = f"{len(key)} characters, from {self.key_source}"
+        if len(key) < 12:
+            return f"{key[:2]}… ({shape}) — that looks too short"
+        return f"{key[:4]}…{key[-4:]} ({shape})"
 
     @property
     def shopfront(self) -> str:
@@ -800,7 +826,25 @@ def check(conn: sqlite3.Connection, client: Client, season: str,
     Two requests. The output is designed to be pasted back to someone helping
     you: it names competitions, counts and errors, and contains no credential.
     """
-    report: dict[str, Any] = {"shopfront": client.shopfront, "errors": []}
+    report: dict[str, Any] = {
+        "shopfront": client.shopfront,
+        "key": client.key_fingerprint(),
+        "errors": [],
+    }
+    # A direct key is 32 hex characters; a RapidAPI one is much longer. A
+    # mismatch here explains a rejection before any request is made.
+    if not client.via_rapidapi and len(client.key) != 32:
+        report["key_warning"] = (
+            f"a direct api-football.com key is normally 32 characters, and this "
+            f"one is {len(client.key)} — check .env for a partial paste or extra "
+            "characters"
+        )
+    elif client.via_rapidapi and len(client.key) < 40:
+        report["key_warning"] = (
+            f"a RapidAPI key is normally 50 characters or so, and this one is "
+            f"{len(client.key)} — it looks like a direct api-football.com key, so "
+            "try --via direct"
+        )
 
     try:
         status = client.status()
@@ -857,3 +901,16 @@ def matches_needing_statistics(
     sql += " ORDER BY match_date DESC LIMIT ?"
     params.append(int(limit))
     return [(r["id"], r["api_fixture_id"]) for r in conn.execute(sql, params)]
+
+
+def _key_from_environment() -> bool:
+    """True when the key came from a real environment variable, not the file.
+
+    Worth reporting: a stale `export` in a shell profile silently overrides an
+    updated .env, and that is a confusing half-hour if you cannot see it.
+    """
+    import os
+
+    from ..config import ENV_LOADED
+
+    return bool(os.environ.get("API_FOOTBALL_KEY")) and "API_FOOTBALL_KEY" not in ENV_LOADED

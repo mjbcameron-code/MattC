@@ -396,3 +396,36 @@ def test_a_forced_shopfront_is_labelled_as_forced(monkeypatch):
     monkeypatch.setenv("API_FOOTBALL_KEY", "short-direct-key-123456")
     assert "forced" in af.Client(via="rapidapi").shopfront
     assert "forced" not in af.Client().shopfront
+
+
+# --- telling the user which key is actually being used ---------------------
+def test_the_fingerprint_shows_enough_to_recognise_but_not_to_use(monkeypatch):
+    monkeypatch.setenv("API_FOOTBALL_KEY", "14850bb134783e29592b004ed66df647")
+    client = af.Client()
+    printed = client.key_fingerprint()
+    assert "1485" in printed and "f647" in printed
+    assert "32 characters" in printed
+    assert client.key not in printed, "the whole key must never be printed"
+
+
+def test_a_short_key_is_called_out(monkeypatch):
+    monkeypatch.setenv("API_FOOTBALL_KEY", "abc123")
+    assert "too short" in af.Client().key_fingerprint()
+
+
+def test_the_placeholder_is_rejected_before_any_request(monkeypatch):
+    """Copying .env.example and forgetting to edit it is an easy miss."""
+    monkeypatch.setenv("API_FOOTBALL_KEY", "paste-your-key-here")
+    with pytest.raises(af.MissingKey) as exc:
+        af.Client()
+    assert "placeholder" in str(exc.value)
+
+
+def test_a_wrong_length_key_is_flagged_before_it_is_blamed(conn, monkeypatch):
+    """A 20-character "direct" key explains itself without a round trip."""
+    monkeypatch.setenv("API_FOOTBALL_KEY", "far-too-short-abc123")
+    client = af.Client(via="direct")
+    stub(monkeypatch, envelope([{"subscription": {"plan": "Free"}}]))
+    monkeypatch.setattr(af, "discover_leagues", lambda *a, **k: {})
+    report = af.check(conn, client, "2026/27")
+    assert "32 characters" in report["key_warning"]

@@ -452,6 +452,9 @@ def cmd_apifootball(args) -> int:
             report = af.check(conn, client, season)
             print(f"\n{BOLD}API-Football{RESET}")
             print(f"  shopfront          : {report['shopfront']}")
+            print(f"  key in use         : {report['key']}")
+            if report.get("key_warning"):
+                print(f"  {RED}{report['key_warning']}{RESET}")
             if not report.get("ok"):
                 for line in report["errors"]:
                     print(f"  {RED}{line}{RESET}")
