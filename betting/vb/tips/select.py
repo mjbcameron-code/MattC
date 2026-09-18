@@ -63,6 +63,8 @@ class Tip:
     raw_selection: str = ""
     raw_line: float | None = None
     subject: str | None = None
+    #: On the card to fill a minimum, not because the engine rates it as value.
+    below_bar: bool = False
 
     @property
     def fair_price(self) -> float:
@@ -169,46 +171,71 @@ def choose_singles(candidates: list[Candidate], settings=None,
     long_signals = int(settings.get("selection.longshots.min_signals", 3))
     max_tips = int(settings.get("selection.max_tips_per_week", 12))
     max_per_league = int(settings.get("selection.max_tips_per_league", 3))
+    # A card is topped up to this many even on a weekend when nothing clears
+    # the bar. What gets added is not value and is labelled so on the tip: it
+    # is the best of what was on offer, staked at the minimum.
+    min_card = int(settings.get("selection.min_card", 0))
 
-    eligible = []
+    qualifying: list[Candidate] = []
+    shortlist: list[Candidate] = []
     for candidate in candidates:
+        if candidate.below_bar:
+            shortlist.append(candidate)
+            continue
         needed = long_signals if candidate.longshot else min_signals
         if _passes_evidence(candidate, needed):
-            eligible.append(candidate)
+            qualifying.append(candidate)
         elif trace is not None:
             trace.note(candidate.league_code,
                        "longshot without enough corroboration"
                        if candidate.longshot else "not enough supporting signals")
-    eligible.sort(key=_score, reverse=True)
+    qualifying.sort(key=_score, reverse=True)
+    # Ranked by the same score, so a near miss with form and team news behind it
+    # is preferred to a bare number. The signals minimum is not applied: it
+    # would leave the card empty again, which is the thing being fixed.
+    shortlist.sort(key=_score, reverse=True)
 
     chosen: list[Candidate] = []
     per_league: dict[str, int] = {}
     seen_family: set[tuple[int, str]] = set()
     seen_match: dict[int, int] = {}
-    for candidate in eligible:
+
+    def take(candidate: Candidate, reason: str) -> bool:
+        """Apply the spread rules, and record the outcome either way."""
         league_code = candidate.league_code
         family = MARKET_FAMILY.get(candidate.market, candidate.market)
         key = (candidate.fixture.match_id, family)
         if key in seen_family:
             if trace is not None:
                 trace.note(league_code, "same angle already taken")
-            continue
+            return False
         if seen_match.get(candidate.fixture.match_id, 0) >= 2:
             if trace is not None:
                 trace.note(league_code, "two bets on that match already")
-            continue
+            return False
         if per_league.get(league_code, 0) >= max_per_league:
             if trace is not None:
                 trace.note(league_code, "league is already at its cap")
-            continue
+            return False
         chosen.append(candidate)
         if trace is not None:
-            trace.note(league_code, "tipped")
+            trace.note(league_code, reason)
         seen_family.add(key)
-        seen_match[candidate.fixture.match_id] = seen_match.get(candidate.fixture.match_id, 0) + 1
+        seen_match[candidate.fixture.match_id] = (
+            seen_match.get(candidate.fixture.match_id, 0) + 1)
         per_league[league_code] = per_league.get(league_code, 0) + 1
+        return True
+
+    for candidate in qualifying:
+        take(candidate, "tipped")
         if len(chosen) >= max_tips:
-            break
+            return chosen
+
+    for candidate in shortlist:
+        if len(chosen) >= min_card or not take(
+                candidate, "shortlisted to fill the card"):
+            if trace is not None and len(chosen) >= min_card:
+                trace.note(candidate.league_code, "not needed to fill the card")
     return chosen
 
 
@@ -228,8 +255,14 @@ def _candidate_to_tip(candidate: Candidate, ref: str, prefix: str = "") -> Tip:
         confidence=candidate.confidence(),
         headline_prefix=prefix,
     )
+    if candidate.below_bar:
+        body = (
+            "Not a value bet. This one did not clear the bar; it is here to "
+            "fill a card you asked never to come back empty. Best of what was "
+            "left, staked at the minimum, and worth no more confidence than "
+            "that. " + body)
     return Tip(
-        ref=ref, kind="single",
+        ref=ref, kind="single", below_bar=candidate.below_bar,
         headline=f"{candidate.fixture.label} — {headline}",
         body=body,
         selection=candidate.selection_text(),
@@ -262,8 +295,11 @@ def build_accumulators(candidates: list[Candidate], settings=None,
     max_stake = float(settings.get("accumulator.max_stake_pts", 1.0))
     haircut = float(settings.get("accumulator.leg_haircut", 0.04))
 
+    # Never a shortlisted leg. An accumulator multiplies the model's error once
+    # per leg, so a leg the model does not rate is the last thing to fold in.
     pool = [c for c in candidates
-            if c.blended_prob >= min_leg_prob and c.edge > 0.02]
+            if not c.below_bar and c.blended_prob >= min_leg_prob
+            and c.edge > 0.02]
     pool.sort(key=_score, reverse=True)
 
     # One leg per match, best first.
@@ -375,6 +411,8 @@ def build_builders(
     # Only build on fixtures we already like for a reason.
     by_match: dict[int, list[Candidate]] = {}
     for candidate in candidates:
+        if candidate.below_bar:
+            continue
         by_match.setdefault(candidate.fixture.match_id, []).append(candidate)
 
     ranked = sorted(

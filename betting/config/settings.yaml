@@ -48,6 +48,17 @@ selection:
     min_signals: 3          # against two: the "good reason" has to exist
     max_stake_pts: 0.5      # small, always, whatever the arithmetic says
   min_model_prob: 0.05      # ignore lottery tickets the model barely rates
+  # Never hand back a blank page. When nothing clears the bar, the card is
+  # topped up to this many with the best of what was on offer — ranked by the
+  # same score, staked at the minimum, and each one saying on its face that it
+  # is not a value bet. Set to 0 to go back to showing only genuine value.
+  #
+  # Understand what this costs. Those selections go into the ledger as advice,
+  # so they count in the tipping record and will drag it toward the house edge
+  # over time. That is the honest price of a card that is never empty, and it
+  # is much cheaper than the alternative of lowering min_edge, which would put
+  # the same bets up while calling them value.
+  min_card: 3
   max_tips_per_week: 12
   max_tips_per_league: 3
   # A bet needs this many "supporting signals" (form, xG trend, team news,

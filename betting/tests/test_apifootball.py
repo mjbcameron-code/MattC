@@ -6,9 +6,17 @@ specification of what the code expects rather than proof the API agrees — whic
 is exactly why `vb apifootball check` exists, and why the parsing is defensive.
 """
 
+from datetime import datetime, timedelta
+
 import pytest
 
 from vb.sources import apifootball as af
+
+
+# Within the fourteen-day window matches_needing_statistics looks at. Computed
+# rather than written down: a fixed date passes in the week it is written and
+# quietly stops testing anything a fortnight later.
+RECENT = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%dT15:00:00")
 
 
 class FakeResponse:
@@ -342,7 +350,7 @@ def test_news_about_a_match_already_played_is_ignored(mapped, client, monkeypatc
 def test_statistics_land_in_the_right_columns(mapped, client, monkeypatch):
     from vb.repo import upsert_match
 
-    match_id = upsert_match(mapped, "E0", "2026/27", "2026-08-29T14:00:00",
+    match_id = upsert_match(mapped, "E0", "2026/27", RECENT,
                             "Liverpool", "Nottingham Forest", fthg=2, ftag=1,
                             api_fixture_id=1001, source="api-football")
     stub(monkeypatch, envelope([
@@ -368,13 +376,13 @@ def test_statistics_land_in_the_right_columns(mapped, client, monkeypatch):
 def test_only_matches_with_a_fixture_id_and_no_stats_are_queued(mapped):
     from vb.repo import upsert_match
 
-    wanted = upsert_match(mapped, "E0", "2026/27", "2026-08-29T14:00:00",
+    wanted = upsert_match(mapped, "E0", "2026/27", RECENT,
                           "Alpha", "Beta", fthg=1, ftag=0, api_fixture_id=5001,
                           source="api-football")
-    upsert_match(mapped, "E0", "2026/27", "2026-08-29T14:00:00", "Gamma", "Delta",
+    upsert_match(mapped, "E0", "2026/27", RECENT, "Gamma", "Delta",
                  fthg=1, ftag=0, hst=4, ast=2, api_fixture_id=5002,
                  source="api-football")          # already has shots
-    upsert_match(mapped, "E0", "2026/27", "2026-08-29T14:00:00", "Epsilon", "Zeta",
+    upsert_match(mapped, "E0", "2026/27", RECENT, "Epsilon", "Zeta",
                  fthg=1, ftag=0, source="football-data")   # no fixture id
     queued = af.matches_needing_statistics(mapped)
     assert [m for m, _ in queued] == [wanted]

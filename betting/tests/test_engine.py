@@ -101,7 +101,34 @@ def test_fair_prices_produce_no_bets(league):
             upsert_odds(league, fixture.match_id, book, "totals", selection, price,
                         2.5, taken_at="2020-01-01")
 
-    assert scan_fixture(league, fixture) == []
+    from vb.config import load_settings
+
+    settings = load_settings()
+    block = settings.raw["selection"]
+    before = block.get("min_card")
+    try:
+        # The guarantee in its original form: asked only for value, the engine
+        # finds none in a fairly priced book.
+        block["min_card"] = 0
+        assert scan_fixture(league, fixture) == []
+
+        # And with a minimum card asked for, the guarantee survives in the only
+        # form it still can. Nothing here is value, so everything returned must
+        # say so and be staked at the floor. A bet that came back unlabelled
+        # would be the engine inventing value out of its own arithmetic — the
+        # exact failure this test was written to catch.
+        block["min_card"] = 3
+        for candidate in scan_fixture(league, fixture):
+            assert candidate.below_bar, (
+                f"{candidate.selection_text()} at {candidate.price} was "
+                f"returned as value against a book priced at fair odds")
+            assert candidate.edge < 0.04
+            assert candidate.stake_pts == 0.25
+    finally:
+        if before is None:
+            block.pop("min_card", None)
+        else:
+            block["min_card"] = before
 
 
 def test_a_generous_price_is_found(league):

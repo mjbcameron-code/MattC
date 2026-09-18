@@ -136,6 +136,11 @@ class Candidate:
     #: Priced above `selection.max_odds`, and admitted through the longshot
     #: lane. Carried so the discipline can ask more of it than of a normal bet.
     longshot: bool = False
+    #: Did not clear the value bar, and is on the card only because a minimum
+    #: card was asked for. Not value; the best of what a weekend offered. Kept
+    #: apart from everything else so it can never be folded into a multiple or
+    #: counted as though the engine rated it.
+    below_bar: bool = False
 
     @property
     def league_code(self) -> str:
@@ -293,6 +298,8 @@ class Trace:
         "two bets on that match already",
         "league is already at its cap",
         "tipped",
+        "shortlisted to fill the card",
+        "not needed to fill the card",
     ]
 
     #: How many near misses to keep per league.
@@ -453,6 +460,12 @@ def scan_fixture(
     unbettable = set(exchanges) | set(aggregates)
     sharp = exchanges + aggregates + ["pinnacle"]
     max_edge = float(settings.get("selection.max_edge", 0.25))
+    # Keep the near misses so a card can be filled on a weekend when nothing
+    # clears the bar. The alternative — lowering min_edge until something
+    # appears — would relabel the same bets as value, which is worse than
+    # showing them honestly. A shortlisted price must at least be break-even on
+    # the model's own numbers; below that it is not the best of anything.
+    shortlist = int(settings.get("selection.min_card", 0)) > 0
     # The longshot lane. Above max_odds the ordinary rules stop making sense
     # together — a two-point probability edge at 12.5 already implies the 25%
     # expected value that max_edge calls a data fault — so a price out there
@@ -570,10 +583,16 @@ def scan_fixture(
                     + f" at {quote.price:.2f}")
             floor_edge = long_min_edge if longshot else min_edge
             floor_prob = long_prob_edge if longshot else min_prob_edge
+            below_bar = False
             if expected_value < floor_edge:
-                drop("longshot without enough edge" if longshot
-                     else "edge below the minimum")
-                continue
+                # Longshots are never shortlisted. Their whole justification is
+                # a fat edge paying for an unreliable probability, and without
+                # the edge there is nothing left holding them up.
+                if not (shortlist and not longshot and expected_value >= 0):
+                    drop("longshot without enough edge" if longshot
+                         else "edge below the minimum")
+                    continue
+                below_bar = True
             if expected_value > max_edge:
                 # An edge this size on a real market is almost always a fault in
                 # the data — a mis-mapped line, a one-sided book, a stale price —
@@ -590,7 +609,7 @@ def scan_fixture(
             # Dividing by the price converts the expected value back into
             # probability points, pushes included:
             #     EV / price = p_win - (1 - p_push) / price
-            if expected_value / quote.price < floor_prob:
+            if not below_bar and expected_value / quote.price < floor_prob:
                 drop("edge too thin in probability")
                 continue
 
@@ -598,12 +617,18 @@ def scan_fixture(
                 blended * (1 - push_prob) if push_prob else blended,
                 quote.price, push_prob,
             )
-            stake = fraction * kelly_frac * bankroll
-            ceiling = min(max_stake, long_stake) if longshot else max_stake
-            stake = min(ceiling, round(stake / step) * step)
-            if stake < min_stake:
-                drop("stake rounds below the minimum")
-                continue
+            if below_bar:
+                # The smallest stake there is. Kelly on a bet with no edge
+                # returns nothing to stake, which is the correct answer and not
+                # a usable one once a card has to be filled.
+                stake = min_stake
+            else:
+                stake = fraction * kelly_frac * bankroll
+                ceiling = min(max_stake, long_stake) if longshot else max_stake
+                stake = min(ceiling, round(stake / step) * step)
+                if stake < min_stake:
+                    drop("stake rounds below the minimum")
+                    continue
 
             candidate = Candidate(
                 fixture=fixture, market=market, selection=sel, line=line,
@@ -612,7 +637,7 @@ def scan_fixture(
                 blended_prob=blended, edge=expected_value, kelly=fraction,
                 stake_pts=stake, push_prob=push_prob, subject=subject,
                 books_seen=len({q.bookmaker for q in quotes}),
-                longshot=longshot,
+                longshot=longshot, below_bar=below_bar,
             )
             candidate.signals = candidate.supporting_signals()
             candidate.blend_weight = weight

@@ -123,11 +123,21 @@ def test_the_trace_funnel_adds_up(conn):
         # The pricing stage accounts for every price exactly once.
         assert trace.total(code) == sum(
             counts.get(r, 0) for r in Trace.ORDER[:cut]) + priced
-        # And the discipline stage is a partition of what pricing let through.
+        # And the discipline stage is a partition of what pricing let through:
+        # every candidate is tipped, shortlisted, turned down, or recorded as
+        # not needed once the card was full.
         assert sum(counts.get(r, 0) for r in Trace.ORDER[cut + 1:]) == priced
 
-    assert sum(dict(trace.rows(c)).get("tipped", 0)
-               for c in trace.leagues()) == len(chosen)
+    # A card can hold two kinds of thing: bets the engine rates, and the near
+    # misses it was asked to show anyway. Both are on it, so both are counted.
+    on_the_card = sum(
+        dict(trace.rows(c)).get("tipped", 0)
+        + dict(trace.rows(c)).get("shortlisted to fill the card", 0)
+        for c in trace.leagues())
+    assert on_the_card == len(chosen)
+    assert sum(1 for c in chosen if c.below_bar) == sum(
+        dict(trace.rows(c)).get("shortlisted to fill the card", 0)
+        for c in trace.leagues())
     assert sum(dict(trace.rows(c)).get("priced up", 0)
                for c in trace.leagues()) == len(candidates)
 

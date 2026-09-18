@@ -340,6 +340,12 @@ Worth knowing before you stake anything:
   National League has the loosest markets and the thinnest data. Those two pull
   in opposite directions, and the blend weights are a guess at the balance —
   check them against a backtest rather than trusting them.
+- **A card that is never empty costs something.** `selection.min_card` tops the
+  card up with the best of what was on offer when nothing clears the value bar.
+  Those selections say so on their face and are staked at the floor, but they
+  go into the ledger as advice, so over time they pull the tipping record
+  toward the house edge. Set it to 0 if you would rather see only genuine
+  value and accept blank weekends.
 - **Selection bias is real, and it has been measured.** We bet where the model
   disagrees with the market in our favour, which is exactly where our own error
   points the same way. The confidence weighting shades for it and does not
