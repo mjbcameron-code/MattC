@@ -153,24 +153,54 @@ def write_single(
     signals: Sequence[Signal],
     confidence: int,
     headline_prefix: str = "",
+    below_bar: bool = False,
 ) -> tuple[str, str]:
-    """Return (headline, body) for a single bet."""
+    """Return (headline, body) for a single bet.
+
+    `below_bar` changes what may be claimed, not merely what is prefixed. The
+    value clause and the closing flourish both assert the price is worth taking
+    — "leaves 1% of edge", "the price more than pays for it" — and a filler is
+    on the card precisely because it is not. Prefixing a disclaimer onto prose
+    that then argues the opposite produces a write-up that contradicts itself
+    inside three sentences, which is worse than either half alone.
+    """
     rng = _rng(ref)
     headline = f"{headline_prefix}{selection} — {format_price(price)}" if headline_prefix \
         else f"{selection} — {format_price(price)}"
 
-    parts = [rng.choice(OPENERS)]
+    parts = []
+    if below_bar:
+        parts.append(
+            "Not a value bet. This one did not clear the bar; it is here to "
+            "fill a card you asked never to come back empty.")
+    else:
+        parts.append(rng.choice(OPENERS))
     reasons = signal_sentences(signals)
     if reasons:
         parts.extend(reasons)
-    clause = value_clause(ref, fair_price, price, edge, book)
-    # Not .capitalize() — that would lowercase "Sky Bet" into "sky bet".
-    parts.append(clause[0].upper() + clause[1:] + ".")
-    if confidence <= 2 or price >= 6:
-        parts.append(rng.choice(CAUTION))
+    if below_bar:
+        # State both numbers and let them speak, with no claim either way.
+        if abs(edge) < 0.005:
+            standing = "level with"
+        else:
+            direction = "over" if edge > 0 else "under"
+            standing = f"{abs(edge):.1%} {direction}"
+        parts.append(
+            f"We make it {fair_price:.2f} against {price:.2f} with "
+            f"{pretty_book(book)} — {standing} what it needs to be "
+            f"worth backing.")
+        parts.append(
+            "Staked at the minimum, and the best of what was left rather than "
+            "something to be confident about.")
     else:
-        parts.append(rng.choice(CONFIDENT).format(
-            price=f"{price:.2f}", book=pretty_book(book)))
+        clause = value_clause(ref, fair_price, price, edge, book)
+        # Not .capitalize() — that would lowercase "Sky Bet" into "sky bet".
+        parts.append(clause[0].upper() + clause[1:] + ".")
+        if confidence <= 2 or price >= 6:
+            parts.append(rng.choice(CAUTION))
+        else:
+            parts.append(rng.choice(CONFIDENT).format(
+                price=f"{price:.2f}", book=pretty_book(book)))
     body = " ".join(parts)
     return headline, body
 

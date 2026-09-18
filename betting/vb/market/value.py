@@ -463,9 +463,16 @@ def scan_fixture(
     # Keep the near misses so a card can be filled on a weekend when nothing
     # clears the bar. The alternative — lowering min_edge until something
     # appears — would relabel the same bets as value, which is worse than
-    # showing them honestly. A shortlisted price must at least be break-even on
-    # the model's own numbers; below that it is not the best of anything.
+    # showing them honestly.
+    #
+    # The floor is not break-even. It was, and that quietly broke the feature:
+    # once the calibration correction is applied almost nothing is break-even,
+    # so the card came back with one selection on it. What the floor is for is
+    # bounding how bad a filler can be, and going lower than this does not
+    # change which three are picked — they are ranked by score, and the
+    # also-rans an even lower floor admits never reach the card.
     shortlist = int(settings.get("selection.min_card", 0)) > 0
+    shortlist_floor = float(settings.get("selection.shortlist_min_edge", -0.05))
     # The longshot lane. Above max_odds the ordinary rules stop making sense
     # together — a two-point probability edge at 12.5 already implies the 25%
     # expected value that max_edge calls a data fault — so a price out there
@@ -588,7 +595,8 @@ def scan_fixture(
                 # Longshots are never shortlisted. Their whole justification is
                 # a fat edge paying for an unreliable probability, and without
                 # the edge there is nothing left holding them up.
-                if not (shortlist and not longshot and expected_value >= 0):
+                if not (shortlist and not longshot
+                        and expected_value >= shortlist_floor):
                     drop("longshot without enough edge" if longshot
                          else "edge below the minimum")
                     continue

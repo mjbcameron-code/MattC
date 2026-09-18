@@ -254,13 +254,8 @@ def _candidate_to_tip(candidate: Candidate, ref: str, prefix: str = "") -> Tip:
         signals=candidate.supporting_signals(),
         confidence=candidate.confidence(),
         headline_prefix=prefix,
+        below_bar=candidate.below_bar,
     )
-    if candidate.below_bar:
-        body = (
-            "Not a value bet. This one did not clear the bar; it is here to "
-            "fill a card you asked never to come back empty. Best of what was "
-            "left, staked at the minimum, and worth no more confidence than "
-            "that. " + body)
     return Tip(
         ref=ref, kind="single", below_bar=candidate.below_bar,
         headline=f"{candidate.fixture.label} — {headline}",

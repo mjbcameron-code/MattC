@@ -59,6 +59,13 @@ selection:
   # is much cheaper than the alternative of lowering min_edge, which would put
   # the same bets up while calling them value.
   min_card: 3
+  # How far below fair a filler may be. Not break-even: with a calibration
+  # correction in force almost nothing is break-even, and a floor of zero
+  # leaves the card with one selection on it. This is roughly a bookmaker's
+  # margin — inside it you are paying about what everyone pays, beyond it you
+  # are paying over the odds. Lowering it further changes nothing on the card,
+  # since fillers are ranked by score and only the best few are ever shown.
+  shortlist_min_edge: -0.05
   max_tips_per_week: 12
   max_tips_per_league: 3
   # A bet needs this many "supporting signals" (form, xG trend, team news,
